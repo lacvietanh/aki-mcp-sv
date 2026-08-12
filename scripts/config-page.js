@@ -78,7 +78,7 @@ function field(label, value, hl = false) {
   return `<div class="row"><label>${esc(label)}</label>${copyEl(value, hl)}</div>`;
 }
 
-export function renderPanel({ origin, client, passphrase, token, repoRoot, rulesDir, userDir, updateInfo = {}, hasGit = false }) {
+export function renderPanel({ origin, client, passphrase, token, repoRoot, rulesDir, userDir, updateInfo = {}, hasGit = false, ingressMode = 'tailscale' }) {
   const url = origin ? `${origin}/mcp` : 'not available yet, see section 0';
   const regUrl = origin ? `${origin}/register` : 'not available yet, see section 0';
   const mcpUpd = updateInfo.mcp || {};
@@ -225,10 +225,20 @@ ${updateBanner}
 </section>
 
 <section id="s0"><h2>0 · Setup <span class="done-tag">done</span></h2>
+${ingressMode === 'frp' ? `
+<p class="hint">FRP / custom reverse proxy is configured. The server listens on localhost:${esc(process.env.GATEKEEPER_PORT || '9999')}; your FRP routes external traffic to this port.</p>
+<ol class="steps">
+  <li><span class="dot ok">✓</span> FRP / custom ingress: ${copyEl(origin, true)}</li>
+  <li><span class="dot ok">✓</span> Clone / download the <span class="mono">aki-mcp-sv</span> repo.</li>
+  <li><span class="dot ok">✓</span> ${copyEl('npm install')}.</li>
+  <li><span class="dot ok">✓</span> ${copyEl('PUBLIC_ORIGIN="' + esc(origin) + '" npm start')} — running now.</li>
+</ol>
+${field('FRP config', 'Set PUBLIC_ORIGIN=' + esc(origin) + ' in your environment. Your FRP must forward :443 → localhost:' + esc(process.env.GATEKEEPER_PORT || '9999') + ' via TCP (no TLS termination on the proxy). TLS is handled by the gatekeeper itself — set MCP_TLS_CERT and MCP_TLS_KEY to your cert/key paths.')}
+` : `
 <p class="hint">One-time prerequisites. You're reading this panel, so the last three already ran; the two Tailscale checks below are live.</p>
 <ol class="steps">
-  <li><span class="dot" id="tsInstalled">…</span> <a href="${TAILSCALE_DOWNLOAD_URL}" target="_blank" rel="noopener">Install Tailscale</a> and sign in.</li>
-  <li><span class="dot" id="tsFunnel">…</span> Enable <a href="${TAILSCALE_FUNNEL_URL}" target="_blank" rel="noopener">Funnel</a> for your tailnet, free on every plan. ${copyEl('npm start')} enables it automatically; it only prints a link for you to approve once, when the tailnet hasn't allowed it yet.</li>
+  <li><span class="dot" id="tsInstalled">...</span> <a href="${TAILSCALE_DOWNLOAD_URL}" target="_blank" rel="noopener">Install Tailscale</a> and sign in.</li>
+  <li><span class="dot" id="tsFunnel">...</span> Enable <a href="${TAILSCALE_FUNNEL_URL}" target="_blank" rel="noopener">Funnel</a> for your tailnet, free on every plan. ${copyEl('npm start')} enables it automatically; it only prints a link for you to approve once, when the tailnet hasn't allowed it yet.</li>
   <li><span class="dot ok">✓</span> Clone / download the <span class="mono">aki-mcp-sv</span> repo.</li>
   <li><span class="dot ok">✓</span> ${copyEl('npm install')}.</li>
   <li><span class="dot ok">✓</span> ${copyEl('npm start')} — running now.</li>
@@ -236,10 +246,11 @@ ${updateBanner}
 <div class="acts"><button data-act="tailscale">Recheck</button><span class="msg" id="msgTs"></span></div>
 <p class="hint">Connector keeps dropping with <em>"hostname doesn't resolve / isn't reachable"</em>? The Funnel edge desynced — a Tailscale-side issue, not this server. Re-sync it in a terminal (needs ${copyEl('sudo')}, so it can't be a button here), then reconnect the connector. Why: <span class="mono">docs/research/claude-ai-oauth-connector.md</span> round 9.</p>
 ${field('Re-sync command', 'tailscale funnel --https=443 off && tailscale serve reset && tailscale funnel --bg 9999')}
+`}
 </section>
 
 <section id="s1"><h2>1 · Connectors: Claude, Grok, ChatGPT, Gemini</h2>
-<p class="hint">Same Funnel URL for every client. Folders / shell allowlist apply to whoever connects. Fill the three common values below, then open your client's tab.</p>
+<p class="hint">Same ${ingressMode === 'frp' ? 'public' : 'Funnel'} URL for every client. Folders / shell allowlist apply to whoever connects. Fill the three common values below, then open your client's tab.</p>
 ${field('MCP Name', MCP_NAME)}
 ${field('MCP URL', url, true)}
 ${field('Passphrase', passphrase)}
@@ -661,12 +672,13 @@ async function loadState() {
 }
 
 async function loadTailscale() {
+  const s = await api('GET', '/api/tailscale');
+  if (s.frp) return 'FRP / custom ingress: ' + (s.origin || 'not configured');
   const mark = (id, ok) => {
     const el = document.getElementById(id);
     el.textContent = ok ? '✓' : '✕';
     el.className = 'dot ' + (ok ? 'ok' : 'err');
   };
-  const s = await api('GET', '/api/tailscale');
   mark('tsInstalled', s.installed);
   mark('tsFunnel', s.funnel);
   if (!s.installed) return 'tailscale command not found on this machine';
