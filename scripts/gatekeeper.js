@@ -1,6 +1,8 @@
 // Public entry: OAuth AS (Claude pre-registered + ChatGPT DCR) + Streamable HTTP /mcp via streamable-bridge.
 // Runs in-process inside start.js (docs/plan/consolidate-mcp-tool-processes.md, Part B): startGatekeeper() returns the http.Server so the orchestrator can close it on shutdown.
 import http from 'node:http';
+import https from 'node:https';
+import { readFileSync } from 'node:fs';
 import { loadOrCreatePassphrase, metadataHandlers, handleAuthorize, handleToken, handleRegister, verifyBearer } from './oauth.js';
 import { handleStreamableMcp, terminateSession } from './streamable-bridge.js';
 import { log, logErr } from './log.js';
@@ -8,15 +10,28 @@ import { serveStatic } from './http.js';
 
 const STATIC_ALIASES = { '/favicon.ico': '/favicon/favicon.ico' };
 
-// origin: the public https origin (Tailscale MagicDNS). onFatal: called if the listen socket errors, so the orchestrator tears the whole stack down instead of leaking an orphaned hub.
-export function startGatekeeper(origin, onFatal) {
-  if (!origin) throw new Error('PUBLIC_ORIGIN (Tailscale origin) is not set');
+// origin: the public https origin. onFatal: called if the listen socket errors, so the orchestrator tears the whole stack down instead of leaking an orphaned hub.
+// tls: optional { cert, key } paths for running HTTPS directly (FRP / custom ingress without TLS termination at the proxy).
+export function startGatekeeper(origin, onFatal, tls) {
+  if (!origin) throw new Error('PUBLIC_ORIGIN is not set (set the env var or configure Tailscale Funnel)');
 
   const port = Number(process.env.GATEKEEPER_PORT || 9999);
   const passphrase = loadOrCreatePassphrase();
   const meta = metadataHandlers(origin);
 
-  const server = http.createServer(async (req, res) => {
+  let tlsOpts;
+  if (tls) {
+    try {
+      tlsOpts = { cert: readFileSync(tls.cert), key: readFileSync(tls.key) };
+    } catch (e) {
+      throw new Error(`TLS cert/key read failed: ${e.message}`);
+    }
+  }
+
+  const createServer = (reqListener) =>
+    tlsOpts ? https.createServer(tlsOpts, reqListener) : http.createServer(reqListener);
+
+  const server = createServer(async (req, res) => {
     const path = (req.url || '').split('?')[0];
     const t0 = Date.now();
     res.on('finish', () => log(`[gatekeeper] ${req.method} ${req.url} -> ${res.statusCode} ${Date.now() - t0}ms`));
@@ -68,7 +83,7 @@ export function startGatekeeper(origin, onFatal) {
     onFatal?.();
   });
   server.listen(port, () => {
-    log(`[gatekeeper] listening on :${port} (OAuth-protected /mcp)`);
+    log(`[gatekeeper] listening on :${port} (${tlsOpts ? 'HTTPS' : 'HTTP'}, OAuth-protected /mcp)`);
   });
 
   return server;

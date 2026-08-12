@@ -152,14 +152,14 @@ function trustedDirStatus(dataDir) {
 }
 
 const ROUTES = {
-  'GET /api/state': async (body, ctx) => ({
+  'GET /api/state': async (_body, ctx) => ({
     paths: filesystemPaths(ctx.dataDir),
     // The same call the MCP server enforces with, so the textarea can never show a set that isn't the live one.
     allowlist: loadAllowlist(),
     trustedDirs: trustedDirStatus(ctx.dataDir),
     ruleFiles: existsSync(RULES_DIR) ? readdirSync(RULES_DIR).filter((f) => /^(index|RULE-.+|METHOD-.+)\.md$/.test(f)).sort() : [],
   }),
-  'GET /api/tailscale': async () => funnelStatus(process.env.GATEKEEPER_PORT || '9999'),
+  'GET /api/tailscale': async (_body, ctx) => ctx.ingressMode === 'frp' ? { frp: true, origin: ctx.origin } : funnelStatus(process.env.GATEKEEPER_PORT || '9999'),
   'POST /api/paths': async (body, ctx) => {
     setFilesystemPaths(validatePaths(body.paths));
     ctx.restartHub();
@@ -174,7 +174,7 @@ const ROUTES = {
     setTrustedDirs(validateTrustedDirs(body.dirs));
     return { ok: true, message: `saved trusted directories to ${SETTINGS_PATH}` };
   },
-  'POST /api/restart': async (body, ctx) => {
+  'POST /api/restart': async (_body, ctx) => {
     ctx.restartHub();
     return { ok: true, message: 'restarted mcp-hub' };
   },
@@ -182,7 +182,7 @@ const ROUTES = {
   'POST /api/pull-update': async () => ({ ok: true, message: await pullUpdate() }),
 };
 
-export function startPanel({ port, token, origin, client, passphrase, dataDir, restartHub, updateInfo }) {
+export function startPanel({ port, token, origin, client, passphrase, dataDir, restartHub, updateInfo, ingressMode = 'tailscale' }) {
   const server = http.createServer(async (req, res) => {
     const [urlPath, query] = (req.url || '').split('?');
     const route = `${req.method} ${urlPath}`;
@@ -193,7 +193,7 @@ export function startPanel({ port, token, origin, client, passphrase, dataDir, r
         return res.end('wrong token — open the URL that `npm start` printed');
       }
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      return res.end(renderPanel({ origin, client, passphrase, token, repoRoot: REPO_ROOT, rulesDir: RULES_DIR, userDir: USER_DIR, updateInfo, hasGit: existsSync(path.join(REPO_ROOT, '.git')) }));
+      return res.end(renderPanel({ origin, client, passphrase, token, repoRoot: REPO_ROOT, rulesDir: RULES_DIR, userDir: USER_DIR, updateInfo, hasGit: existsSync(path.join(REPO_ROOT, '.git')), ingressMode }));
     }
 
     if (req.method === 'GET' && await serveStatic(res, urlPath)) return;
@@ -203,7 +203,7 @@ export function startPanel({ port, token, origin, client, passphrase, dataDir, r
     if (req.headers['x-panel-token'] !== token) return json(res, 403, { error: 'sai token' });
 
     try {
-      json(res, 200, await handler(JSON.parse((await readBody(req)) || '{}'), { restartHub, dataDir }));
+      json(res, 200, await handler(JSON.parse((await readBody(req)) || '{}'), { restartHub, dataDir, ingressMode, origin }));
     } catch (e) {
       json(res, 400, { error: e.message });
     }

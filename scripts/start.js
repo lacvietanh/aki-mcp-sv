@@ -28,22 +28,34 @@ console.log(`[start] config & keys: ${USER_DIR}`);
 const client = loadOrCreateClient();
 const passphrase = loadOrCreatePassphrase();
 
-let tailscale = await funnelStatus(gatePort);
-if (!tailscale.installed) {
-  console.error('[start] could not run `tailscale` — check it is installed and logged in: https://tailscale.com/download');
-} else {
-  if (!tailscale.running) {
-    const { ok, out } = await bringUp();
-    console[ok ? 'log' : 'error'](`[start] tailscale was stopped, starting it: ${ok ? 'done' : out.trim()}`);
-    tailscale = await funnelStatus(gatePort);
-  }
-  if (tailscale.running && !tailscale.funnel) {
-    const { ok, out } = await enableFunnel(gatePort);
-    console[ok ? 'log' : 'error'](`[start] enabling funnel ${gatePort}: ${ok ? 'done' : out.trim()}`);
-  }
-}
+const frpOrigin = process.env.PUBLIC_ORIGIN?.replace(/\/$/, '');
+let tailscale;
+let origin;
+let ingressMode = 'tailscale';
 
-const origin = tailscale.host ? `https://${tailscale.host}` : null;
+if (frpOrigin) {
+  // FRP / custom reverse proxy: skip Tailscale entirely, use the provided origin as-is
+  origin = frpOrigin;
+  ingressMode = 'frp';
+  tailscale = { installed: false, running: false, host: null, funnel: false, frp: true };
+  console.log(`[start] PUBLIC_ORIGIN is set — using FRP / custom ingress: ${origin}`);
+} else {
+  tailscale = await funnelStatus(gatePort);
+  if (!tailscale.installed) {
+    console.error('[start] could not run `tailscale` — check it is installed and logged in: https://tailscale.com/download');
+  } else {
+    if (!tailscale.running) {
+      const { ok, out } = await bringUp();
+      console[ok ? 'log' : 'error'](`[start] tailscale was stopped, starting it: ${ok ? 'done' : out.trim()}`);
+      tailscale = await funnelStatus(gatePort);
+    }
+    if (tailscale.running && !tailscale.funnel) {
+      const { ok, out } = await enableFunnel(gatePort);
+      console[ok ? 'log' : 'error'](`[start] enabling funnel ${gatePort}: ${ok ? 'done' : out.trim()}`);
+    }
+  }
+  origin = tailscale.host ? `https://${tailscale.host}` : null;
+}
 
 if (origin) {
   console.log(`[start] Remote MCP server URL: ${origin}/mcp`);
@@ -85,15 +97,18 @@ function restartHub() {
 
 spawnHub();
 // Gatekeeper runs in-process (docs/plan/consolidate-mcp-tool-processes.md, Part B); a fatal listen error tears the whole stack down via shutdown, so the hub is never left orphaned.
+const tls = process.env.MCP_TLS_CERT && process.env.MCP_TLS_KEY
+  ? { cert: process.env.MCP_TLS_CERT, key: process.env.MCP_TLS_KEY }
+  : null;
 let gateServer;
 try {
-  gateServer = startGatekeeper(origin, shutdown);
+  gateServer = startGatekeeper(origin, shutdown, tls);
 } catch (e) {
   console.error(`[start] gatekeeper failed to start: ${e.message}`);
   shutdown();
 }
 
-panel = startPanel({ port: Number(panelPort), token: panelToken, origin, client, passphrase, dataDir, restartHub, updateInfo });
+panel = startPanel({ port: Number(panelPort), token: panelToken, origin, client, passphrase, dataDir, restartHub, updateInfo, ingressMode });
 const panelUrl = `http://127.0.0.1:${panelPort}/?t=${panelToken}`;
 try {
   await openBrowser(panelUrl);
