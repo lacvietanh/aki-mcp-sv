@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Loopback-only, never behind the Funnel: it writes config and runs commands. Token-gated so no other browser page can POST to it.
 import http from 'node:http';
+import crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, readdirSync, unlinkSync } from 'node:fs';
 import os from 'node:os';
@@ -222,13 +223,20 @@ const ROUTES = {
   },
 };
 
+// Plain !== leaks timing info a remote-timing attacker could use to guess the token byte-by-byte; timingSafeEqual removes that side channel (requires equal-length buffers, hence the length check first).
+function tokenMatches(candidate, expected) {
+  const a = Buffer.from(String(candidate || ''));
+  const b = Buffer.from(String(expected || ''));
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
 export function startPanel({ port, token, origin, ingress, client, passphrase, updateInfo }) {
   const server = http.createServer(async (req, res) => {
     const [urlPath, query] = (req.url || '').split('?');
     const route = `${req.method} ${urlPath}`;
 
     if (route === 'GET /') {
-      if (new URLSearchParams(query).get('t') !== token) {
+      if (!tokenMatches(new URLSearchParams(query).get('t'), token)) {
         res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
         return res.end('wrong token — open the URL that `npm start` printed');
       }
@@ -240,7 +248,7 @@ export function startPanel({ port, token, origin, ingress, client, passphrase, u
 
     const handler = ROUTES[route];
     if (!handler) return json(res, 404, { error: 'not found' });
-    if (req.headers['x-panel-token'] !== token) return json(res, 403, { error: 'sai token' });
+    if (!tokenMatches(req.headers['x-panel-token'], token)) return json(res, 403, { error: 'sai token' });
 
     try {
       json(res, 200, await handler(JSON.parse((await readBody(req)) || '{}'), { updateInfo }));
