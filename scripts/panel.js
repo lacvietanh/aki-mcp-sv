@@ -14,9 +14,10 @@ import { SETTINGS_PATH, USER_DIR, INGRESS_CONFIG_PATH, CLOUDFLARED_CRED_PATH, re
 import { readBody, json, serveStatic } from './http.js';
 import { getLocalVersions, cmpSemver, writeStatusFile } from './update-check.js';
 import { getDaemonStatus, launchPostmanDaemon, killPostmanDaemon, requestNewWindow } from './postman-mcp.js';
+import { fileURLToPath } from 'node:url';
 
 const IS_WIN = process.platform === 'win32';
-const REPO_ROOT = process.cwd();
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const RULES_DIR = path.join(os.homedir(), '.aki', 'akidevrule');
 const SOURCE_REPO_FILE = path.join(RULES_DIR, '.source-repo');
 const RULES_CLONE_DIR = path.join(os.homedir(), '.aki', 'akidevrule-src');
@@ -138,13 +139,30 @@ async function installRules() {
     }
     repo = RULES_CLONE_DIR;
   }
-  const bash = IS_WIN ? 'bash.exe' : 'bash';
+  // akidevrule ships install.ps1 / install.py for Windows on purpose: a bare `bash.exe` there resolves to the WSL
+  // launcher (C:\Windows\System32\bash.exe) and dies with "execvpe(/bin/bash) failed" when no WSL distro is installed.
+  // Pick a real interpreter by platform + whichever installer this clone actually ships; never fall through to WSL bash.
+  let cmd, args;
+  if (IS_WIN) {
+    if (existsSync(path.join(repo, 'install.ps1'))) {
+      cmd = 'powershell';
+      args = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(repo, 'install.ps1')];
+    } else if (existsSync(path.join(repo, 'install.py'))) {
+      cmd = 'py';
+      args = ['-3', path.join(repo, 'install.py')];
+    } else {
+      throw new Error('this akidevrule clone has no install.ps1 / install.py for Windows — pull the latest akidevrule and retry');
+    }
+  } else {
+    cmd = 'bash';
+    args = [path.join(repo, 'install.sh')];
+  }
   try {
-    const log = await run(bash, [path.join(repo, 'install.sh')], repo);
+    const log = await run(cmd, args, repo);
     return `${log.trim().split('\n').pop()} (source: ${repo})`;
   } catch (e) {
-    if (IS_WIN && /ENOENT|not found|not recognized/i.test(e.message)) {
-      throw new Error('bash not found — install Git for Windows (includes bash) or run the install command from the panel manually');
+    if (IS_WIN && /ENOENT|not found|not recognized|execvpe|\/bin\/bash|WSL/i.test(e.message)) {
+      throw new Error('Windows install failed — could not run install.ps1/install.py (do not use WSL bash): ' + e.message);
     }
     throw e;
   }
@@ -153,14 +171,14 @@ async function installRules() {
 // Pull this repo, but only when the tree is clean — an unattended pull over local edits can conflict or lose work (agent.B3). Checked at click-time, not page-load, since the tree can change in between.
 async function pullUpdate() {
   if (!existsSync(path.join(REPO_ROOT, '.git'))) {
-    throw new Error('this is not a git checkout: clone the repo and run from there');
+    throw new Error('installed via npm: run `npm i -g @akinet/akimcp` in your terminal to update');
   }
   const dirty = (await run('git', ['-C', REPO_ROOT, 'status', '--porcelain'])).trim();
   if (dirty && dirty !== '(no output)') {
     throw new Error('working tree has uncommitted changes — commit or stash them first, then pull');
   }
   await run('git', ['-C', REPO_ROOT, 'pull', '--ff-only']);
-  return 'pulled latest — press Ctrl+C and run `npm start` again to load the new code';
+  return 'pulled latest — restart akimcp to load the new code';
 }
 
 // Mirror shell-mcp's classification: a zone overlapping a writable root is dropped (write+exec = RCE). Name the offending root so the panel can show why a zone is disabled.
@@ -192,7 +210,7 @@ export const ROUTES = {
     ingressConfig: readIngressConfig(),
   }),
   'GET /api/tailscale': async () => funnelStatus(process.env.GATEKEEPER_PORT || '9999'),
-  // Same function local__postman_status calls (scripts/postman-mcp.js) — one status shape, two readers.
+  // Same function aki__postman_status calls (scripts/postman-mcp.js) — one status shape, two readers.
   'GET /api/postman-status': async () => getDaemonStatus(),
   // The one launch action (panel Postman tab button) — spawn-or-recognize lives in launchPostmanDaemon itself (scripts/postman-mcp.js), so N clicks here behave like one, same as every other panel action.
   'POST /api/postman-launch': async () => launchPostmanDaemon(),
@@ -224,15 +242,15 @@ export const ROUTES = {
   // Ingress is decided at start.js boot, not live-switchable — saving here never restarts anything, only records the pick for the next `npm start`.
   'POST /api/ingress/cloudflared': async (body) => {
     const saved = saveCloudflaredIngress(body.credContent, body.origin);
-    return { ok: true, message: 'saved — restart `npm start` to use this ingress', saved };
+    return { ok: true, message: 'saved — restart akimcp to use this ingress', saved };
   },
   'POST /api/ingress/clear': async () => {
     clearSavedIngress();
-    return { ok: true, message: 'cleared — restart `npm start` to go back to Tailscale Funnel', saved: null };
+    return { ok: true, message: 'cleared — restart akimcp to go back to Tailscale Funnel', saved: null };
   },
 };
 
-export function startPanel({ port, token, origin, ingress, client, passphrase, updateInfo }) {
+export function startPanel({ port, token, origin, ingress, client, passphrase, updateInfo, isDev = false }) {
   const server = http.createServer(async (req, res) => {
     const [urlPath, query] = (req.url || '').split('?');
     const route = `${req.method} ${urlPath}`;
@@ -240,10 +258,10 @@ export function startPanel({ port, token, origin, ingress, client, passphrase, u
     if (route === 'GET /') {
       if (new URLSearchParams(query).get('t') !== token) {
         res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
-        return res.end('wrong token — open the URL that `npm start` printed');
+        return res.end('wrong token — open the URL printed in your terminal');
       }
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      return res.end(renderPanel({ origin, ingress, client, passphrase, token, accessToken: getOrIssueAccessToken(), repoRoot: REPO_ROOT, rulesDir: RULES_DIR, userDir: USER_DIR, updateInfo, savedIngress: readIngressConfig() }));
+      return res.end(renderPanel({ origin, ingress, client, passphrase, token, accessToken: getOrIssueAccessToken(), repoRoot: REPO_ROOT, rulesDir: RULES_DIR, userDir: USER_DIR, updateInfo, savedIngress: readIngressConfig(), isDev }));
     }
 
     if (req.method === 'GET' && await serveStatic(res, urlPath)) return;

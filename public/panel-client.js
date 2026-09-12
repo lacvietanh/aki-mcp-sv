@@ -70,23 +70,13 @@ document.addEventListener('click', (e) => {
 });
 
 function buildPrompt() {
-  const lines = ['[akimcp ' + MCP_VERSION + ' · akidevrule ' + RULE_VERSION + '] ALWAYS short dense on-point. DON\'T YAPPING. Claim=evidence; search=citation.'];
-  const picked = document.getElementById('loadRules').checked
-    ? [...document.querySelectorAll('#ruleChecks input:checked')].map((i) => i.value)
-    : [];
-  if (picked.length) {
-    lines.push('Session start MCP "' + MCP_NAME + '": read ' + CLAUDE_DIR + '/CLAUDE.md + these under ' + RULES_DIR + ': ' + picked.join(', ') + '; follow all session. Router: ' + CLAUDE_DIR + '/skills/akirule/SKILL.md.');
-  }
+  const lines = ['[akimcp ' + MCP_VERSION + '] Short, dense, on-point. Zero yapping. Claim=evidence.'];
   const rulesOn = document.getElementById('loadRules').checked;
-  const hasIndex = [...document.querySelectorAll('#ruleChecks input')].some((i) => i.value === 'index.md');
-  if (rulesOn && !hasIndex) {
-    lines.push('Rules not installed: ask the user to press Install/update in the Aki panel (section 2) before starting.');
+  if (rulesOn) {
+    lines.push('Before first substantive action, call aki__akidevrule_context() once with workingPath; follow loaded receipt rules.');
   }
-  lines.push('Task (mutate/multi-step): confirm scope; plan $HOME/.aki/mcpsv/task/<id>/plan.md (live); reply path on create. Skip pure Q&A. <id>=short slug.');
-  lines.push('Files: always find_path (1 call, whole tree ~0.2s), never list_directory nor search_files. Text: search_content. git/ls/grep: run_cmd cwd=absolute under an allowed root, never cd/-C.');
-  lines.push('Repo: ' + REPO_ROOT + '. local paths=Aki MCP FS only; sandbox throwaway; after write read-back MCP.');
-  lines.push('First session: if no ' + USER_DIR + '/intro.json, read ' + REPO_ROOT + '/docs/ref/mcp-intro.md once then write intro.json {"seen":true}.');
-  lines.push('Also read ' + USER_DIR + '/aki-mcp-status.json; if its mcp.current/rule.current differ from the [akimcp·akidevrule] line above or any updateAvailable is true, tell me to update in the Aki panel and re-paste these instructions into the custom-instructions setting of each AI (claude/grok/chatgpt/gemini).');
+  lines.push('Tools: find_path/search_content (files), run_cmd (shell allowlist), chrome_launch/chrome_interact (browser), local_fetch (localhost/LAN API).');
+  lines.push('Task (mutate/multi-step): confirm scope; plan $HOME/.aki/mcpsv/task/<id>/plan.md. Skip pure Q&A.');
   const value = lines.join('\n');
   document.getElementById('prompt').value = value;
   const over = value.length > 1500;
@@ -298,20 +288,31 @@ async function loadTailscale() {
   return 'ready: ' + (s.host || 'domain not available yet');
 }
 
-// Buttons are truth of daemon status, same signal as the dot: not running shows only Launch, running hides Launch and shows Quit + New window. One state, three elements driven from it.
-function renderPostmanState(running) {
+function renderPostmanState(status) {
   const dot = document.getElementById('pmDaemonDot');
-  dot.textContent = running ? '✓' : '✕';
-  dot.className = 'dot ' + (running ? 'ok' : 'err');
-  document.getElementById('pmBtnLaunch').hidden = running;
-  document.getElementById('pmBtnQuit').hidden = !running;
-  document.getElementById('pmBtnNewWindow').hidden = !running;
+  dot.textContent = status.attached ? '✓' : '✕';
+  dot.className = 'dot ' + (status.attached ? 'ok' : 'err');
+  document.getElementById('pmBtnLaunch').hidden = status.running;
+  document.getElementById('pmBtnQuit').hidden = !status.running;
+  const newWindow = document.getElementById('pmBtnNewWindow');
+  newWindow.hidden = !status.running;
+  newWindow.disabled = !status.attached || !status.ownerTargetId;
+}
+
+function postmanStatusMessage(status) {
+  if (!status.running) return 'not running — click Launch above';
+  const endpoint = status.endpoint;
+  const cdp = endpoint && endpoint.port ? ' · CDP ' + (endpoint.host || '127.0.0.1') + ':' + endpoint.port : '';
+  const runtime = 'daemon PID ' + status.daemonPid + cdp;
+  if (!status.attached) return 'waiting for a Postman window · ' + runtime;
+  const count = status.attachedWindowCount || 0;
+  return status.mode + ' · attached to ' + count + ' Postman window' + (count === 1 ? '' : 's') + ' · ' + runtime;
 }
 
 async function loadPostmanDaemon() {
   const s = await api('GET', '/api/postman-status');
-  renderPostmanState(s.running);
-  say('msgPmDaemon', s.running ? 'running (pid ' + s.pid + ')' : 'not running — click Launch above', s.running);
+  renderPostmanState(s);
+  say('msgPmDaemon', postmanStatusMessage(s), s.attached);
 }
 
 const ACTIONS = {
@@ -319,12 +320,12 @@ const ACTIONS = {
   // Buttons flip only from the handler's real running/pid — never before spawn/kill returns.
   launchPostman: (btn) => act(btn, 'msgPmDaemon', async () => {
     const s = await api('POST', '/api/postman-launch');
-    renderPostmanState(s.running);
+    renderPostmanState(s);
     return s.message;
   }),
   quitPostman: (btn) => act(btn, 'msgPmDaemon', async () => {
     const s = await api('POST', '/api/postman-quit');
-    renderPostmanState(s.running);
+    renderPostmanState(s);
     return s.message;
   }),
   newWindowPostman: (btn) => act(btn, 'msgPmDaemon', async () => (await api('POST', '/api/postman-new-window')).message),
@@ -425,7 +426,7 @@ document.getElementById('tldSelect').onchange = updateDomainPrice;
 updateDomainPrice();
 
 const DONATE_QR = {
-  momo: { src: '/QR-Aki.MOMO.jpg', alt: 'MoMo donate QR' },
+  momo: { src: '/QR-MOMO-LACVIETANH.jpg', alt: 'MoMo donate QR' },
   paypal: { src: '/QR-AkiTao-PayPal.png', alt: 'PayPal donate QR' },
 };
 document.querySelectorAll('.qr-tab').forEach((btn) => (btn.onclick = () => {

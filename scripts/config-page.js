@@ -12,13 +12,6 @@ const CHATGPT_SETTINGS_URL = 'https://chatgpt.com/#settings/Personalization';
 const CHATGPT_DEVMODE_URL = 'https://chatgpt.com/#settings/Security';
 const GEMINI_SETTINGS_URL = 'https://gemini.google.com/saved-info';
 const POSTMAN_SETTINGS_URL = 'https://go.postman.co/settings/me/connected-accounts';
-const POSTMAN_PROMPT = `MCP Tools: Files=find_path. Content=search_content. Agents=agy_run/kiro_read. Always use MCP tools to search files/dirs/content;
-never trigger native OS file-picker popups. Fall back to built-in native shell if local__run_cmd is blocked;
-explicitly prompt or warn before running sensitive non-whitelisted commands via native shell.
-Rules: Read ~/.aki/akidevrule/RULE-agent-behavior.md, RULE-coding.md, RULE-pattern-core.md, index.md.
-Router: ~/.aki/akidevrule/skills/akirule/SKILL.md (auto-read contextual rules before acting; output [RULES] receipt).
-Behavior: DON'T YAPPING. Dense on-point. Questions = read-only; Tasks = execute strictly in scope.
-Decompose tasks into progressive chunks with step-by-step feedback rather than extended silent reasoning.`;
 const CONNECTOR_URL = 'https://claude.ai/new?modal=add-custom-connector#settings/customize-connectors';
 const CHATGPT_CONNECTOR_URL = 'https://chatgpt.com/plugins#settings/Connectors?create-connector=true&redirectAfter=%2Fplugins';
 const GEMINI_CONNECTOR_URL = 'https://support.google.com/g/answer/17106276';
@@ -87,7 +80,7 @@ function field(label, value, hl = false) {
   return `<div class="row"><label>${esc(label)}</label>${copyEl(value, hl)}</div>`;
 }
 
-export function renderPanel({ origin, ingress = 'funnel', client, passphrase, token, accessToken, repoRoot, rulesDir, userDir, updateInfo = {}, savedIngress = null }) {
+export function renderPanel({ origin, ingress = 'funnel', client, passphrase, token, accessToken, repoRoot, rulesDir, userDir, updateInfo = {}, savedIngress = null, isDev = false }) {
   const url = origin ? `${origin}/mcp` : 'not available yet, see section 0';
   const postmanJson = JSON.stringify({
     mcpServers: { 'aki-mcp-sv': { url, headers: { Authorization: `Bearer ${accessToken}` } } },
@@ -102,15 +95,15 @@ export function renderPanel({ origin, ingress = 'funnel', client, passphrase, to
   const ruleVer = ruleUpd.current || '?';
   // "Own update on top, rule update below" per the request; the rule row carries the re-paste warning because updating the corpus makes every pasted instruction stale.
   const updateBanner = (mcpUpd.updateAvailable || ruleUpd.updateAvailable) ? `<div class="updbar">
-  ${mcpUpd.updateAvailable ? `<div class="updrow"><strong>aki-mcp-sv</strong> <span class="mono">${esc(String(mcpUpd.current))} → ${esc(String(mcpUpd.latest))}</span> <button class="primary" data-act="pullUpdate">Pull &amp; restart</button><span class="msg" id="msgUpd"></span></div>` : ''}
+  ${mcpUpd.updateAvailable ? `<div class="updrow"><strong>@akinet/akimcp</strong> <span class="mono">${esc(String(mcpUpd.current))} → ${esc(String(mcpUpd.latest))}</span> <button class="primary" data-act="pullUpdate">Pull &amp; restart</button><span class="msg" id="msgUpd"></span></div>` : ''}
   ${ruleUpd.updateAvailable ? `<div class="updrow updrule"><strong>akidevrule</strong> <span class="mono">${esc(String(ruleUpd.current))} → ${esc(String(ruleUpd.latest))}</span> <button class="primary" data-act="updateRules">Install / update</button><span class="msg" id="msgUpdRule"></span><div class="updwarn">⚠ After updating, RE-PASTE the section-3 Instructions into the custom-instructions setting of EACH AI: Claude / Grok / ChatGPT / Gemini.</div></div>` : ''}
 </div>` : '';
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(MCP_NAME)} · panel</title>
+<title>${esc(MCP_NAME)} · panel${isDev ? ' (dev)' : ''}</title>
 <link rel="icon" href="/favicon/favicon.ico" sizes="any"><meta name="theme-color" content="#ff4800">
 <link rel="stylesheet" href="/panel.css"></head><body><main>
 <a class="gh-top" href="${MCP_REPO_URL}" target="_blank" rel="noopener" aria-label="View on GitHub" title="View on GitHub"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="${SVG.github}"/></svg></a>
-<h1>Aki MCP Server</h1>
+<h1>Aki MCP Server${isDev ? ' <span class="dev-tag">dev</span>' : ''}</h1>
 <p class="sub">Gives Claude, ChatGPT, Grok, and Gemini read/edit access to files and a whitelisted shell on this machine, over Tailscale Funnel (or your own HTTPS edge / Cloudflare tunnel), gated by OAuth 2.1. Local panel only (127.0.0.1), never reachable through Funnel.</p>
 <p class="helptext">Running repo: <span class="mono">${esc(repoRoot)}</span> · Config &amp; keys: <span class="mono">${esc(userDir)}</span></p>
 ${updateBanner}
@@ -137,9 +130,8 @@ ${updateBanner}
 <p>Complete these one-time prerequisites in order.</p>
 <p class="helptext">You're viewing this panel, so the first three below are already done; the two Tailscale checks are live.</p>
 <ol class="steps">
-  <li><span class="dot ok">✓</span> Clone / download the <span class="mono">aki-mcp-sv</span> repo.</li>
-  <li><span class="dot ok">✓</span> ${copyEl('npm install')}.</li>
-  <li><span class="dot ok">✓</span> ${copyEl('npm start')}, running now.</li>
+  <li><span class="dot ok">✓</span> Install <span class="mono">@akinet/akimcp</span> (or clone repo).</li>
+  <li><span class="dot ok">✓</span> Started with ${copyEl('akimcp')} (or ${copyEl('npm start')}), running now.</li>
   <li><span class="dot" id="tsInstalled">…</span> <a href="${TAILSCALE_DOWNLOAD_URL}" target="_blank" rel="noopener">Install Tailscale</a> and sign in.</li>
   <li><span class="dot" id="tsFunnel">…</span> Enable <a href="${TAILSCALE_FUNNEL_URL}" target="_blank" rel="noopener">Funnel</a> for your tailnet, free on every plan. ${copyEl('npm start')} enables it automatically; it only prints a link for you to approve once, when the tailnet hasn't allowed it yet.</li>
 </ol>
@@ -248,12 +240,8 @@ ${field('Passphrase', passphrase)}
   <p class="helptext">Click the JSON to copy, then paste it in Postman Connected Accounts.</p>
   <p class="lnk"><a href="${esc(POSTMAN_SETTINGS_URL)}" target="_blank" rel="noopener">↗ Open Connected Accounts</a></p>
   ${copyEl(postmanJson, true, 'postmanJson')}
-  <p class="helptext" style="margin-top:12px">Paste this prompt into each new chat. Postman has no persistent system prompt.</p>
-  ${copyEl(POSTMAN_PROMPT)}
-  <p class="helptext" style="margin-top:12px">Setup screenshots:</p>
-  <figure><img src="/img/aki-mcp-instruct-postman-1.png" alt="Postman MCP setup step 1" loading="lazy" style="max-width:100%;border-radius:6px"></figure>
-  <figure><img src="/img/aki-mcp-instruct-postman-2.png" alt="Postman MCP setup step 2" loading="lazy" style="max-width:100%;border-radius:6px"></figure>
-  <figure><img src="/img/aki-mcp-instruct-postman-3.png" alt="Postman MCP setup step 3" loading="lazy" style="max-width:100%;border-radius:6px"></figure>
+  <p class="helptext" style="margin-top:12px">Setup screenshot:</p>
+  <figure><img src="/img/aki-mcp-instruct-postman.png" alt="Postman MCP setup walkthrough" loading="lazy" style="max-width:100%;border-radius:6px"></figure>
 </div>
 </section>
 

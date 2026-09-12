@@ -4,10 +4,17 @@ import { mock } from 'node:test';
 import cp from 'node:child_process';
 import { register, getDaemonStatus } from '../scripts/postman-mcp.js';
 import { ROUTES } from '../scripts/panel.js';
+import daemonPid from '../scripts/aki-pmcontrol/scripts/daemon-pid.js';
+
+// Hermetic: neutralize the real on-disk daemon pid file so a daemon actually running on this
+// machine (e.g. one serving a live session) cannot leak into the baseline. cp.spawn is mocked
+// below for the same reason — the test asserts the module's own behavior, not ambient machine state.
+mock.method(daemonPid, 'read', () => null);
 
 // Read-only by default: importing/registering the tool must never spawn or assume a daemon.
 let handler;
-register({ registerTool: (name, _def, fn) => { assert.equal(name, 'postman_status'); handler = fn; } });
+register({ registerTool: (name, _def, fn) => { if (name === 'postman_status') handler = fn; } });
+assert.ok(handler, 'postman_status tool must be registered');
 const before = JSON.parse((await handler()).content[0].text);
 assert.equal(before.running, false, 'importing the module must not spawn or assume a daemon');
 assert.equal(before.pid, null);

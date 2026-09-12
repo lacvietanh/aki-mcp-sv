@@ -10,7 +10,8 @@ const os = require('os');
 const { execFile } = require('child_process');
 const { fetchAllUsage } = require('./scripts/cdp-usage');
 const { PostmanSession } = require('./scripts/postman-session');
-const { loadInstruction, saveInstruction, copyDefaultIfMissing } = require('./scripts/instruction-store');
+const { eligibleTargets, attachmentTargets, deterministicOwnerTargetId, waitForEligibleTargets, openOwnedWindow } = require('./scripts/postman-ownership');
+const { loadInstruction, copyDefaultIfMissing } = require('./scripts/instruction-store');
 const daemonPid = require('./scripts/daemon-pid');
 const {
   checkForUpdate,
@@ -26,21 +27,23 @@ const PROMPTS_DIR = path.join(AKI_DATA_DIR, 'prompts');
 const ASSETS_PROMPTS_DIR = path.join(__dirname, 'assets', 'prompts');
 const PROVIDER = 'postman';
 const SUM_PROMPT_NAME = 'aki-prompt-sum-to-new-chat.md';
-const USER_PROMPT_PATH = path.join(PROMPTS_DIR, `${PROVIDER}.md`);
 const DEFAULT_PROMPT_PATH = path.join(ASSETS_PROMPTS_DIR, `${PROVIDER}.md`);
 const SHARED_PROMPT_USER_PATH = path.join(PROMPTS_DIR, SUM_PROMPT_NAME);
 const SHARED_PROMPT_DEFAULT_PATH = path.join(ASSETS_PROMPTS_DIR, SUM_PROMPT_NAME);
 
-// Pre-refactor writable dir (data.json/daemon.pid/new-window.flag/cdp-usage) — out of scope per docs/plan/done/instructions-prompts-refactor.md § No action; only the prompt file migrates to AKI_DATA_DIR, so this stays read-only for prompts (legacy fallback).
+// Writable runtime dir for daemon state (data.json/ownership-status/usage-turns). The Postman instruction is now served natively read-only from the bundled repo asset — no user-editable copy, no legacy fallback.
 const LEGACY_CDP_DIR = path.join(os.homedir(), '.aki', 'cdp-postman');
 const DATA_JSON_PATH = path.join(LEGACY_CDP_DIR, 'data.json');
-const LEGACY_INSTRUCTION_PATH = path.join(LEGACY_CDP_DIR, 'aki-postman-instruction.md');
-const LEGACY_REPO_INSTRUCTION_PATH = path.join(__dirname, 'data', 'aki-postman-instruction.md');
+const OWNERSHIP_STATUS_PATH = path.join(LEGACY_CDP_DIR, 'ownership-status.json');
 const RULES_SOURCE_FILE = path.join(RULES_DIR, '.source-repo');
 const RULES_CLONE_DIR = path.join(os.homedir(), '.aki', 'akidevrule-src');
 const RULES_REPO_URL = 'https://github.com/lacvietanh/akidevrule.git';
 
 const clients = new Map();
+const attachedTargetIds = new Set();
+let controlSession = null;
+let ownerTargetId = null;
+let ownershipMode = null;
 let cachedUsageData = null;
 let cachedUpdateInfo = localSnapshot();
 let akiConfig = null;
@@ -214,24 +217,26 @@ function logUsageTurn(ctx, latest, convo) {
   } catch (e) {}
 }
 
-// The daemon's automation contract — auto-click + panel-stays-open must hold on every start
-// path (Launch, already-open Postman attach, daemon restart), not merely on first-ever
-// creation. A mid-session uncheck lives only in the page's in-memory `config` and never
-// becomes the next boot's default.
-const FORCED_ON_KEYS = ['autoApprove', 'autoContinue', 'autoRun', 'autoRetry', 'autoRejectPickFolder', 'isPinned', 'autoInjectInstruction'];
-
 // Panel → daemon IPC for the "New window" panel button (scripts/panel.js's
 // POST /api/postman-new-window, via postman-mcp.js's requestNewWindow): a flag file next to
 // data.json is the smallest transport that works — the panel is the only writer, this is the
 // only reader/deleter, and it rides discover()'s existing 1s tick instead of a new interval.
 const NEW_WINDOW_FLAG_PATH = path.join(LEGACY_CDP_DIR, 'new-window.flag');
 
-function consumePendingNewWindow() {
+async function consumePendingNewWindow() {
   if (!fs.existsSync(NEW_WINDOW_FLAG_PATH)) return;
   try { fs.unlinkSync(NEW_WINDOW_FLAG_PATH); } catch (e) {}
-  for (const client of clients.values()) {
-    client.Runtime.evaluate({ expression: "window.pm && window.pm.mediator.trigger('newRequesterWindow')" }).catch(() => {});
-  }
+  const ownerClient = ownerTargetId && clients.get(ownerTargetId);
+  if (!ownerClient || !controlSession) return;
+  const target = await openOwnedWindow({
+    ownerClient,
+    listTargets: () => CDP.List({ port: controlSession.port }),
+    isEligible: isKnownPostmanSurface,
+  });
+  if (!target) return;
+  attachedTargetIds.add(target.id);
+  await setupCDP(target, controlSession.port);
+  writeOwnershipStatus();
 }
 
 function loadAkiData() {
@@ -243,42 +248,27 @@ function loadAkiData() {
   }
   if (!data) data = {};
 
-  let changed = false;
-  for (const key of FORCED_ON_KEYS) {
-    if (data[key] !== true) { data[key] = true; changed = true; }
+  if (data.__v !== 2) {
+    data.__v = 2;
+    saveAkiData(data);
   }
-  if (data.__v !== 2) { data.__v = 2; changed = true; }
-  if (changed) saveAkiData(data);
 
   akiConfig = data;
   return data;
 }
 
 function loadInstructionFile() {
-  return loadInstruction([
-    USER_PROMPT_PATH,
-    LEGACY_INSTRUCTION_PATH,
-    LEGACY_REPO_INSTRUCTION_PATH,
-    DEFAULT_PROMPT_PATH,
-  ]);
-}
-
-function saveInstructionFile(text) {
-  try {
-    saveInstruction(USER_PROMPT_PATH, text);
-  } catch (e) {
-    console.error('❌ Lỗi ghi file prompts/postman.md:', e.message);
-  }
+  // Served natively read-only from the bundled repo asset — intentionally no user/home/legacy override.
+  return loadInstruction([DEFAULT_PROMPT_PATH]);
 }
 
 function loadSummarizePromptFile() {
   return loadInstruction([SHARED_PROMPT_USER_PATH, SHARED_PROMPT_DEFAULT_PATH]);
 }
 
-// Centralizes mkdir + default-copy so both live only here instead of scattered across saveInstruction/saveAkiData/installAkiRule (docs/plan/done/instructions-prompts-refactor.md §2).
+// Seeds only the user-editable summarize prompt. The Postman instruction is served natively read-only from the repo asset, so it is intentionally NOT copied to a writable home file.
 function init() {
   fs.mkdirSync(PROMPTS_DIR, { recursive: true });
-  copyDefaultIfMissing(USER_PROMPT_PATH, DEFAULT_PROMPT_PATH);
   copyDefaultIfMissing(SHARED_PROMPT_USER_PATH, SHARED_PROMPT_DEFAULT_PATH);
 }
 
@@ -328,20 +318,53 @@ async function installAkiRule() {
     }
     repo = RULES_CLONE_DIR;
   }
-  const bash = process.platform === 'win32' ? 'bash.exe' : 'bash';
-  const install = await runCmd(bash, [path.join(repo, 'install.sh')], repo);
-  if (!install.ok && process.platform === 'win32' && /ENOENT|not found/i.test(install.msg)) {
-    return { ok: false, msg: 'bash not found — install Git for Windows (includes bash)' };
+  // akidevrule ships install.ps1 / install.py for Windows on purpose: a bare `bash.exe` there resolves to the WSL
+  // launcher (System32\bash.exe) and dies with "execvpe(/bin/bash) failed" when no WSL distro is installed. Choose a
+  // real interpreter by platform + whichever installer this clone actually ships; never fall through to WSL bash.
+  let cmd, args;
+  if (process.platform === 'win32') {
+    if (fs.existsSync(path.join(repo, 'install.ps1'))) {
+      cmd = 'powershell';
+      args = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', path.join(repo, 'install.ps1')];
+    } else if (fs.existsSync(path.join(repo, 'install.py'))) {
+      cmd = 'py';
+      args = ['-3', path.join(repo, 'install.py')];
+    } else {
+      return { ok: false, msg: 'this akidevrule clone has no install.ps1 / install.py for Windows — pull the latest akidevrule and retry' };
+    }
+  } else {
+    cmd = 'bash';
+    args = [path.join(repo, 'install.sh')];
+  }
+  const install = await runCmd(cmd, args, repo);
+  if (!install.ok && process.platform === 'win32' && /ENOENT|not found|execvpe|\/bin\/bash|WSL/i.test(install.msg)) {
+    return { ok: false, msg: 'Windows install failed — install.ps1/install.py could not run (do not use WSL bash): ' + install.msg };
   }
   const last = (install.msg || '').split('\n').filter(Boolean).pop() || install.msg;
   return { ok: install.ok, msg: `${last} (source: ${repo})`, version: getLocalVersions().current };
 }
 
+// The app's own version (repo-root package.json) — shown as the version subline under the panel title. Cached and best-effort so a standalone/lab checkout without that package.json still boots.
+let cachedAppVersion;
+function getAppVersion() {
+  if (cachedAppVersion !== undefined) return cachedAppVersion;
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf8'));
+    cachedAppVersion = (pkg && pkg.version) || null;
+  } catch (e) {
+    cachedAppVersion = null;
+  }
+  return cachedAppVersion;
+}
+
 function getScriptBundle() {
-  const autoclickerPath = path.join(__dirname, 'scripts', 'cdp-autoclicker.js');
+  const scriptsDir = path.join(__dirname, 'scripts');
+  const autoclickerPath = path.join(scriptsDir, 'cdp-autoclicker.js');
+  const matcherPath = path.join(scriptsDir, 'autoclick-target-match.js');
   let scriptContent = '';
   if (fs.existsSync(autoclickerPath)) {
-    scriptContent = fs.readFileSync(autoclickerPath, 'utf8');
+    const matcherContent = fs.existsSync(matcherPath) ? fs.readFileSync(matcherPath, 'utf8') : '';
+    scriptContent = matcherContent + '\n' + fs.readFileSync(autoclickerPath, 'utf8');
   }
 
   const initialConfig = loadAkiData();
@@ -349,7 +372,9 @@ function getScriptBundle() {
     window.__pmInitialConfig = ${JSON.stringify(initialConfig)};
     window.__pmUsageData = ${JSON.stringify(cachedUsageData)};
     window.__pmUpdateInfo = ${JSON.stringify(cachedUpdateInfo)};
+    window.__pmAppVersion = ${JSON.stringify(getAppVersion())};
     window.__pmInitialInstruction = ${JSON.stringify(loadInstructionFile())};
+    window.__pmRuntime = ${JSON.stringify({ cdpPort: controlSession ? controlSession.port : null, daemonPid: process.pid })};
   `;
 
   return configInjection + '\n' + scriptContent;
@@ -396,12 +421,7 @@ async function setupCDP(target, port) {
       await client.Runtime.addBinding({ name: '__cdpInstallAkiRule' });
     } catch (e) {}
 
-    // 3c. Binding save instruction text (textarea → $AKI_DATA_DIR/prompts/postman.md)
-    try {
-      await client.Runtime.addBinding({ name: '__cdpSaveInstruction' });
-    } catch (e) {}
-
-    // 3d. Binding "Summarize for handoff" — daemon reads the summarize prompt file and delivers it to the page
+    // 3c. Binding "Summarize for handoff" — daemon reads the summarize prompt file and delivers it to the page
     try {
       await client.Runtime.addBinding({ name: '__cdpRequestSummarize' });
     } catch (e) {}
@@ -433,8 +453,6 @@ async function setupCDP(target, port) {
         }
         await refreshUsageData(tokenToUse);
         pushUsageToPage(client);
-      } else if (event.name === '__cdpSaveInstruction') {
-        saveInstructionFile(event.payload);
       } else if (event.name === '__cdpRequestSummarize') {
         const summarizePrompt = loadSummarizePromptFile();
         client.Runtime.evaluate({
@@ -489,16 +507,47 @@ function isKnownPostmanSurface(url) {
   }
 }
 
-async function discover() {
-  consumePendingNewWindow();
-  const port = PostmanSession.getDevToolsPort();
+function writeOwnershipStatus() {
+  if (!controlSession) return;
+  const status = {
+    daemonPid: process.pid,
+    attached: !!ownerTargetId && clients.has(ownerTargetId),
+    endpoint: { host: '127.0.0.1', port: controlSession.port, browserIdentity: controlSession.browserIdentity },
+    ownerTargetId,
+    attachedWindowCount: attachedTargetIds.size,
+    mode: ownershipMode,
+    launchProcessPid: controlSession.launchProcessPid,
+  };
   try {
-    const targets = await CDP.List({ port });
-    for (const target of targets) {
-      if (target.type === 'page' && isKnownPostmanSurface(target.url)) {
-        await setupCDP(target, port);
-      }
+    fs.mkdirSync(LEGACY_CDP_DIR, { recursive: true });
+    const temporary = `${OWNERSHIP_STATUS_PATH}.${process.pid}.tmp`;
+    fs.writeFileSync(temporary, JSON.stringify(status, null, 2));
+    fs.renameSync(temporary, OWNERSHIP_STATUS_PATH);
+  } catch {}
+}
+
+async function discover() {
+  await consumePendingNewWindow();
+  if (!controlSession) return;
+  try {
+    const targets = await CDP.List({ port: controlSession.port });
+    const currentIds = new Set(targets.map((target) => target.id));
+    for (const targetId of [...attachedTargetIds]) {
+      if (currentIds.has(targetId)) continue;
+      attachedTargetIds.delete(targetId);
+      const client = clients.get(targetId);
+      if (client) try { client.close(); } catch {}
+      clients.delete(targetId);
     }
+    const validTargets = attachmentTargets(targets, isKnownPostmanSurface);
+    for (const target of validTargets) {
+      attachedTargetIds.add(target.id);
+      await setupCDP(target, controlSession.port);
+    }
+    if (!ownerTargetId || !attachedTargetIds.has(ownerTargetId)) {
+      ownerTargetId = deterministicOwnerTargetId(validTargets, isKnownPostmanSurface);
+    }
+    writeOwnershipStatus();
   } catch (e) {}
 }
 
@@ -528,12 +577,16 @@ async function shutdown() {
     try { client.close(); } catch { /* already gone */ }
   }
   clients.clear();
+  try { fs.unlinkSync(OWNERSHIP_STATUS_PATH); } catch {}
   daemonPid.release();
   process.exit(0);
 }
 process.on('SIGINT', () => { shutdown(); });
 process.on('SIGTERM', () => { shutdown(); });
-process.on('exit', () => daemonPid.release());
+process.on('exit', () => {
+  try { fs.unlinkSync(OWNERSHIP_STATUS_PATH); } catch {}
+  daemonPid.release();
+});
 
 async function main() {
   daemonPid.claim();
@@ -548,7 +601,21 @@ async function main() {
     pushUpdateInfoToAll();
   }).catch(() => {});
 
-  await PostmanSession.ensureRunning();
+  controlSession = await PostmanSession.ensureRunning();
+  ownershipMode = controlSession.launched ? 'launched' : 'adopted';
+  if (controlSession.launched) {
+    const initialTargets = await waitForEligibleTargets({
+      listTargets: () => CDP.List({ port: controlSession.port }),
+      isEligible: isKnownPostmanSurface,
+      timeoutMs: 15000,
+    });
+    if (initialTargets) controlSession.targets = initialTargets;
+  }
+  const targets = attachmentTargets(controlSession.targets, isKnownPostmanSurface);
+  for (const target of targets) attachedTargetIds.add(target.id);
+  ownerTargetId = deterministicOwnerTargetId(targets, isKnownPostmanSurface);
+  for (const target of targets) await setupCDP(target, controlSession.port);
+  writeOwnershipStatus();
   await refreshUsageData();
 
   setInterval(discover, 1000);

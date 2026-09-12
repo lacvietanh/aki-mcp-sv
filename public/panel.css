@@ -50,8 +50,8 @@ textarea { min-height: 90px; resize: vertical; line-height: 1.5; }
 .step-n { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; border: 1px solid currentColor; font-size: 11px; font-weight: 700; flex-shrink: 0; }
 .step.done a { color: var(--ok); border-color: var(--ok); }
 .step.done .step-n { border-color: var(--ok); background: var(--ok); color: #fff; }
-.step.opt em { font-style: normal; opacity: .65; font-size: 10.5px; }
 .done-tag { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--ok); border: 1px solid var(--ok); border-radius: 5px; padding: 1px 6px; margin-left: 6px; vertical-align: middle; }
+.dev-tag { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #ff9800; border: 1px solid #ff9800; border-radius: 5px; padding: 1px 6px; margin-left: 8px; vertical-align: middle; }
 .acts { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
 .to-top { position: fixed; right: 20px; bottom: 20px; width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--line); background: var(--card); color: var(--fg); font-size: 18px; line-height: 1; display: none; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,.18); z-index: 50; }
 .to-top:hover { border-color: var(--accent); color: var(--accent); }

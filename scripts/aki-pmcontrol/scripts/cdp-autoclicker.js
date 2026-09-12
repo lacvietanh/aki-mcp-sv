@@ -19,7 +19,7 @@
   const PM_EVENT_NEW_REQUESTER_WINDOW = 'newRequesterWindow';
 
   // Prompt + procedure: docs/ref/postman-permission-popup-test.md
-  const PERMISSION_CARD_ROOT = '.tool-approval-wrapper, .tool-approval-single-item';
+  const PERMISSION_CARD_ROOT = '.tool-approval-wrapper, .tool-approval-single-item, .external-mcp-tool-approval, .ai-chat-loop-approval-message';
 
   const AUTO_CLICK_TARGETS = [
     {
@@ -144,7 +144,7 @@
       return this.targets
         .filter((t) => t.keywords)
         .sort((a, b) => a.classifyRank - b.classifyRank)
-        .find((t) => t.keywords.some((kw) => (t.matchExact ? text === kw : (text === kw || text.includes(kw)))))
+        .find((t) => matchesAutoClickTarget(text, t))
         || null;
     }
   }
@@ -192,7 +192,7 @@
   }
 
   function slotButton(card, kind) {
-    const buttons = [...card.querySelectorAll('button')].filter((b) => isVisible(b) && !b.disabled);
+    const buttons = [...card.querySelectorAll('button')].filter((b) => isVisible(b) && !b.disabled && b.dataset.akiPressed !== '1');
     if (kind === 'decline') return buttons.find(isDeclineButton) || null;
     return buttons.find((b) => autoClicker.matchPrimary(buttonLabel(b)))
       || (card.matches(PERMISSION_CARD_ROOT) ? buttons.find((b) => !isDeclineButton(b)) : null);
@@ -225,11 +225,44 @@
     el.click();
   }
 
+  // Dispatches hover (pointer/mouse enter) events. "More models" is an szh hover-submenu
+  // (onPointerEnter) that does NOT open on click, so press() can't reveal its items.
+  function hoverEl(el) {
+    if (!el) return;
+    const P = window.PointerEvent || MouseEvent;
+    for (const type of ['pointerover', 'pointerenter', 'pointermove']) {
+      try { el.dispatchEvent(new P(type, { bubbles: true, cancelable: true, view: window, pointerId: 1 })); } catch (e) {}
+    }
+    for (const type of ['mouseover', 'mouseenter', 'mousemove']) {
+      try { el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window })); } catch (e) {}
+    }
+  }
+
   function permissionCards() {
     const wrappers = [...document.querySelectorAll(PERMISSION_CARD_ROOT)];
     const dialogs = [...document.querySelectorAll('[role="dialog"], [role="alertdialog"]')]
       .filter((d) => !d.querySelector(PERMISSION_CARD_ROOT));
-    return [...wrappers, ...dialogs].filter((el) => isVisible(el) && !el.closest('#aki-control-panel'));
+    const dynamicCards = [];
+    const chat = document.querySelector('[data-testid="ai-chat-container"]') || document.body;
+    const buttons = chat.querySelectorAll('button');
+    for (const btn of buttons) {
+      if (!isVisible(btn) || btn.disabled || btn.dataset.akiPressed === '1' || btn.closest('#aki-control-panel')) continue;
+      const label = buttonLabel(btn);
+      const isAction = autoClicker.matchPrimary(label);
+      const cardCandidate = btn.closest(PERMISSION_CARD_ROOT)
+        || btn.closest('[role="dialog"], [role="alertdialog"]')
+        || btn.closest('[class*="approval"], [class*="Approval"]')
+        || btn.closest('.ai-chat-message')
+        || btn.parentElement;
+      const isFolderDecline = isDeclineButton(btn) && cardCandidate && cardCopy(cardCandidate).toLowerCase().includes(AUTO_REJECT_PICK_FOLDER.bodyNeedle);
+      if (isAction || isFolderDecline) {
+        const card = cardCandidate;
+        if (card && !wrappers.includes(card) && !dialogs.includes(card) && !dynamicCards.includes(card)) {
+          dynamicCards.push(card);
+        }
+      }
+    }
+    return [...wrappers, ...dialogs, ...dynamicCards].filter((el) => isVisible(el) && !el.closest('#aki-control-panel'));
   }
 
   function cardCopy(card) {
@@ -239,7 +272,7 @@
   function creditArm() {
     const armed = window.__pmArmedCard;
     if (!armed) return;
-    if (armed.el && armed.el.isConnected) return;
+    if (armed.el && armed.el.isConnected && (!armed.btn || armed.btn.isConnected)) return;
     window.__pmArmedCard = null;
     if (armed.kind === 'folder') {
       window.__pmStats[AUTO_REJECT_PICK_FOLDER.statKey]++;
@@ -256,7 +289,6 @@
 
   // docs/ref/postman-permission-popup-test.md
   function tickPermissionCards(cfg) {
-    if (window.__pmPendingAgentSwitch) return;
     creditArm();
 
     permissionCards().forEach((card) => {
@@ -268,7 +300,8 @@
         const decline = slotButton(card, 'decline');
         if (!decline) return;
         card.dataset.akiPressed = '1';
-        window.__pmArmedCard = { kind: 'folder', copy, label: buttonLabel(decline), el: card };
+        decline.dataset.akiPressed = '1';
+        window.__pmArmedCard = { kind: 'folder', copy, label: buttonLabel(decline), el: card, btn: decline };
         press(decline);
         if (!card.isConnected) creditArm();
         return;
@@ -281,7 +314,8 @@
       const allowed = row ? cfg[row.configKey] : (card.matches(PERMISSION_CARD_ROOT) && cfg.autoApprove);
       if (!allowed) return;
       card.dataset.akiPressed = '1';
-      window.__pmArmedCard = { kind: 'confirm', copy, label, el: card };
+      confirm.dataset.akiPressed = '1';
+      window.__pmArmedCard = { kind: 'confirm', copy, label, el: card, btn: confirm };
       press(confirm);
       if (!card.isConnected) creditArm();
     });
@@ -333,6 +367,41 @@
         }
       }
     }
+    return false;
+  }
+
+  // Opens a URL in the OS default browser via Postman's own openExternalLink (the same function its
+  // Docs / Support / billing links use), so links leave the app instead of opening an in-app tab.
+  // The defining module's id is hashed per build, so find it by its unique export signature — never a
+  // fixed id — cache the resolved function, and fall back to window.open if the module can't be found.
+  function openExternalUrl(url) {
+    if (!url) return false;
+    try {
+      if (typeof window.__akiOpenExternal === 'function') {
+        window.__akiOpenExternal(url, '_blank');
+        return true;
+      }
+      const req = webpackRequire();
+      const chunks = window.rspackChunk_postman_app_renderer;
+      if (req && chunks) {
+        for (const item of chunks) {
+          const mods = item && item[1];
+          if (!mods) continue;
+          for (const mid of Object.keys(mods)) {
+            let src = '';
+            try { src = Function.prototype.toString.call(mods[mid]); } catch (e) { continue; }
+            if (src.indexOf('openExternalLink:()=>') === -1) continue;
+            const mod = req(mid);
+            if (mod && typeof mod.openExternalLink === 'function') {
+              window.__akiOpenExternal = mod.openExternalLink;
+              window.__akiOpenExternal(url, '_blank');
+              return true;
+            }
+          }
+        }
+      }
+    } catch (e) { /* fall through to window.open */ }
+    try { window.open(url, '_blank'); } catch (e) { /* ignore */ }
     return false;
   }
 
@@ -486,11 +555,34 @@
     }
 
     const btn = agentSwitchOpenBtn(pending.kind);
-    if (!btn) return;
+    if (!btn) {
+      // The model/settings control lives inside the AI chat panel; if it's collapsed or still loading at
+      // bootstrap, open it and wait instead of silently giving up — this is what made the toggle feel "not
+      // bound" on a fresh start. Only refund the give-up tick while we actually issued an open, so a truly
+      // absent control still expires and can never permanently stall the permission-card loop.
+      if (ensureAiChatOpen()) {
+        console.log('[⚡ AutoRun] Opening AI Chat Panel to apply ' + pending.kind + ' toggle...');
+        pending.ticks = Math.max(0, pending.ticks - 1);
+      }
+      return;
+    }
     if (btn.getAttribute('aria-expanded') !== 'true') {
       btn.click();
       window.__pmAgentMenuOpened = true;
     }
+  }
+
+  // Opens the AI chat side panel when it is hidden; returns whether a click was issued. Shared by startup and the agent-toggle apply path so Thinking / Auto-run work even when the chat is collapsed or still loading.
+  function ensureAiChatOpen() {
+    const toggleBtn = document.querySelector('button[data-testid="toggle-right-sidebar"]');
+    if (!toggleBtn || !isVisible(toggleBtn)) return false;
+    const svgUse = toggleBtn.querySelector('svg use, use');
+    const href = svgUse ? (svgUse.getAttribute('href') || svgUse.getAttribute('xlink:href') || '') : '';
+    if (href.includes('hidden')) {
+      toggleBtn.click();
+      return true;
+    }
+    return false;
   }
 
   function handleStartupSequence() {
@@ -499,12 +591,7 @@
     const toggleBtn = document.querySelector('button[data-testid="toggle-right-sidebar"]');
     if (!toggleBtn || !isVisible(toggleBtn)) return;
 
-    const svgUse = toggleBtn.querySelector('svg use, use');
-    const href = svgUse ? (svgUse.getAttribute('href') || svgUse.getAttribute('xlink:href') || '') : '';
-    if (href.includes('hidden')) {
-      console.log('[⚡ AutoRun] Startup: Opening AI Chat Panel...');
-      toggleBtn.click();
-    }
+    if (ensureAiChatOpen()) console.log('[⚡ AutoRun] Startup: Opening AI Chat Panel...');
 
     renderAkiWidget();
     const panel = document.getElementById('aki-control-panel');
@@ -517,6 +604,175 @@
 
   function ruleInfo() {
     return (window.__pmUpdateInfo && window.__pmUpdateInfo.rule) || {};
+  }
+
+  // === AKI MODEL SWITCH ===
+  // Maps the panel radio values to the exact model label + committed model id.
+  const AKI_MODELS = {
+    '56so': { label: 'GPT-5.6 Sol', id: 'GPT_56_SOL' },
+    '56lu': { label: 'GPT-5.6 Luna', id: 'GPT_56_LUNA', more: true },
+    '48op': { label: 'Claude Opus 4.8', id: 'CLAUDE_OPUS_48_BEDROCK' },
+    'auto': { label: 'Auto', auto: true },
+  };
+
+  // Postman renders the Auto row label as "AutoOptimized for most tasks" (no separator) and the
+  // model-menu button's aria-label as "Auto" while Auto is on. Match a leading "auto" — /^auto\b/
+  // fails on "AutoOptimized" (no word boundary between the two letters).
+  const looksAuto = (t) => /^auto/i.test((t || '').trim());
+
+  // Opens the AI chat model menu (reusing the same menu-open button as the agent-switch 'thinking' path) and waits a couple of rAF frames for the menu items to mount. Returns the menu element or null.
+  async function openModelMenu() {
+    let menu = document.querySelector('[data-testid="ai-chat-model-menu"]');
+    if (menu) return menu;
+    const btn = agentSwitchOpenBtn('thinking');
+    if (!btn) { ensureAiChatOpen(); return null; }
+    if (btn.getAttribute('aria-expanded') !== 'true') {
+      btn.click();
+      window.__pmAgentMenuOpened = true;
+    }
+    for (let i = 0; i < 6 && !menu; i++) {
+      await new Promise((r) => requestAnimationFrame(r));
+      menu = document.querySelector('[data-testid="ai-chat-model-menu"]');
+    }
+    return menu;
+  }
+
+  function closeModelMenu() { closeAgentMenuIfOpened('thinking'); }
+
+  // Inside an open model menu, reveal the collapsed 'More models' submenu if present.
+  // Reuses the file's rAF frame-wait style. Safe no-op when the button is absent.
+  // "More models" opens on HOVER (onPointerEnter), not click, and renders its items in a
+  // separate portal (aether-portals) outside [data-testid="ai-chat-model-menu"] — so we hover
+  // to open and the caller must re-scan document-wide (see modelMenuItems). Mount is ~instant
+  // but we poll (holding hover) until the item set grows, to be robust.
+  async function expandMoreModels() {
+    const more = document.querySelector('[data-testid="ai-chat-more-models-button"]');
+    if (!more) return false;
+    const before = modelMenuItems().length;
+    // This Postman build opens the "More models" submenu on click; older builds used hover — try both.
+    if (more.getAttribute('aria-expanded') !== 'true') press(more);
+    hoverEl(more);
+    for (let i = 0; i < 30; i++) {
+      if (modelMenuItems().length > before) return true;
+      hoverEl(more);
+      await new Promise((r) => requestAnimationFrame(r));
+    }
+    return modelMenuItems().length > before;
+  }
+
+  // Scan document-wide (ignore the `menu` arg): the "More models" submenu renders its items
+  // in a portal (aether-portals) OUTSIDE [data-testid="ai-chat-model-menu"], so scoping to the
+  // menu container would miss GPT-5.6 Luna et al. The model menu is modal, so document-wide is safe.
+  function modelMenuItems(menu) {
+    return [...document.querySelectorAll('[role="menuitemradio"], [role="menuitem"]')]
+      .filter((el) => !/enable extended thinking/i.test((el.textContent || '').trim()));
+  }
+
+  // Reads the currently active model + thinking state. The model-menu button label is the reliable live
+  // signal ("Auto" while Auto is on, else the model name): Postman sets no aria-checked on the menu items,
+  // and localStorage keeps naming the last concrete model even while Auto is on. No menu open needed.
+  async function getCurrentModelSelection() {
+    return { modelText: currentModelLabelCheap(), thinking: readPostmanAgentMode().thinking, id: localStorage.getItem('ai-chat-last-selected-model') };
+  }
+
+  function selectedModelId(selection) {
+    if (selection.modelText) {
+      const liveModel = Object.values(AKI_MODELS).find((candidate) => candidate.label === selection.modelText);
+      return liveModel ? liveModel.id : null;
+    }
+    return selection.id;
+  }
+
+  // Cheap current-model read from the chat's model-menu button label — no menu open, safe on every panel render. agentSwitchOpenBtn('thinking') is the button whose label names the live model / Auto.
+  function currentModelLabelCheap() {
+    const btn = agentSwitchOpenBtn('thinking');
+    if (!btn) return '';
+    return (btn.getAttribute('aria-label') || btn.innerText || '').trim();
+  }
+
+  // Matches a model-menu item to a panel model. 'Auto' has no committed id, so it is matched by label prefix (Postman may render 'Auto' with a trailing description); concrete models match exactly.
+  function modelItemMatches(el, model) {
+    const text = (el.textContent || '').trim();
+    return model.auto ? looksAuto(text) : text === model.label;
+  }
+
+  // Confirms a live selection is the requested model. Auto is a toggle whose only reliable signal is the
+  // model-button label ("Auto"); localStorage keeps naming the previous concrete id, so while Auto is on
+  // no concrete model may match. For concrete models the live label OR the committed id is authoritative.
+  function selectionMatches(selection, model) {
+    if (model.auto) return looksAuto(selection.modelText);
+    if (looksAuto(selection.modelText)) return false;
+    return selection.modelText === model.label || selection.id === model.id;
+  }
+
+  // Applies the requested model. Auto is a TOGGLE whose row collapses the menu to just itself while on,
+  // not a peer radio: to pick Auto we press its row; to pick a concrete model while Auto is on we first
+  // toggle Auto off (which re-expands the concrete list), then click the target. Verified via the button label.
+  async function selectModel(model) {
+    if (!model) return false;
+    if (selectionMatches(await getCurrentModelSelection(), model)) return true;
+
+    let menu = await openModelMenu();
+    if (!menu) { console.warn('[AKI] selectModel: model menu not available'); closeModelMenu(); return false; }
+    const autoRow = () => modelMenuItems(menu).find((el) => looksAuto((el.textContent || '').trim()));
+
+    if (model.auto) {
+      const row = autoRow();
+      if (row) press(row);
+    } else {
+      // Auto on => the menu shows only the Auto row; toggle it off, then re-open to reveal the concrete list.
+      if (looksAuto(currentModelLabelCheap())) {
+        const row = autoRow();
+        if (row) press(row);
+        for (let i = 0; i < 8 && looksAuto(currentModelLabelCheap()); i++) await new Promise((r) => requestAnimationFrame(r));
+        menu = await openModelMenu();
+        if (!menu) { closeModelMenu(); return false; }
+      }
+      let item = modelMenuItems(menu).find((el) => modelItemMatches(el, model));
+      if (!item && model.more) {
+        await expandMoreModels();
+        item = modelMenuItems(menu).find((el) => modelItemMatches(el, model));
+      }
+      if (!item) {
+        console.warn('[AKI] selectModel: no menu item for ' + model.label);
+        closeModelMenu();
+        return false;
+      }
+      press(item);
+    }
+    closeModelMenu();
+    for (let i = 0; i < 8; i++) {
+      await new Promise((r) => requestAnimationFrame(r));
+      if (selectionMatches(await getCurrentModelSelection(), model)) return true;
+    }
+    console.warn('[AKI] model switch not confirmed as ' + model.label);
+    return false;
+  }
+
+  // Opens the model menu and clicks the item whose trimmed textContent === text. No-op if absent.
+  async function selectModelByText(text) {
+    if (!text) return false;
+    const menu = await openModelMenu();
+    if (!menu) { closeModelMenu(); return false; }
+    let item = modelMenuItems(menu).find((el) => (el.textContent || '').trim() === text.trim());
+    if (!item) {
+      await expandMoreModels();
+      item = modelMenuItems(menu).find((el) => (el.textContent || '').trim() === text.trim());
+    }
+    if (!item) { closeModelMenu(); return false; }
+    press(item);
+    return true;
+  }
+
+  // Sets the "extended thinking" toggle to `want` using the same __pmPendingAgentSwitch/applyPendingAgentSwitch mechanism the panel thinking checkbox uses. Toggles only if the live state differs from desired.
+  async function setThinkingEnabled(want) {
+    want = !!want;
+    if (readPostmanAgentMode().thinking === want) return;
+    window.__pmPendingAgentSwitch = { kind: 'thinking', want };
+    for (let i = 0; i < 14 && window.__pmPendingAgentSwitch; i++) {
+      applyPendingAgentSwitch();
+      await new Promise((r) => requestAnimationFrame(r));
+    }
   }
 
   function instructionPrefix() {
@@ -744,7 +1000,7 @@
       link.onclick = (e) => {
         e.preventDefault();
         e.stopPropagation();
-        window.open(link.href, '_blank');
+        openExternalUrl(link.href);
       };
     });
   }
@@ -754,7 +1010,7 @@
   const PANEL_WIDTH = 350;
   const ANCHOR_GAP = 4;
   const VIEWPORT_PAD = 8;
-  const AKI_UI_V = 'aether19';
+  const AKI_UI_V = 'aether22';
 
   function togglePanel(forcedState) {
     const panel = document.getElementById('aki-control-panel');
@@ -918,7 +1174,7 @@
       #aki-control-panel .aki-head {
         display: flex;
         justify-content: space-between;
-        align-items: center;
+        align-items: flex-start;
         border-bottom: var(--border-width-default) solid var(--border-color-default);
         padding-bottom: var(--spacing-s);
         margin-bottom: var(--spacing-m);
@@ -932,6 +1188,39 @@
         display: flex;
         align-items: center;
         gap: var(--spacing-s);
+      }
+      #aki-control-panel .aki-brand {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        min-width: 0;
+      }
+      #aki-control-panel .aki-title-row {
+        display: flex;
+        align-items: baseline;
+        gap: var(--spacing-s);
+        flex-wrap: wrap;
+      }
+      #aki-control-panel .aki-version {
+        font-size: var(--text-size-xs);
+        color: var(--content-color-tertiary);
+        font-weight: var(--text-weight-regular);
+      }
+      #aki-control-panel .aki-brand-link {
+        font-size: var(--text-size-xs);
+        color: var(--content-color-brand);
+        text-decoration: none;
+        font-weight: var(--text-weight-medium);
+        cursor: pointer;
+        width: fit-content;
+      }
+      #aki-control-panel .aki-brand-link:hover { text-decoration: underline; }
+      #aki-control-panel .aki-runtime {
+        display: block;
+        margin-top: 2px;
+        font-size: var(--text-size-xs);
+        color: var(--content-color-tertiary);
+        font-variant-numeric: tabular-nums;
       }
       #aki-control-panel .aki-pin {
         background: none;
@@ -969,6 +1258,25 @@
         align-items: center;
         gap: var(--spacing-s);
         cursor: pointer;
+      }
+      #aki-control-panel .aki-model-row {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: var(--spacing-s);
+      }
+      #aki-control-panel .aki-model-row .aki-label {
+        min-width: 0;
+        gap: var(--spacing-xs);
+        white-space: nowrap;
+      }
+      #aki-control-panel .aki-model-row .aki-label span {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      #aki-control-panel .aki-model-row input {
+        flex: 0 0 auto;
+        margin: 0;
       }
       #aki-control-panel .aki-badge {
         color: var(--content-color-brand);
@@ -1249,12 +1557,23 @@
       panel.style.width = `${PANEL_WIDTH}px`;
 
       const agentMode = readPostmanAgentMode();
+      const appVer = (typeof window.__pmAppVersion === 'string' && window.__pmAppVersion) ? window.__pmAppVersion : '';
+      const rt = (window.__pmRuntime && typeof window.__pmRuntime === 'object') ? window.__pmRuntime : {};
+      const runtimeLine = rt.cdpPort
+        ? `<span class="aki-runtime" title="Postman remote-debugging (CDP) port and control-daemon PID">CDP :${escapeHtml(String(rt.cdpPort))}${rt.daemonPid ? ' · PID ' + escapeHtml(String(rt.daemonPid)) : ''}</span>`
+        : '';
       panel.innerHTML = `
         <div class="aki-head">
-          <span class="aki-title">Aki Postman Control Panel</span>
+          <div class="aki-brand">
+            <div class="aki-title-row">
+              <span class="aki-title">Aki MCP for Postman</span>
+              ${appVer ? `<span class="aki-version">v${escapeHtml(appVer)}</span>` : ''}
+            </div>
+            <a href="https://akimcp.top" data-aki-ext class="aki-brand-link" title="Open akimcp.top in your browser">akimcp.top</a>
+            ${runtimeLine}
+          </div>
           <div class="aki-head-actions">
             <button type="button" id="aki-btn-new-window" class="aki-btn">NEW WINDOW</button>
-            <button type="button" id="aki-btn-new-browser-tab" class="aki-btn">NEW BROWSER TAB</button>
             <button type="button" id="aki-panel-pin" class="aki-pin${config.isPinned ? ' is-pinned' : ''}" title="Pin panel (stay open when clicking outside)">${akiPinIcon(config.isPinned)}</button>
           </div>
         </div>
@@ -1268,6 +1587,20 @@
 
         <div class="aki-stack aki-rule">
           <div class="aki-section-label">CHAT AGENT</div>
+          <div class="aki-row aki-model-row">
+            <label class="aki-label" title="GPT-5.6 Sol">
+              <input type="radio" name="aki-model" value="56so"> <span>5.6 Sol</span>
+            </label>
+            <label class="aki-label" title="GPT-5.6 Luna">
+              <input type="radio" name="aki-model" value="56lu"> <span>5.6 Luna</span>
+            </label>
+            <label class="aki-label" title="Opus 4.8 — logic sâu nhất, coding phức tạp & agentic dài hơi; suy luận đa bước bền. Chậm/đắt hơn — để dành việc khó.">
+              <input type="radio" name="aki-model" value="48op"> <span>Opus 4.8</span>
+            </label>
+            <label class="aki-label" title="Auto — Postman tự chọn model phù hợp cho từng bước">
+              <input type="radio" name="aki-model" value="auto"> <span>Auto</span>
+            </label>
+          </div>
           <div class="aki-row">
             <label class="aki-label">
               <input type="checkbox" id="aki-opt-thinking" ${agentMode.thinking ? 'checked' : ''}>
@@ -1285,7 +1618,10 @@
         <div class="aki-stack aki-rule">
           <div class="aki-row">
             <span class="aki-section-label">AKI DEV RULE</span>
-            <button type="button" id="aki-btn-install-rule" class="aki-btn">Install</button>
+            <span class="aki-head-actions">
+              <a href="https://github.com/lacvietanh/akidevrule" data-aki-ext class="aki-view" title="Open the AkiDevRule repo in your browser">Repo</a>
+              <button type="button" id="aki-btn-install-rule" class="aki-btn">Install</button>
+            </span>
           </div>
           <div id="aki-install-rule-status" data-state="unknown"></div>
         </div>
@@ -1293,6 +1629,7 @@
         <div class="aki-stack aki-rule">
           <div class="aki-row">
             <span class="aki-section-label">ANTI-BOT<span class="aki-help" title="Sites can check navigator.webdriver to tell a browser is automated. Protected = Postman was launched with the flag that hides it. Unprotected = it wasn't (still works fine, just detectable).">?</span></span>
+            <button type="button" id="aki-btn-new-browser-tab" class="aki-btn">NEW BROWSER TAB</button>
           </div>
           <div id="aki-stealth-status">${navigator.webdriver
             ? '<span class="aki-err">Unprotected</span><br><span class="aki-muted">Quit Postman fully (Cmd+Q), then npm start / npm run launch to fix.</span>'
@@ -1310,7 +1647,7 @@
               <span>Auto-inject into each new chat</span>
             </label>
           </div>
-          <textarea id="aki-instruction-textarea" class="aki-textarea">${escapeHtml(config.instruction)}</textarea>
+          <textarea id="aki-instruction-textarea" class="aki-textarea" readonly title="Read-only: served natively from the app; cannot be edited here.">${escapeHtml(config.instruction)}</textarea>
           <div class="aki-row">
             <span class="aki-section-label">SUMMARIZE FOR HANDOFF<span class="aki-help" title="Sends a summarize prompt into this chat so the model writes a handoff summary you can paste into a new chat, keeping the context when this one gets long.">?</span></span>
             <button type="button" id="aki-btn-summarize-chat" class="aki-btn">SUMMARIZE THIS CHAT</button>
@@ -1334,6 +1671,17 @@
         openNewBrowserTab();
       };
 
+      // One handler for every static external link in the panel (brand akimcp.top, AkiDevRule repo, …):
+      // route them all through the OS default browser instead of a Postman in-app tab. DRY — team View
+      // links bind the same opener where they are re-rendered.
+      panel.querySelectorAll('[data-aki-ext]').forEach((el) => {
+        el.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          openExternalUrl(el.getAttribute('href'));
+        };
+      });
+
       autoClicker.bindRows(panel, config, syncAndSaveConfig);
       const rejectFolderCb = panel.querySelector(`#${AUTO_REJECT_PICK_FOLDER.checkboxId}`);
       if (rejectFolderCb) {
@@ -1343,13 +1691,7 @@
         };
       }
 
-      const instructionTextarea = panel.querySelector('#aki-instruction-textarea');
-      if (instructionTextarea) {
-        instructionTextarea.onchange = (e) => {
-          config.instruction = e.target.value;
-          if (typeof window.__cdpSaveInstruction === 'function') window.__cdpSaveInstruction(config.instruction);
-        };
-      }
+      // Instruction is served natively read-only from the repo asset; the textarea is display-only (no save binding).
       const autoInjectCb = panel.querySelector('#aki-opt-auto-inject');
       if (autoInjectCb) {
         autoInjectCb.onchange = (e) => {
@@ -1398,6 +1740,25 @@
         applyPendingAgentSwitch();
       };
     }
+
+    const modelRadios = panel.querySelectorAll('input[name="aki-model"]');
+    const liveModelId = localStorage.getItem('ai-chat-last-selected-model');
+    const liveLabel = currentModelLabelCheap();
+    const liveIsAuto = looksAuto(liveLabel);
+    const radioChecked = (m, isAuto, id, label) =>
+      m.auto ? isAuto : (!isAuto && (m.id === id || (label && m.label === label)));
+    modelRadios.forEach((radio) => {
+      radio.checked = radioChecked(AKI_MODELS[radio.value], liveIsAuto, liveModelId, liveLabel);
+      radio.onchange = async (e) => {
+        await selectModel(AKI_MODELS[e.target.value]);
+        const confirmed = await getCurrentModelSelection();
+        const confirmedAuto = looksAuto(confirmed.modelText);
+        const confirmedId = selectedModelId(confirmed);
+        modelRadios.forEach((item) => {
+          item.checked = radioChecked(AKI_MODELS[item.value], confirmedAuto, confirmedId, confirmed.modelText);
+        });
+      };
+    });
 
     const sendBtn = panel.querySelector('#aki-btn-send-instruction');
     if (sendBtn && !window.__pmSendInFlight) {
@@ -1477,9 +1838,25 @@
 
   // Lexical editor (contenteditable): a synthetic 'beforeinput' event is ignored (no getTargetRanges()), so this drives it via the native execCommand pipeline instead, then double-rAF-waits for Lexical's DOM reconciliation (not synchronous with this tick) before the button reads the typed state.
   async function typeAndSubmitChat(input, text) {
-    input.focus();
-    document.execCommand('selectAll', false, null);
-    document.execCommand('insertText', false, text);
+    if (input && input.__lexicalEditor) {
+      const ed = input.__lexicalEditor;
+      input.focus();
+      const insertCmd = Array.from(ed._commands.keys()).find((k) => (k && k.type) === 'CONTROLLED_TEXT_INSERTION_COMMAND' || String(k).includes('CONTROLLED_TEXT_INSERTION'));
+      if (insertCmd) {
+        ed.dispatchCommand(insertCmd, text);
+      }
+    } else {
+      input.focus();
+      const sel = window.getSelection();
+      if (sel) {
+        const range = document.createRange();
+        range.selectNodeContents(input);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+      document.execCommand('selectAll', false, null);
+      document.execCommand('insertText', false, text);
+    }
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     // The send button attaches its handler a render after the text lands, so retry across a few rAF frames instead of depending on one fixed delay being long enough.
     for (let attempt = 0; attempt < 5; attempt++) {

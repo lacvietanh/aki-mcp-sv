@@ -47,12 +47,23 @@ assert.match(indexSrc, /const PROVIDER = 'postman'/);
 assert.match(indexSrc, /function init\(\)/);
 assert.match(indexSrc, /copyDefaultIfMissing/);
 assert.match(indexSrc, /__cdpRequestSummarize/);
+assert.doesNotMatch(indexSrc, /FORCED_ON_KEYS/);
 assert.doesNotMatch(indexSrc, /writeFileSync\([^;]*__dirname[^;]*'data'/);
 assert.doesNotMatch(indexSrc, /writeFileSync\([^;]*__dirname[^;]*'assets'/);
 
+// Postman instruction is served natively read-only from the bundled repo asset (no writable home copy, no in-app edit path).
+assert.match(indexSrc, /return loadInstruction\(\[DEFAULT_PROMPT_PATH\]\)/);
+assert.doesNotMatch(indexSrc, /function saveInstructionFile/);
+assert.doesNotMatch(indexSrc, /__cdpSaveInstruction/);
+assert.doesNotMatch(indexSrc, /copyDefaultIfMissing\(USER_PROMPT_PATH/);
+
 const mcpSrc = readFileSync(path.join(mcpRoot, 'scripts/cdp-autoclicker.js'), 'utf8');
 
-assert.match(mcpSrc, /const PERMISSION_CARD_ROOT = '\.tool-approval-wrapper, \.tool-approval-single-item'/);
+// The in-app instruction textarea is display-only (read-only), with no save-to-disk binding.
+assert.match(mcpSrc, /id="aki-instruction-textarea"[^>]*\breadonly\b/);
+assert.doesNotMatch(mcpSrc, /__cdpSaveInstruction/);
+
+assert.match(mcpSrc, /const PERMISSION_CARD_ROOT = '\.tool-approval-wrapper, \.tool-approval-single-item, \.external-mcp-tool-approval, \.ai-chat-loop-approval-message'/);
 assert.match(mcpSrc, /function tickPermissionCards/);
 assert.match(mcpSrc, /function slotButton/);
 assert.match(mcpSrc, /function press/);
@@ -62,6 +73,8 @@ assert.match(mcpSrc, /window\.__pmArmedCard/);
 assert.match(mcpSrc, /permission card gone/);
 assert.match(mcpSrc, /matchPrimary/);
 assert.match(mcpSrc, /keywords: \['approve', 'allow'\]/);
+assert.doesNotMatch(mcpSrc, /if \(window\.__pmPendingAgentSwitch\) return;/);
+assert.doesNotMatch(mcpSrc, /AKI_DISABLE_AUTO_INJECT/);
 assert.doesNotMatch(mcpSrc, /autoClicker\.tick\(/);
 assert.doesNotMatch(mcpSrc, /dataset\.clicked/);
 assert.doesNotMatch(mcpSrc, /acceptAllToolCall/);
@@ -94,5 +107,19 @@ assert.match(mcpSrc, /function sendSummarizePrompt/);
 assert.match(mcpSrc, /aki-btn-summarize-chat/);
 assert.match(mcpSrc, /window\.__cdpRequestSummarize/);
 assert.match(mcpSrc, /window\.__pmDeliverSummarizePrompt/);
+const chatAgentStart = mcpSrc.indexOf('<div class="aki-section-label">CHAT AGENT</div>');
+const promptInstructionStart = mcpSrc.indexOf('<span class="aki-section-label">PROMPT INSTRUCTION</span>');
+const modelSelectorStart = mcpSrc.indexOf('<div class="aki-row aki-model-row">');
+assert.ok(chatAgentStart < modelSelectorStart && modelSelectorStart < promptInstructionStart, 'model selector must live under CHAT AGENT');
+assert.match(mcpSrc, /const liveModelId = localStorage\.getItem\('ai-chat-last-selected-model'\)/);
+assert.doesNotMatch(mcpSrc, /if \(localStorage\.getItem\('ai-chat-last-selected-model'\) === model\.id\) return true/);
+assert.match(mcpSrc, /function selectionMatches\(selection, model\)/);
+assert.match(mcpSrc, /if \(model\.auto\) return/);
+assert.match(mcpSrc, /selection\.modelText === model\.label \|\| selection\.id === model\.id/);
+assert.match(mcpSrc, /const confirmed = await getCurrentModelSelection\(\)/);
+assert.match(mcpSrc, /const confirmedId = selectedModelId\(confirmed\)/);
+assert.match(mcpSrc, /grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/);
+assert.match(mcpSrc, /#aki-control-panel \.aki-model-row \.aki-label \{[^}]*white-space: nowrap/s);
+assert.equal((mcpSrc.match(/<input type="radio" name="aki-model"/g) || []).length, 4, 'model selector must keep exactly four semantic radios');
 
 console.log('aki-pmcontrol-copy.test.js: ok');
