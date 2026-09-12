@@ -5,7 +5,7 @@ import path from 'node:path';
 import { SETTINGS_PATH } from './userdata.js';
 
 // Entry form: a bare string allows any subcommand; [bin, ...subs] restricts to those. Structure carries the level — no hand-written null.
-// find/sort/fd excluded on purpose: their flags escape read-only (find -exec/-delete, sort -o, fd -x) and the args[0] gate can't restrain a flag; local__find_path/local__search_content cover read-only lookup.
+// find/sort/fd excluded on purpose: their flags escape read-only (find -exec/-delete, sort -o, fd -x) and the args[0] gate can't restrain a flag; aki__find_path/aki__search_content cover read-only lookup.
 // Unix tools work as-is on macOS/Linux and on Windows when Git for Windows usr\bin is on PATH.
 const UNIX_DEFAULT = [
   'ls', 'cat', 'pwd', 'grep', 'head', 'tail', 'wc', 'file', 'stat', 'tree', 'ps', 'df', 'du',

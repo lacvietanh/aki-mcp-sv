@@ -4,7 +4,10 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-export const USER_DIR = path.join(os.homedir(), '.aki', 'mcpsv');
+export const IS_DEV = process.argv.includes('--dev') || process.env.NODE_ENV === 'development';
+export const USER_DIR = process.env.AKI_MCP_DATA_DIR || path.join(os.homedir(), '.aki', IS_DEV ? 'mcpsv-dev' : 'mcpsv');
+process.env.AKI_MCP_DATA_DIR = USER_DIR;
+process.env.AKI_DATA_DIR = USER_DIR;
 
 export const SETTINGS_PATH = path.join(USER_DIR, 'setting.json');
 export const CLIENT_PATH = path.join(USER_DIR, 'oauth-client.json');

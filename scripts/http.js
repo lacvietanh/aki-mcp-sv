@@ -1,8 +1,10 @@
 // Shared plumbing for the two HTTP front-ends; the static server is a security boundary, kept single-copy so its path-traversal guard can't diverge.
 import { readFile } from 'node:fs/promises';
-import { extname, join, normalize, sep } from 'node:path';
+import { extname, join, normalize, sep, resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const PUBLIC_DIR = join(process.cwd(), 'public');
+const PKG_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const PUBLIC_DIR = join(PKG_ROOT, 'public');
 const MIME = {
   '.ico': 'image/x-icon', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
   '.json': 'application/json', '.webmanifest': 'application/manifest+json',

@@ -44,14 +44,22 @@ async function run() {
     assert.equal(firstInitialize.status, 200);
     const firstSessionId = firstInitialize.headers.get('MCP-Session-Id');
     assert.match(firstSessionId, /^[0-9a-f]{32}$/);
-    assert.equal((await firstInitialize.json()).id, 1);
+    const firstBody = await firstInitialize.json();
+    assert.equal(firstBody.id, 1);
+    assert.match(firstBody.result.instructions, /aki__akidevrule_context/);
+    assert.equal(firstBody.result.serverInfo?.name, 'aki-mcp');
+    assert.equal(firstBody.result.serverInfo?.version, '2.0.0');
+    assert.ok(firstBody.result.capabilities);
 
     const secondInitialize = await initialize(baseUrl, 2);
     assert.equal(secondInitialize.status, 200);
     const secondSessionId = secondInitialize.headers.get('MCP-Session-Id');
     assert.match(secondSessionId, /^[0-9a-f]{32}$/);
     assert.notEqual(secondSessionId, firstSessionId);
-    assert.equal((await secondInitialize.json()).id, 2);
+    const secondBody = await secondInitialize.json();
+    assert.equal(secondBody.id, 2);
+    assert.equal(secondBody.result.instructions, firstBody.result.instructions);
+    assert.deepEqual(secondBody.result, firstBody.result);
 
     const sharedSessionOpenLogs = bridgeLogs.filter((line) =>
       line.includes('shared tools-server session opened'),
@@ -76,6 +84,12 @@ async function run() {
     assert.equal(response.id, 3);
     assert.ok(Array.isArray(response.result?.tools));
     assert.ok(response.result.tools.length > 0);
+    const contextTool = response.result.tools.find((tool) => tool.name === 'aki__akidevrule_context');
+    assert.ok(contextTool, 'tools/list must expose the prefixed rule context tool');
+    assert.equal(contextTool.title, 'Load Effective Aki/Claude Context');
+    assert.match(contextTool.description, /Call once before the first substantive action/);
+    assert.equal(contextTool.inputSchema.type, 'object');
+    assert.deepEqual(Object.keys(contextTool.inputSchema.properties), ['workingPath', 'mode', 'knownReceipt']);
     originalConsoleLog(
       `PASS: repeated initialize reused one internal session and tools/list accepted MCP-Session-Id (${response.result.tools.length} tools)`,
     );

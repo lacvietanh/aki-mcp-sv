@@ -55,10 +55,28 @@ function preallowedByDir(bin, args) {
   return false;
 }
 
-class Shell {
+export class Shell {
   // Backslash is escape/chaining on Unix but the normal path separator on Windows — only treat it as dangerous off-Windows.
   // No backslash: `execFile` never spawns a shell, so it is an inert literal everywhere and a path separator on Windows.
   static DANGEROUS_CHARS = /[;&|`$<>\n]/;
+
+  // Only metacharacters OUTSIDE quotes can chain/redirect. execFile never spawns a shell, so a quoted
+  // occurrence (grep -E '^(name|description):' , grep -E 'foo$') is an inert argv literal. Validate a
+  // quote-stripped view — mirrors tokenize()'s quote model so the two agree — not the raw command.
+  static unquotedView(command) {
+    let out = '';
+    let quote = null;
+    for (const char of command) {
+      if (quote) {
+        if (char === quote) quote = null;
+      } else if (char === '"' || char === "'") {
+        quote = char;
+      } else {
+        out += char;
+      }
+    }
+    return out;
+  }
 
   // Quotes group an argument and are then stripped, as a shell would. Splitting on whitespace alone left them in the argv, so `find -name "*.ts"` silently searched for a name containing quote marks.
   static tokenize(command) {
@@ -91,7 +109,7 @@ class Shell {
     if (typeof command !== 'string' || command.trim() === '') {
       throw new Error('empty command');
     }
-    if (Shell.DANGEROUS_CHARS.test(command)) {
+    if (Shell.DANGEROUS_CHARS.test(Shell.unquotedView(command))) {
       throw new Error('command chaining/redirection is not allowed');
     }
     const [bin, ...args] = Shell.tokenize(command);
