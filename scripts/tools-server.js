@@ -9,12 +9,18 @@ import { register as registerKiro } from './kiro-mcp.js';
 import { register as registerSearch } from './search-mcp.js';
 import { register as registerFilesystem } from './filesystem-mcp.js';
 import { register as registerPostman } from './postman-mcp.js';
+import { register as registerCdp } from './cdp-mcp.js';
+import { register as registerPort } from './port-mcp.js';
+import { register as registerGit } from './git-mcp.js';
+import { register as registerSqlite } from './sqlite-mcp.js';
+import { register as registerChrome } from './chrome-mcp.js';
+import { register as registerFetch } from './fetch-mcp.js';
+import { register as registerSystem } from './system-mcp.js';
+import { register as registerTask } from './task-mcp.js';
+import { register as registerRuleContext, RULE_CONTEXT_INSTRUCTIONS } from './rule-context-mcp.js';
 
-// mcp-hub used to prefix every tool from this server's config entry (key "local") with
-// `local__` when aggregating backends. Now that the bridge talks to this server directly, that
-// prefixing layer is gone — reproduce it here as the one place doing it, so served tool names
-// (local__run_cmd, local__find_path, …) stay exactly what README.md and CLAUDE.md already tell
-// every connected AI to call.
+// Tools are prefixed with `aki__` centrally here so served tool names
+// (aki__run_cmd, aki__find_path, …) are consistent across all connected AI clients.
 function prefixedServer(server, prefix) {
   return new Proxy(server, {
     get(target, prop, receiver) {
@@ -25,8 +31,27 @@ function prefixedServer(server, prefix) {
 }
 
 export function createToolsServer() {
-  const server = new McpServer({ name: 'local', version: '1.0.0', title: 'Local Tools' });
-  const prefixed = prefixedServer(server, 'local__');
-  for (const register of [registerShell, registerAgy, registerKiro, registerSearch, registerFilesystem, registerPostman]) register(prefixed);
+  const server = new McpServer(
+    { name: 'aki-mcp', version: '2.0.0', title: 'Aki MCP' },
+    { instructions: RULE_CONTEXT_INSTRUCTIONS },
+  );
+  const prefixed = prefixedServer(server, 'aki__');
+  for (const register of [
+    registerRuleContext,
+    registerShell,
+    registerAgy,
+    registerKiro,
+    registerSearch,
+    registerFilesystem,
+    registerPostman,
+    registerCdp,
+    registerChrome,
+    registerFetch,
+    registerSystem,
+    registerTask,
+    registerPort,
+    registerGit,
+    registerSqlite,
+  ]) register(prefixed);
   return server;
 }

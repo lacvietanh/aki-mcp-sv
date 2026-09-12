@@ -35,10 +35,17 @@ export function containedIn(abs, root) {
 // Either direction of containment counts as overlap: a trusted exec dir inside a writable root (or vice versa) is the write+exec = RCE composition the trusted-dir preallow must refuse.
 export const overlaps = (a, b) => containedIn(a, b) || containedIn(b, a);
 
+function expandTilde(p) {
+  if (p === '~') return os.homedir();
+  if (/^~[/\\]/.test(p)) return path.join(os.homedir(), p.slice(2));
+  return p;
+}
+
 export function resolveUnderRoot(target) {
   const roots = getRoots();
   if (!target) return roots[0];
-  const abs = path.isAbsolute(target) ? path.resolve(target) : path.resolve(roots[0], target);
+  const expanded = expandTilde(target);
+  const abs = path.isAbsolute(expanded) ? path.resolve(expanded) : path.resolve(roots[0], expanded);
   const allowed = roots.some((root) => containedIn(abs, root));
   if (!allowed) {
     throw new Error(`path is outside the allowed roots: ${roots.join(', ')}`);
