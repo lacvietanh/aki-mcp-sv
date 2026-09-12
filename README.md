@@ -1,14 +1,14 @@
-# aki-mcp-sv
+# aki-mcp-sv (`@akinet/akimcp`)
 
 Give Claude on the **web** (claude.ai), **ChatGPT**, and **Grok** read/edit access to files and a whitelisted shell on your local machine. Operates over HTTPS through a swappable public edge (Tailscale Funnel by default, or your own Cloudflare tunnel / any stable HTTPS edge), gated by OAuth 2.1. *(Experimental support for Gemini — see [Connecting from Grok and Gemini](#connecting-from-grok-and-gemini). Also connectable from Postman's AI Agent — see [Connecting from Postman](#connecting-from-postman).)*
 
-No desktop app. No device lock-in. Clone, `npm install`, `npm start`.
+No desktop app. No device lock-in. One command to run.
 
 <img width="1190" height="1062" alt="aki-mcp-sv control panel" src="https://github.com/user-attachments/assets/760a7202-ad61-4f5d-86e3-973e90c74bd3" />
 
-[![Version](https://img.shields.io/badge/version-1.15.0-blue.svg)](CHANGELOG.md) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](#install)
+[![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](CHANGELOG.md) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![npm version](https://img.shields.io/npm/v/@akinet/akimcp.svg)](https://www.npmjs.com/package/@akinet/akimcp) [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](#install)
 
-**Contents:** [Why this exists](#why-this-exists) · [When to use & Core Use-Cases](#when-to-use--core-use-cases) · [Install](#install) · [Run](#run) · [Connecting from Claude web](#connecting-from-claude-web) · [Connecting from ChatGPT](#connecting-from-chatgpt) · [Connecting from Grok and Gemini](#connecting-from-grok-and-gemini) · [Connecting from Postman](#connecting-from-postman) · [Autonomous Cloud Automation](#autonomous-cloud-automation-grok--local-mcp) · [Requirements](#requirements) · [Architecture](#architecture) · [Directory layout](#directory-layout) · [Configuration](#configuration) · [Exposing to the internet](#exposing-to-the-internet) · [Finding files](#finding-files) · [Security](#security)
+**Contents:** [Why this exists](#why-this-exists) · [When to use & Core Use-Cases](#when-to-use--core-use-cases) · [Install & Run](#install--run) · [Connecting from Claude web](#connecting-from-claude-web) · [Connecting from ChatGPT](#connecting-from-chatgpt) · [Connecting from Grok and Gemini](#connecting-from-grok-and-gemini) · [Connecting from Postman](#connecting-from-postman) · [Autonomous Cloud Automation](#autonomous-cloud-automation-grok--local-mcp) · [Requirements](#requirements) · [Architecture](#architecture) · [Directory layout](#directory-layout) · [Configuration](#configuration) · [Exposing to the internet](#exposing-to-the-internet) · [Finding files](#finding-files) · [Security](#security)
 
 ## Why this exists
 
@@ -29,18 +29,37 @@ The Claude Desktop app already does local file access, but ties usage to a devic
 - **Away from your desk (mobile / web / a machine that isn't yours):** use `aki-mcp-sv` via Claude Web, ChatGPT Mobile, or Grok to check on a running job, read logs, clean up temp files, or pull the latest code on your home/office machine.
 - **On a schedule, with nobody watching:** pair Grok's scheduled prompts with `aki-mcp-sv` for cloud-triggered local execution — see [Autonomous Cloud Automation](#autonomous-cloud-automation-grok--local-mcp).
 
-## Install
+## Install & Run
 
 > [!NOTE]
-> **Is this safe to run?** Nothing is installed system-wide, no background service or daemon is created, and no `sudo`/administrator privileges are required. Settings and tokens live at `~/.aki/mcpsv/`. The shell tool is read-only by default (see [Security](#security)). Closing the terminal window stops the server.
+> **Is this safe to run?** Nothing is installed system-wide outside user directory, no background daemon is created, and no `sudo`/administrator privileges are required. Settings and tokens live safely at `~/.aki/mcpsv/`. The shell tool is whitelist-only (see [Security](#security)). Closing the terminal window stops the server.
+
+### 1-Line Global Install (Recommended)
+
+```bash
+npm install -g @akinet/akimcp
+akimcp
+```
+
+Or run instantly without installing:
+
+```bash
+npx @akinet/akimcp
+```
+
+### From Source (For Contributors)
 
 ```bash
 git clone https://github.com/lacvietanh/aki-mcp-sv.git
 cd aki-mcp-sv
 npm install
-```
 
-Then see [Run](#run) below.
+# Run in isolated development mode (~/.aki/mcpsv-dev, ports 9997/9996)
+npm run dev
+
+# Or run in standard production mode (~/.aki/mcpsv, ports 9999/9998)
+npm start
+```
 
 ## Run
 
@@ -72,7 +91,19 @@ Beyond `$MCP_DATA_DIR`, the filesystem tools are also granted `~/.aki` (where ak
 
 Why not token-in-URL: `docs/ref/claude-connector.md`, `docs/research/claude-ai-oauth-connector.md`.
 
-claude.ai connects and calls the in-house `local__*` tool suite: `local__find_path`, `local__search_content`, `local__run_cmd`, `local__agy_run`, `local__kiro_read`, plus native file read/write/edit (`local__read_text_file`, `local__write_file`, `local__edit_file`, `local__create_directory`, `local__move_file`, `local__get_file_info`, `local__list_allowed_directories`).
+claude.ai connects and calls the in-house `aki__*` tool suite (39 tools):
+- **Chromium Remote & Profiles**: `aki__chrome_profiles`, `aki__chrome_launch`, `aki__chrome_tabs`, `aki__chrome_interact`, `aki__chrome_probe_ai`, `aki__chrome_stop` (stealth port-0 clone, auto-port fallback, React/Vue synthetic typing, scroll-to-center click, and AI quota probe)
+- **DevTools & CDP**: `aki__devtools_targets`, `aki__devtools_eval`, `aki__devtools_screenshot`
+- **OS Native Integration**: `aki__notify_user` (desktop notification banner & chime sound), `aki__clipboard_read`, `aki__clipboard_write` (system clipboard read/write bridge)
+- **Localhost & Intranet Fetch**: `aki__local_fetch` (SSRF-protected HTTP client for local backend APIs and LAN services)
+- **Background Tasks**: `aki__task_start`, `aki__task_manage` (detached background execution, process-group teardown, zero-RAM direct log streaming & tailing)
+- **Filesystem**: `aki__read_text_file`, `aki__write_file`, `aki__edit_file`, `aki__create_directory`, `aki__move_file`, `aki__get_file_info`, `aki__list_allowed_directories`
+- **Search & Execution**: `aki__find_path`, `aki__search_content`, `aki__run_cmd`
+- **Dev Servers & Ports**: `aki__port_status`, `aki__kill_port`
+- **Git Operations**: `aki__git_status`, `aki__git_diff`, `aki__git_log`
+- **SQLite Database**: `aki__sqlite_schema`, `aki__sqlite_query`
+- **Agent & Context**: `aki__agy_run`, `aki__kiro_read`, `aki__akidevrule_context`
+- **Postman Control**: `aki__postman_status`, `aki__postman_eval`, `aki__postman_rename_conversation`, `aki__postman_panel_fullwidth`
 
 **Note on the connector icon:** claude.ai doesn't read the icon from the MCP server. It queries Google's favicon service with the tailnet's **apex domain**, not your host: `https://t2.gstatic.com/faviconV2?...&url=http://<tailnet>.ts.net&size=32`. `<tailnet>.ts.net` has no public DNS record, so Google returns 404 and claude.ai falls back to a default letter icon. This server serves `/favicon.ico` publicly, but no file placed here can change that result: your subdomain never appears in the query Google receives.
 
@@ -102,7 +133,7 @@ Postman's AI Agent (Flows / Connected Accounts) has no OAuth redirect for third-
 2. In Postman, add a new MCP server (Settings → Connected Accounts) and paste the JSON.
 3. Paste the panel's prompt into each new chat, since Postman doesn't persist one across sessions.
 
-The Postman tab also has a **Launch** button that attaches control to the Postman desktop app itself — auto-clicking Approve/Continue/Run/Try again and toggling Thinking/Auto-run inside the Postman window, on top of opening it if it isn't already running. **Quit** stops that control daemon; **New window** asks it to open another Postman window. None of this runs at `npm start` boot — it starts only when Launch is clicked.
+The Postman tab also has a **Launch** button that attaches control to the Postman desktop app itself — auto-clicking Approve/Continue/Run/Try again and toggling Thinking/Auto-run inside the Postman window, on top of opening it if it isn't already running. **Quit** stops that control daemon; **New window** asks it to open another Postman window. None of this runs at `npm start` boot — it starts only when Launch is clicked. The in-app overlay it injects is the **Aki MCP for Postman** panel (opened from a status-bar button): it shows the running version and an `akimcp.top` link under the title, keeps the **New Browser Tab** control in the **ANTI-BOT** section, and opens every external link — `akimcp.top`, the AkiDevRule **Repo** button, and each team's **View** — in your OS default browser through Postman's own link handler.
 
 ## Autonomous Cloud Automation (Grok + Local MCP)
 
@@ -144,7 +175,18 @@ tools-server.js — one shared McpServer, in-process (InMemoryTransport, no chil
                                   agy-mcp.js          (Antigravity CLI, read-only plan mode)
                                   kiro-mcp.js         (kiro_read, read-only, needs kiro-cli on PATH)
                                   filesystem-mcp.js   (native read/write/edit inside the allowed folders)
-                                  postman-mcp.js      (postman_status, read-only daemon status check)
+                                  postman-mcp.js      (Postman daemon status/eval/rename/panel tools)
+                                  rule-context-mcp.js (akidevrule_context handshake tool)
+                                  chrome-mcp.js       (profile clone, stealth launch, tabs, interact)
+                                  chrome-profile.js   (Chrome/Brave/Edge profile clone + cookie decrypt)
+                                  cdp-mcp.js          (devtools_targets/eval/screenshot over CDP)
+                                  cdp-engine.js       (shared CDP launch/target/eval engine)
+                                  fetch-mcp.js        (SSRF-protected localhost/LAN HTTP fetch)
+                                  task-mcp.js         (detached background task start/manage)
+                                  port-mcp.js         (TCP port status/kill)
+                                  git-mcp.js          (scope-checked git status/diff/log)
+                                  system-mcp.js       (notify_user, clipboard read/write)
+                                  sqlite-mcp.js       (read-only node:sqlite schema/query)
 
 panel.js       — 127.0.0.1:9998, never exposed via Funnel
                  control UI: allowed folders, shell allowlist,
@@ -160,19 +202,34 @@ OAuth (not token-in-URL) is used because claude.ai always attempts Dynamic Clien
 ```
 aki-mcp-sv/
 ├── package.json
+├── LICENSE
+├── bin/
+│   └── akimcp.js                 # global CLI entry point (`npm i -g @akinet/akimcp`), imports scripts/start.js
 ├── scripts/
 │   ├── start.js                 # orchestrates gatekeeper + panel, single process
 │   ├── open-browser.js           # cross-platform "open default browser" — the one per-OS seam, no external dep
 │   ├── gatekeeper.js             # OAuth-gated reverse proxy, public port
 │   ├── oauth.js                  # minimal authorization server (pre-registered client + RFC 7591 DCR)
 │   ├── streamable-bridge.js      # Streamable HTTP shim <-> the in-process tools server (InMemoryTransport)
-│   ├── tools-server.js           # builds the one shared McpServer mounting shell/agy/kiro/search/filesystem
+│   ├── tools-server.js           # builds the one shared McpServer mounting every tool arm below
 │   ├── http.js                   # shared HTTP helpers: readBody / json / serveStatic (+ MIME)
 │   ├── shell-mcp.js              # allowlist-gated shell tool (curated to read-only)
 │   ├── agy-mcp.js                # register() module for the agy CLI (mounted by tools-server.js)
 │   ├── kiro-mcp.js               # Kiro arm: kiro_read (read-only) tool, sonnet-4.5 locked, needs kiro-cli on PATH
 │   ├── filesystem-mcp.js         # native read/write/edit tools, symlink-safe path containment
-│   ├── postman-mcp.js            # postman_status tool + the Postman control daemon's one launch/kill path
+│   ├── postman-mcp.js            # postman_status/eval/rename/panel_fullwidth tools + daemon launch/kill path
+│   ├── rule-context-mcp.js       # akidevrule_context MCP tool (schema, registration, output mapping)
+│   ├── rule-context.js           # pure rule-context assembler used by rule-context-mcp.js
+│   ├── chrome-mcp.js             # chrome_profiles/launch/tabs/interact/probe_ai/stop tools
+│   ├── chrome-profile.js         # clones real browser profiles (Keychain/DPAPI cookie decryption)
+│   ├── cdp-mcp.js                # devtools_targets/eval/screenshot tools over CDP
+│   ├── cdp-engine.js             # app-agnostic CDP launch/target/eval engine shared by chrome-mcp/postman-mcp
+│   ├── fetch-mcp.js              # aki__local_fetch: SSRF-protected localhost/LAN HTTP client
+│   ├── task-mcp.js               # aki__task_start/task_manage: detached background task runner
+│   ├── port-mcp.js               # aki__port_status/kill_port: TCP port inspection + kill
+│   ├── git-mcp.js                # aki__git_status/diff/log: scope-checked git tools
+│   ├── system-mcp.js             # aki__notify_user, clipboard_read/write
+│   ├── sqlite-mcp.js             # aki__sqlite_schema/query: read-only node:sqlite inspector
 │   ├── aki-pmcontrol/            # finished copy of the private aiobox lab: CDP-driven Postman desktop control
 │   ├── mcp-tool.js               # shared MCP tool-result envelope: ok / err / fail
 │   ├── allowlist.js              # default command set + settings reader — shared by server and panel
@@ -262,7 +319,7 @@ When a custom ingress is active, the panel's section 0 skips the Tailscale check
 
 ## Finding files
 
-Use `local__find_path` to locate a file or directory — it scans the whole tree in one call (measured: ~0.2s across 164k files / 11.7k directories), returns **both files and directories**, and skips `node_modules`/`.git`/build output automatically. `query` is a case-insensitive substring, or a glob when it contains `*`/`?`.
+Use `aki__find_path` to locate a file or directory — it scans the whole tree in one call (measured: ~0.2s across 164k files / 11.7k directories), returns **both files and directories**, and skips `node_modules`/`.git`/build output automatically. `query` is a case-insensitive substring, or a glob when it contains `*`/`?`.
 
 ## Security
 
