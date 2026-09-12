@@ -2,11 +2,15 @@
 // Zero-dependency bridge connecting remote AI clients (Claude Web, ChatGPT) to local OS capabilities:
 // Desktop notifications & sound bell, and System Clipboard read/write.
 import { z } from 'zod';
-import { exec, execFile, spawn } from 'node:child_process';
-import { promisify } from 'node:util';
+import cp from 'node:child_process';
 import { ok, fail } from './mcp-tool.js';
 
-const execAsync = promisify(exec);
+// Not `promisify(cp.exec)`: `exec` carries a `util.promisify.custom` symbol that routes straight
+// to the real implementation, so a test mocking `cp.exec` never actually intercepts it. This
+// manual wrapper calls `cp.exec` through a plain property lookup, which mocks do intercept.
+const execAsync = (cmd) => new Promise((resolve, reject) => {
+  cp.exec(cmd, (err, stdout, stderr) => (err ? reject(err) : resolve({ stdout, stderr })));
+});
 
 export async function notifyUser({ message, title = 'Aki MCP', sound = true } = {}) {
   if (!message) throw new Error('message is required');
@@ -69,7 +73,7 @@ export async function clipboardWrite(text = '') {
 
   if (process.platform === 'darwin') {
     return new Promise((resolve, reject) => {
-      const child = spawn('pbcopy');
+      const child = cp.spawn('pbcopy');
       child.stdin.write(content);
       child.stdin.end();
       child.on('close', (code) => {
@@ -82,7 +86,7 @@ export async function clipboardWrite(text = '') {
 
   if (process.platform === 'win32') {
     return new Promise((resolve, reject) => {
-      const child = spawn('powershell', ['-NoProfile', '-Command', '$Input | Set-Clipboard']);
+      const child = cp.spawn('powershell', ['-NoProfile', '-Command', '$Input | Set-Clipboard']);
       child.stdin.write(content);
       child.stdin.end();
       child.on('close', (code) => {
@@ -95,8 +99,8 @@ export async function clipboardWrite(text = '') {
 
   // Linux
   return new Promise((resolve, reject) => {
-    const child = spawn('xclip', ['-selection', 'clipboard']).on('error', () => {
-      const wlChild = spawn('wl-copy');
+    const child = cp.spawn('xclip', ['-selection', 'clipboard']).on('error', () => {
+      const wlChild = cp.spawn('wl-copy');
       wlChild.stdin.write(content);
       wlChild.stdin.end();
       wlChild.on('close', () => resolve({ copied: true, length: content.length }));
