@@ -1,16 +1,33 @@
 {
-  "name": "mcp-local",
-  "version": "1.15.0",
-  "private": true,
+  "name": "@akinet/akimcp",
+  "version": "2.0.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "description": "Give Claude on the web (claude.ai) local filesystem/search/shell access over Tailscale Funnel + OAuth 2.1 — whitelist-only shell (unlike Desktop Commander's blocklist), no desktop app or device lock-in required",
   "license": "MIT",
   "type": "module",
+  "bin": {
+    "akimcp": "bin/akimcp.js"
+  },
+  "files": [
+    "bin",
+    "scripts",
+    "public",
+    "LICENSE",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lacvietanh/aki-mcp-sv.git"
+  },
   "engines": {
-    "node": "22.14.0"
+    "node": ">=22.0.0"
   },
   "scripts": {
     "start": "node ./scripts/start.js",
-    "test": "node ./test/streamable-bridge.test.js && node ./test/oauth.test.js && node ./test/postman-mcp.test.js && node ./test/aki-pmcontrol-copy.test.js"
+    "dev": "node ./scripts/start.js --dev",
+    "test": "node ./test/streamable-bridge.test.js && node ./test/oauth.test.js && node ./test/postman-mcp.test.js && node ./test/aki-pmcontrol-copy.test.js && node ./test/autoclick-target-match.test.js && node ./test/postman-status.test.js && node ./test/postman-ownership.test.cjs && node ./test/postman-panel-ownership.test.js && node ./test/roots.test.js && node ./test/shell-mcp.test.js && node ./test/rule-context.test.js && node ./test/rule-context-mcp.test.js && node ./test/cli-and-dev-mode.test.js && node ./test/port-mcp.test.js && node ./test/git-mcp.test.js && node ./test/sqlite-mcp.test.js && node ./test/cdp-extensions.test.js && node ./test/chrome-profile.test.js && node ./test/chrome-mcp.test.js && node ./test/fetch-mcp.test.js && node ./test/system-mcp.test.js && node ./test/task-mcp.test.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
