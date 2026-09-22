@@ -4,6 +4,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 
 ## [Unreleased]
 
+### Added
+- **Notion custom MCP connector**: exact-hostname HTTPS callbacks, confidential dynamic registration with `client_secret_basic` or `client_secret_post`, shared Basic/form client authentication, scope round-trip with narrowing-only refresh, RFC 7009 revocation, and the `/.well-known/openid-configuration/mcp` discovery alias.
+- **Notion panel tab and guides**: workspace approval, passphrase consent, agent connection, and republishing steps in the Web group; Postman remains the default. Operator and engineering guides are linked from `docs/index.md`.
+- **Dependency-free Notion OAuth regressions**: eleven numbered HTTP cases covering protocol behavior, ingress boundaries, populated pre-upgrade stores, the pre-scope upgrade path, panel grant isolation, the panel icon, and credential-safe diagnostics.
+
+### Fixed
+- **Unauthenticated crash on a prototype client id**: `GET /authorize?client_id=constructor` (and `__proto__`, `toString`) resolved a prototype member and terminated the process on an uncaught `TypeError`. Client lookup is now an own-property check.
+
+### Changed
+- **The panel issues and reuses its own local grant** instead of handing out whichever access token happened to be unexpired. A remote connector's token could previously end up pasted into local client configurations, where that connector revoking its grant would silently invalidate them.
+- **OAuth dispatch shares one ingress guard** for all discovery and authorization routes. Request logs omit query strings; rejected callback diagnostics retain origins without userinfo, paths, or query credentials.
+- **New access tokens record client ownership and their refresh link**; refresh records carry their scope, including an empty one, so a grant deliberately narrowed to nothing stays distinguishable from a pre-upgrade grant that never had a scope. A pre-upgrade grant keeps refreshing even when the client still sends `scope`, and becomes scoped the first time one is requested. Existing token and registration files still load without a startup rewrite, migration, or reset. Plaintext storage, the access-token lifetime, and non-rotating refresh tokens are unchanged; revocation never sweeps unlinked legacy access tokens.
+
 ## [2.1.0] - 2026-09-18
 
 ### Added

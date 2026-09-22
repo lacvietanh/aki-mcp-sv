@@ -1,5 +1,7 @@
 # Docs index
 
+- [ref/notion-connector.md](ref/notion-connector.md) — Notion custom MCP setup, OAuth contract, and the precise revocation limits for pre-upgrade tokens
+- [plan/notion-connector-2.1.0.md](plan/notion-connector-2.1.0.md) — engineering plan for the bounded Notion compatibility change on 2.1.0, regression coverage, persistence, and rollback
 - [feat/tools.md](feat/tools.md) — the local capability suite and each tool's anchored purpose; why `agy`/`kiro` are agent-arms ("hands"), not redundant primitives, and are not to be removed by a subtraction audit
 - [ref/mcp-intro.md](ref/mcp-intro.md) — first-session onboarding content (live-plan pattern, cross-account continuity), read once and gated by `~/.aki/mcpsv/intro.json`; shipped as a one-line pointer in the pasted instruction prompt, not the full text, since the ChatGPT 1500-char cap has no room for it
 - [plan/done/init.md](plan/done/init.md) — architecture decisions (mcp-hub + gatekeeper + funnel) and repo bootstrap checklist

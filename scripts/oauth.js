@@ -24,6 +24,9 @@ const GEMINI_CALLBACK_PREFIX = 'https://oauth-redirect.googleusercontent.com/r/'
 // Grok self-registers (DCR) with this callback — observed live 2026-08-09 from the register-REJECTED log:
 // redirect_uris=["https://grok.com/connectors-oauth-exchange-code/"]. Note: NOT a /connector/oauth/ path.
 const GROK_CALLBACK_PREFIX = 'https://grok.com/connectors-oauth-exchange-code/';
+const NOTION_CALLBACK_HOSTS = ['notion.so', 'www.notion.so', 'app.notion.so',
+  'notion.com', 'www.notion.com', 'app.notion.com', 'mcp.notion.com'];
+const CLIENT_AUTH_METHODS = ['none', 'client_secret_post', 'client_secret_basic'];
 const CODE_TTL_MS = 5 * 60 * 1000;
 const ACCESS_TTL_S = 365 * 24 * 3600;
 // no 0/o/1/l/i — avoid visual ambiguity when typing; 32 chars = power of 2, unbiased byte%32
@@ -39,6 +42,13 @@ const refreshTokens = new Map();
 function isAllowedRedirect(uri) {
   if (typeof uri !== 'string' || !uri) return false;
   if (uri === CLAUDE_CALLBACK || uri === CHATGPT_LEGACY_CALLBACK) return true;
+  try {
+    const url = new URL(uri);
+    if (url.protocol === 'https:' && !uri.includes('#') && !url.username && !url.password
+      && NOTION_CALLBACK_HOSTS.includes(url.hostname)) return true;
+  } catch {
+    return false;
+  }
   return uri.startsWith(CHATGPT_CALLBACK_PREFIX)
     || uri.startsWith(GROK_CALLBACK_PREFIX)
     || uri.startsWith(GEMINI_CALLBACK_PREFIX);
@@ -104,8 +114,8 @@ function resolveClient(clientId) {
       tokenEndpointAuthMethod: 'client_secret_post',
     };
   }
-  const dcr = loadDcrClients()[clientId];
-  return dcr || null;
+  const registry = loadDcrClients();
+  return Object.hasOwn(registry, clientId) ? registry[clientId] : null;
 }
 
 export function loadOrCreatePassphrase() {
@@ -134,9 +144,11 @@ export function metadataHandlers(origin) {
         issuer: origin,
         authorization_endpoint: `${origin}/authorize`,
         token_endpoint: `${origin}/token`,
+        revocation_endpoint: `${origin}/revoke`,
         registration_endpoint: `${origin}/register`,
         code_challenge_methods_supported: ['S256'],
-        token_endpoint_auth_methods_supported: ['none', 'client_secret_post'],
+        token_endpoint_auth_methods_supported: CLIENT_AUTH_METHODS,
+        revocation_endpoint_auth_methods_supported: CLIENT_AUTH_METHODS,
         response_types_supported: ['code'],
         grant_types_supported: ['authorization_code', 'refresh_token'],
         authorization_response_iss_parameter_supported: true,
@@ -153,19 +165,27 @@ export async function handleRegister(req, res) {
   } catch {
     return json(res, 400, { error: 'invalid_client_metadata' });
   }
+  // `null`, `[]` and scalars are all valid JSON; reading metadata off them throws and takes the process
+  // down on an unauthenticated request.
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return json(res, 400, { error: 'invalid_client_metadata' });
+  }
   const redirectUris = body.redirect_uris;
   if (!Array.isArray(redirectUris) || !redirectUris.length || !redirectUris.every(isAllowedRedirect)) {
-    // Log the rejected value so an unknown client's real redirect_uri (e.g. Grok) can be read off and allowlisted.
-    log(`[oauth] register REJECTED (redirect_uri not allowlisted): ${JSON.stringify(redirectUris)}`);
+    // Keep the unknown callback's origin discoverable without logging userinfo, paths, or query credentials.
+    const origins = Array.isArray(redirectUris) ? redirectUris.map((uri) => {
+      try { return new URL(uri).origin; } catch { return '(invalid URL)'; }
+    }) : [];
+    log(`[oauth] register REJECTED (redirect_uri not allowlisted): ${JSON.stringify(origins)}`);
     return json(res, 400, { error: 'invalid_redirect_uri' });
   }
-  const authMethod = body.token_endpoint_auth_method || 'none';
-  if (authMethod !== 'none' && authMethod !== 'client_secret_post') {
+  const authMethod = body.token_endpoint_auth_method === undefined ? 'none' : body.token_endpoint_auth_method;
+  if (!CLIENT_AUTH_METHODS.includes(authMethod)) {
     return json(res, 400, { error: 'invalid_client_metadata' });
   }
 
   const clientId = randomBytes(16).toString('hex');
-  const clientSecret = authMethod === 'client_secret_post' ? randomBytes(32).toString('hex') : null;
+  const clientSecret = authMethod === 'none' ? null : randomBytes(32).toString('hex');
   const entry = {
     clientId,
     clientSecret,
@@ -224,13 +244,14 @@ export async function handleAuthorize(req, res, passphrase, origin) {
   const codeChallenge = q.get('code_challenge');
   const codeChallengeMethod = q.get('code_challenge_method');
   const state = q.get('state') || '';
+  const scope = (q.get('scope') || '').trim();
   const client = resolveClient(clientId);
   // DCR clients are pinned to the exact redirect_uri they registered; the shared confidential client (isStatic)
   // accepts any allowlisted callback, since it is pasted into several providers each with its own redirect.
   const redirectOk = !!client && (client.redirectUris.includes(redirectUri) || (client.isStatic && isAllowedRedirect(redirectUri)));
 
   if (!redirectOk || codeChallengeMethod !== 'S256' || !codeChallenge) {
-    log(`[oauth] authorize REJECTED (${req.method}): client_ok=${!!client} redirect_ok=${redirectOk} method=${codeChallengeMethod} hasChallenge=${!!codeChallenge}`);
+    log(`[oauth] authorize REJECTED (${req.method}): client_ok=${!!client} redirect_ok=${redirectOk} method=${codeChallengeMethod === 'S256' ? 'S256' : 'unsupported'} hasChallenge=${!!codeChallenge}`);
     res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(errorPage('Connection request invalid', 'This connection request is invalid or has expired.'));
     return;
@@ -250,6 +271,7 @@ export async function handleAuthorize(req, res, passphrase, origin) {
 <input type="hidden" name="code_challenge" value="${esc(codeChallenge)}">
 <input type="hidden" name="code_challenge_method" value="${esc(codeChallengeMethod)}">
 <input type="hidden" name="state" value="${esc(state)}">
+<input type="hidden" name="scope" value="${esc(scope)}">
 <input type="password" name="passphrase" placeholder="Passphrase" autofocus autocomplete="current-password">
 <button type="submit" name="btn">Approve</button>
 </form>
@@ -264,7 +286,7 @@ export async function handleAuthorize(req, res, passphrase, origin) {
     return;
   }
   const code = randomBytes(24).toString('hex');
-  authCodes.set(code, { clientId, redirectUri, codeChallenge, expires: Date.now() + CODE_TTL_MS });
+  authCodes.set(code, { clientId, redirectUri, codeChallenge, scope, expires: Date.now() + CODE_TTL_MS });
   log(`[oauth] authorize approved -> code issued (state=${state ? 'yes' : 'no'}), redirecting to ${new URL(redirectUri).host}`);
   const redirect = new URL(redirectUri);
   redirect.searchParams.set('code', code);
@@ -274,24 +296,51 @@ export async function handleAuthorize(req, res, passphrase, origin) {
   res.end();
 }
 
-function authenticateClient(body) {
-  const client = resolveClient(body.get('client_id'));
-  if (!client) return null;
-  if (client.tokenEndpointAuthMethod === 'none') return client;
-  if (!safeEqual(body.get('client_secret'), client.clientSecret || '')) return null;
-  return client;
+function credentialsFrom(req, body) {
+  const header = req.headers.authorization;
+  if (header === undefined) {
+    return { clientId: body.get('client_id'), clientSecret: body.get('client_secret') };
+  }
+  const match = typeof header === 'string' && header.match(/^Basic\s+([A-Za-z0-9+/]+={0,2})$/i);
+  if (!match) return null;
+  try {
+    const encoded = match[1];
+    if (encoded.includes('=') && encoded.length % 4 !== 0) return null;
+    const bytes = Buffer.from(encoded, 'base64');
+    if (bytes.toString('base64').replace(/=+$/, '') !== encoded.replace(/=+$/, '')) return null;
+    const decoded = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    const colon = decoded.indexOf(':');
+    if (colon < 0) return null;
+    const decode = (value) => decodeURIComponent(value.replace(/\+/g, ' '));
+    return { clientId: decode(decoded.slice(0, colon)), clientSecret: decode(decoded.slice(colon + 1)) };
+  } catch {
+    return null;
+  }
+}
+
+function authenticateClient(req, res, body) {
+  const credentials = credentialsFrom(req, body);
+  const client = credentials && resolveClient(credentials.clientId);
+  if (client && (client.tokenEndpointAuthMethod === 'none'
+    || (client.clientSecret && safeEqual(credentials.clientSecret, client.clientSecret)))) return client;
+  if (/^Basic(?:\s|$)/i.test(req.headers.authorization || '')) {
+    res.setHeader('WWW-Authenticate', 'Basic realm="aki-mcp-sv"');
+  }
+  json(res, 401, { error: 'invalid_client' });
+  return null;
 }
 
 export async function handleToken(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   const body = new URLSearchParams(await readBody(req));
   const grantType = body.get('grant_type');
-  log(`[oauth] token request: grant_type=${grantType}`);
+  const loggedGrantType = grantType === 'authorization_code' || grantType === 'refresh_token' ? grantType : 'unsupported';
+  log(`[oauth] token request: grant_type=${loggedGrantType}`);
 
-  const client = authenticateClient(body);
+  const client = authenticateClient(req, res, body);
   if (!client) {
     log('[oauth] token FAILED: invalid_client (unknown client_id or secret mismatch)');
-    return json(res, 401, { error: 'invalid_client' });
+    return;
   }
 
   if (grantType === 'authorization_code') {
@@ -315,7 +364,7 @@ export async function handleToken(req, res) {
       log('[oauth] token FAILED: invalid_grant (PKCE code_verifier mismatch)');
       return json(res, 400, { error: 'invalid_grant' });
     }
-    return issueTokens(res, entry.clientId, undefined, 'authorization_code');
+    return issueTokens(res, entry.clientId, undefined, 'authorization_code', entry.scope);
   }
 
   if (grantType === 'refresh_token') {
@@ -324,34 +373,75 @@ export async function handleToken(req, res) {
       log(`[oauth] token FAILED: invalid_grant (${entry ? 'refresh_token belongs to another client' : 'unknown refresh_token — stale after tokens file reset?'})`);
       return json(res, 400, { error: 'invalid_grant' });
     }
-    return issueTokens(res, entry.clientId, body.get('refresh_token'), 'refresh_token');
+    // A grant issued before scope existed carries no `scope` property, which is not the same as one that
+    // was explicitly narrowed to nothing. Narrowing cannot apply to a grant that was never scoped, and
+    // reading its absent scope as empty would turn every refresh that still sends `scope` into
+    // invalid_scope on upgrade. Such a grant stays unscoped until the client first asks for a scope.
+    const unscopedGrant = !Object.hasOwn(entry, 'scope');
+    const scope = body.has('scope') ? body.get('scope').trim() : entry.scope || '';
+    const storedScope = new Set((entry.scope || '').split(' ').filter(Boolean));
+    if (!unscopedGrant && scope.split(' ').some((part) => part && !storedScope.has(part))) {
+      return json(res, 400, { error: 'invalid_scope' });
+    }
+    const recorded = unscopedGrant && !body.has('scope') ? undefined : scope;
+    return issueTokens(res, entry.clientId, body.get('refresh_token'), 'refresh_token', recorded);
   }
 
-  log(`[oauth] token FAILED: unsupported_grant_type (${grantType})`);
+  log(`[oauth] token FAILED: unsupported_grant_type (${loggedGrantType})`);
   return json(res, 400, { error: 'unsupported_grant_type' });
 }
 
-function mintTokens(clientId, existingRefresh, via) {
+export async function handleRevoke(req, res) {
+  const body = new URLSearchParams(await readBody(req));
+  const client = authenticateClient(req, res, body);
+  if (!client) return;
+  const token = body.get('token');
+  if (!token) return json(res, 400, { error: 'invalid_request' });
+  const refresh = refreshTokens.get(token);
+  if (refresh) {
+    if (!Object.hasOwn(refresh, 'clientId') || refresh.clientId === client.clientId) {
+      refreshTokens.delete(token);
+      for (const [accessToken, entry] of accessTokens) {
+        if (entry.refreshToken === token && entry.clientId === client.clientId) accessTokens.delete(accessToken);
+      }
+    }
+  } else {
+    const access = accessTokens.get(token);
+    if (access && (!Object.hasOwn(access, 'clientId') || access.clientId === client.clientId)) accessTokens.delete(token);
+  }
+  saveTokens();
+  return json(res, 200, {});
+}
+
+// `scope === undefined` means the grant has never carried a scope, and the record keeps no `scope` key
+// so a later refresh can still be told apart from one deliberately narrowed to nothing.
+function mintTokens(clientId, existingRefresh, via, scope = '', local = false) {
   const accessToken = randomBytes(32).toString('hex');
-  accessTokens.set(accessToken, { expires: Date.now() + ACCESS_TTL_S * 1000 });
   const refreshToken = existingRefresh || randomBytes(32).toString('hex');
-  refreshTokens.set(refreshToken, { clientId });
+  accessTokens.set(accessToken, { clientId, refreshToken, expires: Date.now() + ACCESS_TTL_S * 1000, ...(local ? { local: true } : {}) });
+  refreshTokens.set(refreshToken, scope === undefined ? { clientId } : { clientId, scope });
   saveTokens();
   log(`[oauth] tokens ISSUED via ${via} (access + refresh) — client is now authorized`);
   return { accessToken, refreshToken };
 }
 
-function issueTokens(res, clientId, existingRefresh, via) {
-  const { accessToken, refreshToken } = mintTokens(clientId, existingRefresh, via);
-  json(res, 200, { access_token: accessToken, token_type: 'Bearer', expires_in: ACCESS_TTL_S, refresh_token: refreshToken });
+function issueTokens(res, clientId, existingRefresh, via, scope = '') {
+  const { accessToken, refreshToken } = mintTokens(clientId, existingRefresh, via, scope);
+  const body = { access_token: accessToken, token_type: 'Bearer', expires_in: ACCESS_TTL_S, refresh_token: refreshToken };
+  if (scope) body.scope = scope;
+  json(res, 200, body);
 }
 
+// The panel prints this token into local client configurations (Postman, Cursor, Claude Code...).
+// Reusing whichever access token happened to be unexpired meant a remote connector's token could end up
+// pasted locally, and that connector revoking its grant would silently break every local config. Panel
+// tokens are therefore minted and reused on their own marker, never shared with a connector's grant.
 export function getOrIssueAccessToken() {
   const now = Date.now();
   for (const [token, entry] of accessTokens) {
-    if (entry.expires >= now) return token;
+    if (entry.local && entry.expires >= now) return token;
   }
-  return mintTokens(loadOrCreateClient().clientId, undefined, 'panel').accessToken;
+  return mintTokens(loadOrCreateClient().clientId, undefined, 'panel', '', true).accessToken;
 }
 
 export function verifyBearer(authHeader) {
