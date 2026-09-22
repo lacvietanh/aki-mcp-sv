@@ -165,6 +165,11 @@ export async function handleRegister(req, res) {
   } catch {
     return json(res, 400, { error: 'invalid_client_metadata' });
   }
+  // `null`, `[]` and scalars are all valid JSON; reading metadata off them throws and takes the process
+  // down on an unauthenticated request.
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return json(res, 400, { error: 'invalid_client_metadata' });
+  }
   const redirectUris = body.redirect_uris;
   if (!Array.isArray(redirectUris) || !redirectUris.length || !redirectUris.every(isAllowedRedirect)) {
     // Keep the unknown callback's origin discoverable without logging userinfo, paths, or query credentials.
