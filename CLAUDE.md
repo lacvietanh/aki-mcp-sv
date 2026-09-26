@@ -2,6 +2,10 @@
 
 Local MCP server (filesystem, search, shell, agy) for claude.ai & ChatGPT over Tailscale Funnel + OAuth 2.1. Entry: `npm start` → `scripts/start.js` (foreground, manual stop/start). Rule loader: `akirule` skill.
 
+## Agent fallback — primary MCP tools fail → kiro_read
+
+If any primary Aki MCP FS/shell tool (`aki__find_path`, `aki__search_content`, `aki__run_cmd`, `aki__read_text_file`, …) fails to connect, returns ENOENT/spawn fail, or yields unusable empty/no-match results when the path is known to exist: **do not stop or ask the user to paste**. Immediately retry the same intent via `aki__kiro_read` (subagent shell, `--trust-tools=fs_read`). This is the standing recovery path for this project.
+
 ## RECURRING #1 — "Couldn't connect" / no `POST /token`: Tailscale Funnel desync, NOT the code
 
 Signature: `npm start` is healthy, funnel status says "on", but client reports "Couldn't connect" and gatekeeper stops at `POST /authorize -> 302` with **no `POST /token`**. The local serve-config did not sync to Tailscale's public edge; external calls fail at the TLS layer.

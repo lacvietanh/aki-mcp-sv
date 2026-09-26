@@ -64,24 +64,38 @@ export function getBrowserInfo(browser = 'chrome') {
 
   if (process.platform === 'win32') {
     const localAppData = process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
-    const progFiles = process.env['ProgramFiles(x86)'] || process.env.ProgramFiles || 'C:\\Program Files';
+    const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
+    const programFilesX86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
+    const firstExisting = (...candidates) => candidates.find((candidate) => fs.existsSync(candidate)) || candidates[0];
+
     if (b.includes('brave')) {
       return {
         name: 'Brave Browser',
-        binary: path.join(localAppData, 'BraveSoftware', 'Brave-Browser', 'Application', 'brave.exe'),
+        binary: firstExisting(
+          path.join(localAppData, 'BraveSoftware', 'Brave-Browser', 'Application', 'brave.exe'),
+          path.join(programFiles, 'BraveSoftware', 'Brave-Browser', 'Application', 'brave.exe'),
+          path.join(programFilesX86, 'BraveSoftware', 'Brave-Browser', 'Application', 'brave.exe'),
+        ),
         userDataDir: path.join(localAppData, 'BraveSoftware', 'Brave-Browser', 'User Data'),
       };
     }
     if (b.includes('edge')) {
       return {
         name: 'Microsoft Edge',
-        binary: path.join(progFiles, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+        binary: firstExisting(
+          path.join(programFiles, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+          path.join(programFilesX86, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+        ),
         userDataDir: path.join(localAppData, 'Microsoft', 'Edge', 'User Data'),
       };
     }
     return {
       name: 'Google Chrome',
-      binary: path.join(progFiles, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+      binary: firstExisting(
+        path.join(programFiles, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+        path.join(programFilesX86, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+        path.join(localAppData, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+      ),
       userDataDir: path.join(localAppData, 'Google', 'Chrome', 'User Data'),
     };
   }
@@ -292,7 +306,77 @@ export function cloneProfile(profileId = 'Default', { browser = 'chrome', refres
   return { targetDir, isNew: true, profileId, browser: browserName };
 }
 
-// Polls for DevToolsActivePort up to timeoutMs
+export async function findAvailableLoopbackPort() {
+  return new Promise((resolve, reject) => {
+    const server = http.createServer();
+    server.unref();
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      if (!address || typeof address === 'string') {
+        server.close();
+        reject(new Error('Unable to allocate loopback port for Chrome CDP'));
+        return;
+      }
+      const port = address.port;
+      server.close((error) => {
+        if (error) reject(error);
+        else resolve(port);
+      });
+    });
+  });
+}
+
+function readCdpVersion(port) {
+  return new Promise((resolve, reject) => {
+    const request = http.get(
+      {
+        host: '127.0.0.1',
+        port,
+        path: '/json/version',
+        timeout: 750,
+      },
+      (response) => {
+        let body = '';
+        response.setEncoding('utf8');
+        response.on('data', (chunk) => {
+          body += chunk;
+        });
+        response.on('end', () => {
+          if (response.statusCode !== 200) {
+            reject(new Error(`CDP /json/version returned HTTP ${response.statusCode}`));
+            return;
+          }
+          try {
+            resolve(JSON.parse(body));
+          } catch (error) {
+            reject(error);
+          }
+        });
+      },
+    );
+    request.on('timeout', () => request.destroy(new Error('CDP probe timed out')));
+    request.on('error', reject);
+  });
+}
+
+export async function waitForCdpEndpoint(port, timeoutMs = 15000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const version = await readCdpVersion(port);
+      const wsUrl = version?.webSocketDebuggerUrl;
+      if (typeof wsUrl === 'string' && wsUrl) {
+        const parsed = new URL(wsUrl);
+        return { port, wsPath: `${parsed.pathname}${parsed.search}` };
+      }
+    } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+  throw new Error(`Timed out waiting for Chrome CDP endpoint on 127.0.0.1:${port}`);
+}
+
+// Legacy parser kept for compatibility with existing callers/tests.
 export async function waitForDevToolsActivePort(targetDir, timeoutMs = 15000) {
   const filePath = path.join(targetDir, 'DevToolsActivePort');
   const start = Date.now();
@@ -348,10 +432,12 @@ export async function launchChrome(profileId = 'Default', {
     fs.rmSync(activePortFile, { force: true });
   }
 
+  const port = await findAvailableLoopbackPort();
+
   const args = [
     `--user-data-dir=${targetDir}`,
     `--profile-directory=${profileId}`,
-    '--remote-debugging-port=0',
+    `--remote-debugging-port=${port}`,
     '--no-first-run',
     '--no-default-browser-check',
     '--disable-sync',
@@ -376,7 +462,7 @@ export async function launchChrome(profileId = 'Default', {
   });
   child.unref();
 
-  const { port, wsPath } = await waitForDevToolsActivePort(targetDir, timeoutMs);
+  const { wsPath } = await waitForCdpEndpoint(port, timeoutMs);
 
   activeSession = {
     port,
@@ -436,6 +522,8 @@ export default {
   listInstalledBrowsers,
   listProfiles,
   cloneProfile,
+  findAvailableLoopbackPort,
+  waitForCdpEndpoint,
   waitForDevToolsActivePort,
   launchChrome,
   stopChrome,

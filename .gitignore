@@ -24,3 +24,6 @@ postman/
 # private internal labs — never tracked in this public repo
 labs/
 aiobox/
+
+# Local MCP server registration for Claude Code — contains a bearer token, do NOT commit
+.mcp.json

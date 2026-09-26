@@ -1,12 +1,17 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mock } from 'node:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-const runtimeDir = path.join(os.homedir(), '.aki', 'cdp-postman');
-mkdirSync(runtimeDir, { recursive: true });
+const runtimeDir = mkdtempSync(path.join(os.tmpdir(), 'aki-postman-status-'));
+process.env.AKI_POSTMAN_RUNTIME_DIR = runtimeDir;
 writeFileSync(path.join(runtimeDir, 'daemon.pid'), String(process.pid));
+const daemonPid = (await import('../scripts/aki-pmcontrol/scripts/daemon-pid.js')).default;
+mock.method(daemonPid, 'read', () => process.pid);
+mock.method(daemonPid, 'live', (pid) => pid === process.pid);
+
 writeFileSync(path.join(runtimeDir, 'ownership-status.json'), JSON.stringify({
   daemonPid: process.pid,
   attached: true,
@@ -33,4 +38,5 @@ assert.equal(stale.running, true);
 assert.equal(stale.attached, false);
 assert.equal(stale.ownerTargetId, null);
 assert.equal(stale.attachedWindowCount, 0);
+rmSync(runtimeDir, { recursive: true, force: true });
 console.log('postman-status.test.js: ok');

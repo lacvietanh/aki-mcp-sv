@@ -5,8 +5,7 @@
  * Prints the exact DOM / localStorage contract that scripts/cdp-autoclicker.js depends on
  * (permission-card roots, chat container, model-menu button, settings button, send button,
  * agent-mode localStorage) for the CURRENT Postman build — so selector fixes are data-driven,
- * never guessed. It ONLY calls Runtime.evaluate (returnByValue); it clicks nothing, navigates
- * nothing, writes nothing.
+ * never guessed. The default probe is read-only; optional flags can change Postman state.
  *
  * Usage (from the repo root, in a normal terminal):
  *   node scripts/aki-pmcontrol/scripts/cdp-probe.js
@@ -28,10 +27,7 @@ function pageProbe() {
   const agentLs = {};
   agentKeys.forEach((k) => { agentLs[k] = localStorage.getItem(k); });
 
-  // Heuristic scan for tool-approval UI regardless of exact class name, so a selector drift shows up even if
-  // .tool-approval-wrapper / .tool-approval-single-item no longer match this build. Run the probe WHILE a
-  // permission card ("Approve / Run / Continue ...") is on screen: matchedKnownRoot:false means the current
-  // PERMISSION_CARD_ROOT no longer wraps the card, and cardClass/cardTestid reveal the correct new selector.
+  // Probe while an approval card is visible; matchedKnownRoot:false plus cardClass/cardTestid exposes selector drift.
   const chatContainer = q('[data-testid="ai-chat-container"]');
   const approvalWord = /^(approve|allow|run|continue|accept|try again|reject|deny)$/i;
   const scanRoot = q('[data-testid="ai-chat-conversation-container"]') || chatContainer || document.body;
@@ -194,6 +190,8 @@ async function main() {
       }
 
       if (process.argv.includes('--enable-mcp')) {
+        const accessToken = process.env.AKI_MCP_ACCESS_TOKEN;
+        if (!accessToken) throw new Error('--enable-mcp requires AKI_MCP_ACCESS_TOKEN');
         await client.Runtime.evaluate({
           expression: `(() => {
             try {
@@ -202,7 +200,7 @@ async function main() {
                 config: {
                   url: 'http://127.0.0.1:9999/mcp',
                   headers: {
-                    Authorization: 'Bearer 7609abaf386b6ec8ded7271249ea1eb4dbbed0b6f4945887549aec4a2557285e'
+                    Authorization: ${JSON.stringify(`Bearer ${accessToken}`)}
                   }
                 },
                 enabled: true,

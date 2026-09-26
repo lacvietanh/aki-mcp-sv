@@ -4,6 +4,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 
 ## [Unreleased]
 
+### Added
+- **Ingress drop-rate benchmark harness** (`bench/drop-rate.mjs`): dependency-free public-edge probing and comparison for Tailscale Funnel vs Cloudflare reliability, with preflight/well-known/real MCP modes and JSONL summaries. The benchmark is contributor tooling only and is excluded from the npm package.
+
+### Changed
+- **Background-task test is cross-platform**: its short-lived command uses `git rev-parse --show-toplevel` so Windows and Unix runners observe reliable output.
+- **Kiro fallback resource bounds tightened**: read-only fallback calls use a shorter timeout and smaller output buffer so hung probes fail sooner and concurrent calls use less memory.
+
+### Fixed
+- **Postman diagnostic token handling**: the optional `--enable-mcp` probe now requires `AKI_MCP_ACCESS_TOKEN` instead of embedding a bearer token in tracked source.
+- **Chrome cloned-profile launcher false timeouts on current Windows Chrome**: launcher now resolves the actually installed Chromium binary, allocates an explicit loopback CDP port, and probes `/json/version` instead of depending on `DevToolsActivePort`; legacy parsing remains for compatibility.
+- **Windows command-wrapper execution**: allowlisted `.cmd`/`.bat` programs are routed through `cmd.exe` instead of failing when Node tries to execute them directly.
+- **MCP/OAuth runtime resilience**: loopback OAuth redirects are accepted for local clients; dropped CDP sockets and stray async errors are logged without taking down the whole server; the Postman local-folder rejection rule recognizes current wording variants.
+
 ## [2.1.0] - 2026-09-18
 
 ### Added

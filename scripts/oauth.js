@@ -1,7 +1,5 @@
 #!/usr/bin/env node
-// Minimal OAuth 2.1 authorization server.
-// Claude: pre-registered confidential client (paste Client ID/Secret), or DCR if it self-registers.
-// ChatGPT: RFC 7591 DCR + public client (token_endpoint_auth_method: none) + chatgpt.com redirect URIs.
+// Claude uses a static confidential client or DCR; ChatGPT uses RFC 7591 DCR with public client auth.
 import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -18,11 +16,9 @@ import { esc } from './html.js';
 const CLAUDE_CALLBACK = 'https://claude.ai/api/mcp/auth_callback';
 const CHATGPT_LEGACY_CALLBACK = 'https://chatgpt.com/connector_platform_oauth_redirect';
 const CHATGPT_CALLBACK_PREFIX = 'https://chatgpt.com/connector/oauth/';
-// Gemini custom connected apps redirect through Google's OAuth proxy, not a gemini.google.com path — observed live 2026-08-09:
-// redirect_uri=https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-<numeric>-<host-with-underscores>
+// Gemini connected apps use Google's OAuth proxy callback, not gemini.google.com (observed 2026-08-09).
 const GEMINI_CALLBACK_PREFIX = 'https://oauth-redirect.googleusercontent.com/r/';
-// Grok self-registers (DCR) with this callback — observed live 2026-08-09 from the register-REJECTED log:
-// redirect_uris=["https://grok.com/connectors-oauth-exchange-code/"]. Note: NOT a /connector/oauth/ path.
+// Grok registered this callback via DCR on 2026-08-09; it does not use /connector/oauth/.
 const GROK_CALLBACK_PREFIX = 'https://grok.com/connectors-oauth-exchange-code/';
 const CODE_TTL_MS = 5 * 60 * 1000;
 const ACCESS_TTL_S = 365 * 24 * 3600;
@@ -39,9 +35,22 @@ const refreshTokens = new Map();
 function isAllowedRedirect(uri) {
   if (typeof uri !== 'string' || !uri) return false;
   if (uri === CLAUDE_CALLBACK || uri === CHATGPT_LEGACY_CALLBACK) return true;
+  if (isLoopbackRedirect(uri)) return true;
   return uri.startsWith(CHATGPT_CALLBACK_PREFIX)
     || uri.startsWith(GROK_CALLBACK_PREFIX)
     || uri.startsWith(GEMINI_CALLBACK_PREFIX);
+}
+
+function isLoopbackRedirect(uri) {
+  try {
+    const url = new URL(uri);
+    return url.protocol === 'http:'
+      && (url.hostname === 'localhost'
+        || url.hostname === '127.0.0.1'
+        || url.hostname === '[::1]');
+  } catch {
+    return false;
+  }
 }
 
 // Tokens survive restarts: the connector is a long-lived file-access grant, and losing it on every
@@ -92,10 +101,7 @@ function resolveClient(clientId) {
   if (!clientId) return null;
   const staticClient = loadOrCreateClient();
   if (clientId === staticClient.clientId) {
-    // The confidential client's ID/secret are deliberately pasted into more than one provider (Claude,
-    // and Gemini which reuses the same paste flow). Each provider sends its own redirect_uri, so this
-    // client accepts any allowlisted callback (isStatic below), not just CLAUDE_CALLBACK — the allowlist
-    // (isAllowedRedirect) is the security boundary, the same one /register enforces for public clients.
+    // The static client spans providers, so isAllowedRedirect bounds its callbacks instead of CLAUDE_CALLBACK alone.
     return {
       clientId: staticClient.clientId,
       clientSecret: staticClient.clientSecret,
@@ -225,8 +231,7 @@ export async function handleAuthorize(req, res, passphrase, origin) {
   const codeChallengeMethod = q.get('code_challenge_method');
   const state = q.get('state') || '';
   const client = resolveClient(clientId);
-  // DCR clients are pinned to the exact redirect_uri they registered; the shared confidential client (isStatic)
-  // accepts any allowlisted callback, since it is pasted into several providers each with its own redirect.
+  // DCR clients use their registered redirect; the shared static client accepts any allowlisted callback.
   const redirectOk = !!client && (client.redirectUris.includes(redirectUri) || (client.isStatic && isAllowedRedirect(redirectUri)));
 
   if (!redirectOk || codeChallengeMethod !== 'S256' || !codeChallenge) {

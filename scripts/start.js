@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Orchestrates gatekeeper + panel + the in-process tools server behind 1 `npm start` / `akimcp`; foreground by design, manual stop/start only. Single Node process (docs/plan/done/2.0.0-improve.md #7, Stage 2).
+// One foreground Node process hosts gatekeeper, panel, and tools; see docs/plan/done/2.0.0-improve.md §7.
 
 import { readFileSync, existsSync } from 'node:fs';
 
@@ -188,15 +188,11 @@ function spawnCloudflared(credPath) {
   return child;
 }
 
-// Boot-time construction of the tools server: surfaces a registration-time crash (bad tool schema,
-// kiro-cli missing from PATH) loudly at startup instead of silently on the first tool call —
-// replaces the old spawnHub()'s "fail loud at boot" role now that it's in-process.
+// Warm tool registration at boot so schema errors fail immediately, preserving spawnHub()'s failure signal.
 warmToolsServer();
 if (ingressMode === 'cloudflared') cloudflared = spawnCloudflared(cloudflaredCredPath);
-// Gatekeeper runs in-process (docs/plan/done/consolidate-mcp-tool-processes.md, Part B); a fatal listen error tears the whole stack down via shutdown, so no child is ever left orphaned.
-// Local-First: the Gatekeeper always binds 127.0.0.1:<port> so local tools (Cursor, Claude Code, AGY, Codex,
-// Postman) connect immediately — with or without a public ingress. A resolved `origin` is passed in so OAuth
-// discovery is live from boot; ingress is a satellite attached to this same server, never a gate.
+// A fatal Gatekeeper listen error shuts down the whole in-process stack.
+// Gatekeeper binds loopback for local tools; optional origin attaches public ingress to the same server.
 let gateServer = null;
 try {
   gateServer = startGatekeeper(origin, () => shutdown(1));
@@ -233,6 +229,8 @@ if (process.env.MCP_SKIP_BROWSER_OPEN) {
 function shutdown(code = 0) {
   if (shuttingDown) return;
   shuttingDown = true;
+  // Log clean SIGTERM replacements distinctly from crashes; they previously exited without a trace.
+  console.log(`[start] shutting down (exit code ${code})${code === 0 ? ' — clean stop (Ctrl+C, or replaced by a newer instance)' : ' — FATAL error path'}`);
   clearLock();
   cloudflared?.kill();
   killPostmanDaemon();
@@ -243,3 +241,12 @@ function shutdown(code = 0) {
 process.on('SIGINT', () => shutdown(0));
 process.on('SIGTERM', () => shutdown(0));
 process.on('exit', () => { cloudflared?.kill(); killPostmanDaemon(); }); // safety net: never leave a child orphaned if this process exits abruptly
+
+// Keep the server alive after stray async errors, which otherwise exit Node >=15 on unhandled rejection.
+// Fatal listen or tunnel errors still call shutdown() explicitly.
+process.on('uncaughtException', (err) => {
+  console.error(`[start] uncaughtException — kept alive:\n${err?.stack || err}`);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error(`[start] unhandledRejection — kept alive:\n${reason?.stack || reason}`);
+});

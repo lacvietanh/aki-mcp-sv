@@ -7,18 +7,17 @@ import { existsSync, statSync, readFileSync, writeFileSync, mkdirSync } from 'no
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-// Default import, not `{ spawn }`: node:test's mock.method only intercepts the shared exports
-// object a default import resolves to, not a named-import binding — postman-mcp.test.js relies on
-// mocking this without spawning a real process.
+// Default import lets postman-mcp.test.js mock spawn without starting a real process.
 import cp from 'node:child_process';
 import { z } from 'zod';
 import { ok, fail } from './mcp-tool.js';
 import daemonPid from './aki-pmcontrol/scripts/daemon-pid.js';
 import cdp from './cdp-engine.js';
 
-const DATA_JSON_PATH = path.join(os.homedir(), '.aki', 'cdp-postman', 'data.json');
-const NEW_WINDOW_FLAG_PATH = path.join(path.dirname(DATA_JSON_PATH), 'new-window.flag');
-const OWNERSHIP_STATUS_PATH = path.join(path.dirname(DATA_JSON_PATH), 'ownership-status.json');
+const POSTMAN_RUNTIME_DIR = process.env.AKI_POSTMAN_RUNTIME_DIR || path.join(os.homedir(), '.aki', 'cdp-postman');
+const DATA_JSON_PATH = path.join(POSTMAN_RUNTIME_DIR, 'data.json');
+const NEW_WINDOW_FLAG_PATH = path.join(POSTMAN_RUNTIME_DIR, 'new-window.flag');
+const OWNERSHIP_STATUS_PATH = path.join(POSTMAN_RUNTIME_DIR, 'ownership-status.json');
 const DAEMON_SCRIPT_PATH = fileURLToPath(new URL('./aki-pmcontrol/index.js', import.meta.url));
 
 let daemonProcess = null;
@@ -123,9 +122,7 @@ function whenPidDies(pid) {
   });
 }
 
-// The one spawn path (pattern.A1): recognizes an already-alive child instead of starting a second,
-// so N clicks on the panel button behave like one. Check + spawn + assign stay synchronous; only
-// the confirmation waits, so two overlapping HTTP requests cannot both pass the liveness check.
+// Check, spawn, and assignment stay synchronous so overlapping panel requests cannot launch duplicate daemons.
 export async function launchPostmanDaemon() {
   const before = getDaemonStatus();
   if (before.running) return { ...before, message: `already running (pid ${before.pid})` };
@@ -161,10 +158,7 @@ export async function killPostmanDaemon() {
   return { ...status, message: 'stopped' };
 }
 
-// Panel → daemon IPC for the "New window" panel button: drops a flag file next to data.json
-// that the daemon's own 1s discover() loop already checks (scripts/aki-pmcontrol/index.js),
-// so no new transport is needed for a request that only needs to happen, not carry data.
-// This is the only writer of that file; the daemon is the only reader/deleter.
+// The panel requests a new window through the flag the daemon's existing discover() loop reads and deletes.
 export function requestNewWindow() {
   const status = getDaemonStatus();
   if (!status.running) throw new Error('Postman daemon not running — launch it first');
@@ -174,11 +168,8 @@ export function requestNewWindow() {
   return { ok: true, message: 'requested a new Postman window' };
 }
 
-// ── Postman CDP action tools (built on the app-agnostic engine in cdp-engine.js) ──────────────
-// Each opens its own short-lived CDP connection to Postman's endpoint and never adopts/owns it, so
-// it coexists with the control daemon's long-lived owned session (CDP allows multiple clients).
-// Endpoint discovery is authoritative: the daemon's ownership-status.json (the port a running
-// instance actually bound to) first, then Postman's DevToolsActivePort — never a guessed 9222.
+// Action tools open short-lived CDP connections without taking ownership from the control daemon.
+// Endpoint discovery uses the daemon's bound port, then DevToolsActivePort; never guess port 9222.
 function resolvePostmanEndpoint() {
   const status = getDaemonStatus();
   if (status.endpoint?.port) return { host: status.endpoint.host || '127.0.0.1', port: status.endpoint.port };
@@ -197,13 +188,8 @@ async function postmanEval(expression, { awaitPromise = true } = {}) {
   return cdp.evaluate({ ...endpoint, target, expression, awaitPromise });
 }
 
-// Rename via Postman's own inline edit so the change persists in app state (a raw textContent write is
-// reverted on the next render). Anchor ONLY to the app-owned semantic classes (.ai-chat-conversation-name*)
-// — never the styled-components sc-* hashes, which regenerate on every build. Two things the naive version
-// got wrong: (1) a lone synthetic dblclick does not flip the component into edit mode, so we replay the
-// full native mouse sequence (two press/release/click pairs + a detail:2 dblclick); (2) on entering edit
-// mode the view <h4> is detached, so nameEl.parentElement is null — the input actually lives inside
-// .ai-chat-conversation-name-editor, which is where we look (with a focused-field fallback).
+// Rename through Postman's inline editor; textContent changes revert on render and styled-components hashes change per build.
+// Replay native mouse events to enter edit mode, then find input under .ai-chat-conversation-name-editor after h4 detaches.
 const RENAME_JS = (name) => `(async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const NAME = ${JSON.stringify(name)};

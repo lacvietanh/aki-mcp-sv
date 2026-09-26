@@ -71,10 +71,10 @@ async function runTests() {
     'Path traversal in taskId must be rejected',
   );
 
-  // 5. Test starting an allowlisted command (e.g. "pwd")
-  const testId = `test_pwd_${Date.now()}`;
+  // 5. Test starting an allowlisted command with deterministic output on every platform.
+  const testId = `test_revparse_${Date.now()}`;
   const startResult = await taskStart({
-    command: 'pwd',
+    command: 'git rev-parse --show-toplevel',
     cwd: process.cwd(),
     taskId: testId,
   });

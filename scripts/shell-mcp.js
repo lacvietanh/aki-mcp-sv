@@ -7,10 +7,10 @@ import { loadAllowlist, loadAllowlistDirs } from './allowlist.js';
 import { getRoots, resolveUnderRoot, containedIn, overlaps } from './roots.js';
 import { ok, err, fail } from './mcp-tool.js';
 
-// Interpreters run a script file passed as an argument, so trust must follow the script's path, not the interpreter binary (which lives on PATH, outside the trusted zones). Shells (sh/bash/zsh) are excluded on purpose — their argument is arbitrary code, not a file to locate under a zone.
+// Trust an interpreter's script path, not its binary; shells accept arbitrary code and never qualify by trusted directory.
 const INTERPRETERS = new Set(['node', 'python', 'python3', 'bun', 'deno', 'tsx', 'ruby', 'perl', 'php']);
 
-// ls-remote requires zero extra args — a repository/URL argument lets git's own ext:: transport helper spawn an arbitrary process before anything "read-only" happens; bare invocation only queries the configured remote.
+// Bare ls-remote uses the configured remote; a URL argument could invoke git's ext:: process transport.
 const GIT_NO_ARGS_SUBCOMMANDS = new Set(['ls-remote']);
 
 const warnedDirs = new Set();
@@ -60,9 +60,7 @@ export class Shell {
   // No backslash: `execFile` never spawns a shell, so it is an inert literal everywhere and a path separator on Windows.
   static DANGEROUS_CHARS = /[;&|`$<>\n]/;
 
-  // Only metacharacters OUTSIDE quotes can chain/redirect. execFile never spawns a shell, so a quoted
-  // occurrence (grep -E '^(name|description):' , grep -E 'foo$') is an inert argv literal. Validate a
-  // quote-stripped view — mirrors tokenize()'s quote model so the two agree — not the raw command.
+  // Validate metacharacters outside quotes; execFile passes quoted values literally, matching tokenize()'s quote model.
   static unquotedView(command) {
     let out = '';
     let quote = null;
@@ -133,8 +131,11 @@ export class Shell {
   }
 
   run(bin, args, cwd) {
+    const isWindowsScript = process.platform === 'win32' && /\.(?:cmd|bat)$/i.test(bin);
+    const executable = isWindowsScript ? (process.env.ComSpec || 'cmd.exe') : bin;
+    const executableArgs = isWindowsScript ? ['/d', '/s', '/c', bin, ...args] : args;
     return new Promise((resolve) => {
-      execFile(bin, args, { cwd, timeout: 10_000, maxBuffer: 1024 * 1024, windowsHide: true }, (error, stdout, stderr) => {
+      execFile(executable, executableArgs, { cwd, timeout: 10_000, maxBuffer: 1024 * 1024, windowsHide: true }, (error, stdout, stderr) => {
         if (error) {
           resolve(err(stderr || error.message));
         } else {

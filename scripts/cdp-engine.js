@@ -14,9 +14,7 @@ import CDP from 'chrome-remote-interface';
 const DEFAULT_HOST = '127.0.0.1';
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Where each known app writes its live DevToolsActivePort file (first line = the actual port a
-// running instance bound to — authoritative, unlike a guessed 9222). A caller that already knows
-// the port passes it directly and skips this. Unknown app => treat the arg as the support-dir name.
+// DevToolsActivePort records the live port; unknown app names become support-directory names.
 export function devToolsPortFile(app = 'postman') {
   const home = os.homedir();
   const NAMES = { postman: 'Postman', code: 'Code', slack: 'Slack' };
@@ -26,9 +24,7 @@ export function devToolsPortFile(app = 'postman') {
   return path.join(home, '.config', dirName, 'DevToolsActivePort');
 }
 
-// Returns the port an app is actually listening on, or null. Never silently falls back to 9222:
-// a null result is an honest "unknown", which the caller can surface instead of targeting the
-// wrong process (the "silent 9222" trap in postman-session.getDevToolsPort()).
+// Never guess 9222 when the live port is unknown; that could target another process.
 export function readDevToolsPort(app = 'postman') {
   try {
     const first = fs.readFileSync(devToolsPortFile(app), 'utf8').trim().split('\n')[0];
@@ -55,9 +51,7 @@ function selectTarget(targets, filter) {
   return pages.find(test) || null;
 }
 
-// Evaluate JS in a target and return the serialized result — or throw with the page-side message
-// on a thrown exception. `target` may be a target object (from listTargets/waitForTarget), a target
-// id string, or omitted with a `filter` to locate one.
+// Accept a target object, id, or filter; propagate page-side exceptions.
 export async function evaluate({
   host = DEFAULT_HOST, port, target, filter, expression,
   awaitPromise = true, returnByValue = true, userGesture = true,
@@ -70,6 +64,9 @@ export async function evaluate({
   }
   if (!resolved) throw new Error(`no matching CDP target on ${host}:${port}`);
   const client = await CDP({ host, port, target: resolved.webSocketDebuggerUrl || resolved.id });
+  // A CDP socket error needs a listener or Node exits; the pending command still rejects.
+  client.on('error', (e) => console.error(`[cdp] client socket error (ignored): ${e?.message || e}`));
+  client.on('disconnect', () => {});
   try {
     await client.Runtime.enable().catch(() => {});
     const { result, exceptionDetails } = await client.Runtime.evaluate({ expression, awaitPromise, returnByValue, userGesture, includeCommandLineAPI: true });
@@ -86,10 +83,7 @@ export async function evaluate({
   }
 }
 
-// Poll until a target matching `filter` exists AND (optional) `readyExpression` returns truthy
-// INSIDE it. This is the real fix for "endpoint-up ≠ renderer-ready": CDP.List() answering only
-// proves the CDP server is up, not that the SPA has mounted its DOM. Gate one-shot actions on real
-// DOM, e.g. readyExpression: "!!document.querySelector('[data-testid=\"ai-chat-container\"]')".
+// A CDP endpoint may answer before its SPA mounts; gate one-shot actions on readyExpression.
 export async function waitForTarget({
   host = DEFAULT_HOST, port, filter, readyExpression,
   timeoutMs = 15000, pollMs = 150,
@@ -98,9 +92,7 @@ export async function waitForTarget({
   let lastError;
   do {
     try {
-      // Scan ALL matching page targets, not just the first: an Electron app (Postman) opens several
-      // windows and only one hosts the DOM the caller wants. Return the first where readyExpression
-      // holds, so the right window is chosen instead of whichever sorted first.
+      // Scan every matching window; only one may host the requested DOM.
       const pages = (await CDP.List({ host, port })).filter((t) => t.type === 'page');
       const test = !filter ? () => true
         : filter instanceof RegExp ? (t) => filter.test(`${t.url} ${t.title}`)
@@ -121,9 +113,7 @@ export async function waitForTarget({
   throw new Error(`waitForTarget timed out on ${host}:${port}${lastError ? ` (${lastError.message})` : ''}`);
 }
 
-// Launch any Electron/Chromium app with remote debugging enabled, then wait until its CDP endpoint
-// answers. `execPath` = the app binary; `args` are appended after the debug flags. Non-invasive:
-// detached + unref so the app outlives this process. Returns the endpoint it came up on.
+// Detach so the launched app outlives this process; wait for its CDP endpoint.
 export async function launch({ execPath, args = [], port = 9222, host = DEFAULT_HOST, timeoutMs = 20000 } = {}) {
   if (!execPath) throw new Error('launch requires execPath');
   const flags = [`--remote-debugging-port=${port}`, '--disable-blink-features=AutomationControlled', ...args];
@@ -143,9 +133,7 @@ export async function launch({ execPath, args = [], port = 9222, host = DEFAULT_
   throw new Error(`launched ${execPath} but its CDP endpoint never came up on ${host}:${port}${lastError ? ` (${lastError.message})` : ''}`);
 }
 
-// Find the first page target whose in-page probe returns truthy. Robust for multi-window apps
-// (Postman opens several renderers) where the right window is identified by its DOM/mediator, not
-// its url. Polls until timeout so it also waits for the SPA to mount (fixes false-ready).
+// Probe every renderer until the requested DOM mounts, regardless of target URL.
 export async function findTarget({ host = DEFAULT_HOST, port, probeExpression, timeoutMs = 15000, pollMs = 200 } = {}) {
   if (!probeExpression) throw new Error('findTarget requires a probeExpression');
   const deadline = Date.now() + timeoutMs;
@@ -178,6 +166,9 @@ export async function screenshot({
   }
   if (!resolved) throw new Error(`no matching CDP target on ${host}:${port}`);
   const client = await CDP({ host, port, target: resolved.webSocketDebuggerUrl || resolved.id });
+  // A CDP socket error needs a listener or Node exits; the pending command still rejects.
+  client.on('error', (e) => console.error(`[cdp] client socket error (ignored): ${e?.message || e}`));
+  client.on('disconnect', () => {});
   try {
     await client.Page.enable().catch(() => {});
     const params = { format };
