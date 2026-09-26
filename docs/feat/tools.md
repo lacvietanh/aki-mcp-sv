@@ -1,6 +1,6 @@
 # Tools — the local capability suite (anchored)
 
-> updated 2026-09-05 · v1.14.0
+> updated 2026-09-25 · v2.1.0
 
 The product's single purpose: give a remote web AI (claude.ai / ChatGPT / Grok / Gemini / Postman) a set of **local capabilities** on the owner's machine — a pair of hands reaching from the browser into the local filesystem, shell, and local agents. Every tool below exists to serve that anchor. This doc records **why each one is here** so a later subtraction audit does not mistake an anchored capability for redundant code and propose removing it.
 
@@ -12,7 +12,7 @@ The product's single purpose: give a remote web AI (claude.ai / ChatGPT / Grok /
 | `search` | `find_path`, `search_content` | Fast index-backed path + content lookup (no per-call `find`/`grep` spawn) | The remote model, directly |
 > The third-party `@modelcontextprotocol/server-filesystem` package this replaced also exposed `list_directory`/`directory_tree`/`search_files`/`read_multiple_files`/`read_media_file` — dropped outright rather than prompt-banned, since `find_path`/`search_content` already supersede the listing/search family in practice and the rest had no evidence of real use (`docs/plan/done/2.0.0-improve.md` §7). Cheap to re-add if a real need shows up.
 | `shell` | `run_cmd` | Run an allowlisted command as the user; read-only by default, write commands opt-in (`docs/plan/done/shell-allowlist.md`) | The remote model, directly |
-| `agy_run` | `agy_run` | Delegate a whole task to a **local Antigravity CLI agent** — default mode `plan` (read-only by mechanism), default model `gemini-3.7-flash-medium` (fast, wide-context discovery tier) | The remote model delegates; a local agent reasons |
+| `agy_run` | `agy_run` | Delegate a whole task to an **Antigravity CLI agent** — local by default, or a named loopback worker running under a separate OS login/account context; default mode `plan`, default model `gemini-3.7-flash-medium` | The remote model delegates; a local agent reasons |
 | `kiro` | `kiro_read` | Delegate a whole read-only task to a **local Kiro CLI agent**, hard-locked to `claude-sonnet-4.5`, `--trust-tools=fs_read` | The remote model delegates; a local agent reasons |
 | `postman` (`scripts/postman-mcp.js`) | `postman_status` | Reports whether the `scripts/aki-pmcontrol/` daemon is running (own child or lab-started pid at `~/.aki/cdp-postman/daemon.pid`) and its `data.json`. Origin is a private internal lab; this tree holds the finished copy (except `package.json`, a `{"type":"commonjs"}` shim). Launch is a panel action (`POST /api/postman-launch`), not this tool and not boot. | The remote model, directly — read-only, no CDP in the tool |
 
@@ -25,8 +25,9 @@ The product's single purpose: give a remote web AI (claude.ai / ChatGPT / Grok /
 An audit that only pattern-matches capabilities will call `kiro_read` "redundant — the model already has `find_path`/`search_content`/`run_cmd`." **That is a misclassification and the arms must not be removed on that basis.** An arm is not a file-reader; it is agent delegation, and it buys three things a direct primitive cannot:
 
 - **Offload multi-step local work** — a local model runs the investigate/read/synthesize loop against local files and returns a conclusion, instead of the remote model paying round-trips and context for every intermediate read.
-- **Local trust scoping by mechanism** — the arm runs under its own locked tool set (`kiro` → `fs_read` only; `agy` → `plan` mode only), a boundary the remote model cannot widen from a prompt.
+- **Local trust scoping by mechanism** — `kiro` is locked to `fs_read`; `agy` defaults to `plan`, with broader modes requiring the main allowlist and, for routed workers, the worker's own startup allowlist. A prompt cannot widen either boundary.
 - **Model/tier choice per task** — `agy` reaches a wide-context discovery tier; `kiro` is pinned to a specific Sonnet id for cost/behavior determinism.
+- **Independent AGY account contexts when needed** — `agy_run(worker=...)` routes to a token-authenticated loopback worker. The AKIMCP panel manages fixed role identities, one-UAC identity provisioning, per-role Login/Logout and Start/Stop, Start All/Stop All, and live identity/worker health. Login opens one visible AGY CLI window under the selected role for sign-in and any authorization-code entry; the user closes it before Start. Automatic helpers and daily workers run hidden. Each cross-user worker reuses the main installed `agy.exe` while Windows Credential Manager remains isolated by user SID; AKIMCP never copies AGY OAuth material (`docs/ref/agy-multi-account.md`).
 
 ## Search ladder — how the model should compose a hunt
 

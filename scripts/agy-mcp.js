@@ -1,34 +1,128 @@
-// Dedicated MCP tool for the `agy` CLI: passes prompt/model/mode as separate execFile args so no shell-tokenizing step can mis-split a multi-word -p prompt (the reason it is not routed through the generic shell tool). Modes are allowlisted via allowlist.js.
-import { execFile } from 'node:child_process';
+// Dedicated MCP tool for the `agy` CLI. The default path executes the local CLI directly; an optional named worker routes the same request to a loopback worker running under a different OS login, which gives AGY an independent credential vault without copying OAuth material into Aki MCP.
 import { z } from 'zod';
 import { readSettings } from './allowlist.js';
 import { resolveOrFail } from './roots.js';
-import { ok, err, fail } from './mcp-tool.js';
+import { ok, err } from './mcp-tool.js';
+import { DEFAULT_AGY_MODEL, runAgyProcess } from './agy-runner.js';
+import { readAgyPoolSecrets, resolveAgyWorkerToken } from './agy-pool-config.js';
 
-// 'plan' is agy's non-mutating mode — the only one enabled out of the box. Anything else must be explicitly opted into via setting.json -> { "agy": { "allowedModes": [...] } }.
 const DEFAULT_MODES = ['plan'];
-// Discovery-tier default per akiflow/harness-facts.md: fastest wide-context tier, generous quota.
-const DEFAULT_MODEL = 'gemini-3.7-flash-medium';
+const REMOTE_TIMEOUT_MS = 125_000;
+const LOOPBACK_URL = /^http:\/\/127\.0\.0\.1:[1-9]\d{0,4}\/?$/;
 
-function loadAllowedModes() {
-  const configured = readSettings().agy?.allowedModes;
+export function loadAllowedModes(settings = readSettings()) {
+  const configured = settings.agy?.allowedModes;
   return Array.isArray(configured) && configured.length ? configured : DEFAULT_MODES;
 }
 
-function run(args, cwd) {
-  return new Promise((resolve) => {
-    execFile('agy', args, { cwd, timeout: 120_000, maxBuffer: 4 * 1024 * 1024 }, (error, stdout, stderr) => {
-      if (error) {
-        // agy writes its own errors to stdout, not stderr — check stdout first or real failures show up as Node's generic "Command failed: <cmd>" with no explanation (see shell-mcp.js's same bug).
-        return resolve(err(stdout || stderr || error.message));
-      }
-      // agy headless can't prompt for permission: a denied action auto-fails but still exits 0 with an empty response (harness-facts.md § Cross-CLI worker). Treat empty stdout as inconclusive, not clean.
-      if (!stdout || !stdout.trim()) {
-        return resolve(err('agy returned no output — the call may have been silently denied rather than a clean empty result. Re-check the prompt/scope.'));
-      }
-      resolve(ok(stdout));
-    });
+export function resolveWorkerConfig(name, settings = readSettings(), env = process.env, secrets = readAgyPoolSecrets()) {
+  const workers = settings.agy?.workers;
+  if (!workers || typeof workers !== 'object' || Array.isArray(workers)) {
+    throw new Error('rejected: no AGY workers are configured in setting.json');
+  }
+
+  const entry = workers[name];
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+    throw new Error(`rejected: unknown AGY worker "${name}"`);
+  }
+
+  let base;
+  try {
+    base = new URL(entry.url);
+  } catch {
+    throw new Error(`rejected: AGY worker "${name}" has an invalid url`);
+  }
+  if (!LOOPBACK_URL.test(entry.url) || base.protocol !== 'http:' || base.hostname !== '127.0.0.1' || !base.port) {
+    throw new Error(`rejected: AGY worker "${name}" url must be loopback HTTP`);
+  }
+
+  if (entry.tokenEnv !== undefined && (typeof entry.tokenEnv !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(entry.tokenEnv))) {
+    throw new Error(`rejected: AGY worker "${name}" has invalid tokenEnv`);
+  }
+  if (entry.secretRef !== undefined && (typeof entry.secretRef !== 'string' || !entry.secretRef)) {
+    throw new Error(`rejected: AGY worker "${name}" has invalid secretRef`);
+  }
+  const token = resolveAgyWorkerToken(entry, { env, secrets });
+  if (!token) throw new Error(`rejected: missing AGY worker token for "${name}"`);
+
+  let allowedModes = null;
+  if (entry.allowedModes !== undefined) {
+    if (!Array.isArray(entry.allowedModes) || !entry.allowedModes.length || !entry.allowedModes.every((m) => typeof m === 'string' && m)) {
+      throw new Error(`rejected: AGY worker "${name}" allowedModes must be a non-empty string array`);
+    }
+    allowedModes = entry.allowedModes;
+  }
+
+  return {
+    name,
+    runUrl: new URL('/run', base).toString(),
+    token,
+    allowedModes,
+  };
+}
+
+export async function runRemoteWorker(worker, payload, { fetchImpl = globalThis.fetch } = {}) {
+  const response = await fetchImpl(worker.runUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${worker.token}`,
+    },
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(REMOTE_TIMEOUT_MS),
   });
+
+  let body;
+  try {
+    body = await response.json();
+  } catch {
+    throw new Error(`AGY worker "${worker.name}" returned invalid JSON (HTTP ${response.status})`);
+  }
+
+  if (!response.ok || !body?.ok) {
+    throw new Error(body?.error || `AGY worker "${worker.name}" failed with HTTP ${response.status}`);
+  }
+  if (typeof body.text !== 'string' || !body.text.trim()) {
+    throw new Error(`AGY worker "${worker.name}" returned no output`);
+  }
+  return body.text;
+}
+
+export async function executeAgy(
+  { prompt, mode, model, effort, outputFormat, cwd, worker },
+  {
+    settings = readSettings(),
+    env = process.env,
+    secrets = readAgyPoolSecrets(),
+    resolveCwd = resolveOrFail,
+    runLocal = runAgyProcess,
+    fetchImpl = globalThis.fetch,
+  } = {},
+) {
+  const useMode = mode ?? 'plan';
+  const allowed = loadAllowedModes(settings);
+  if (!allowed.includes(useMode)) {
+    throw new Error(`rejected: mode "${useMode}" is not allowlisted (allowed: ${allowed.join(', ')})`);
+  }
+
+  const resolved = !worker || cwd !== undefined ? resolveCwd(cwd) : null;
+  if (resolved && !resolved.ok) throw resolved.error;
+  const payload = {
+    prompt,
+    mode: useMode,
+    model: model ?? DEFAULT_AGY_MODEL,
+    effort,
+    outputFormat,
+    ...(resolved && { cwd: resolved.dir }),
+  };
+
+  if (!worker) return runLocal(payload);
+
+  const workerConfig = resolveWorkerConfig(worker, settings, env, secrets);
+  if (workerConfig.allowedModes && !workerConfig.allowedModes.includes(useMode)) {
+    throw new Error(`rejected: mode "${useMode}" is not allowlisted for AGY worker "${worker}"`);
+  }
+  return runRemoteWorker(workerConfig, payload, { fetchImpl });
 }
 
 export function register(server) {
@@ -37,35 +131,27 @@ export function register(server) {
     {
       title: 'Antigravity CLI',
       description:
-        'Run the agy CLI for read-only retrieval, never judgment (akiflow/harness-facts.md § Model tiers). ' +
-        `Defaults to mode "plan" (read-only by mechanism) and model "${DEFAULT_MODEL}" (fast, wide-context discovery tier). ` +
-        'Other modes must be allowlisted in setting.json under agy.allowedModes before use. Name exact paths and the exact ' +
-        "output shape in the prompt — agy's workspace index can resolve files outside cwd, so cwd is not a hard scope boundary. " +
+        'Run the agy CLI for retrieval/delegation. Defaults to local mode "plan" (read-only by mechanism) and model ' +
+        `"${DEFAULT_AGY_MODEL}". Other modes must be allowlisted in setting.json under agy.allowedModes. ` +
+        'Optional worker selects a named AGY worker on http://127.0.0.1 from agy.workers, allowing separate OS-login credential contexts. ' +
+        'Name exact paths and the exact output shape in the prompt — agy\'s workspace index can resolve files outside cwd, so cwd is not a hard scope boundary. ' +
         'prompt is passed straight to agy as one argument — no shell quoting, spaces/punctuation are safe as-is.',
       inputSchema: {
         prompt: z.string(),
         mode: z.string().optional().describe('agy --mode, defaults to "plan"'),
-        model: z.string().optional().describe(`agy --model, defaults to "${DEFAULT_MODEL}". Valid ids: gemini-3.7-flash-{low,medium,high}, gemini-3.6-flash-{low,medium,high}, gemini-3.5-flash-{low,medium,high}, gemini-3.1-pro-{low,high}, claude-sonnet-4-6, claude-opus-4-6-thinking, gpt-oss-120b-medium`),
+        model: z.string().optional().describe(`agy --model, defaults to "${DEFAULT_AGY_MODEL}". Valid ids depend on the installed agy CLI`),
         effort: z.enum(['low', 'medium', 'high']).optional().describe('agy --effort, thinking budget'),
         outputFormat: z.enum(['text', 'json']).optional().describe('agy --output-format, use "json" when a program parses the result'),
         cwd: z.string().optional().describe('run inside this project dir; must be under an allowed root'),
+        worker: z.string().optional().describe('named entry under setting.json -> agy.workers; omit to use the current OS account'),
       },
     },
-    async ({ prompt, mode, model, effort, outputFormat, cwd }) => {
-      const useMode = mode ?? 'plan';
-      const allowed = loadAllowedModes();
-      if (!allowed.includes(useMode)) {
-        return err(`rejected: mode "${useMode}" is not allowlisted (allowed: ${allowed.join(', ')})`);
+    async (input) => {
+      try {
+        return ok(await executeAgy(input));
+      } catch (error) {
+        return err(error?.message || String(error));
       }
-      const r = resolveOrFail(cwd);
-      if (!r.ok) return fail(r.error);
-      const dir = r.dir;
-      // -p takes the prompt as its value and must come last — anything after it is silently swallowed as part of the prompt, not parsed as a flag (harness-facts.md § Cross-CLI worker, the flag-order trap).
-      const args = ['--mode', useMode, '--model', model ?? DEFAULT_MODEL];
-      if (effort) args.push('--effort', effort);
-      if (outputFormat) args.push('--output-format', outputFormat);
-      args.push('-p', prompt);
-      return run(args, dir);
     },
   );
 }

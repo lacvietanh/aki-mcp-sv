@@ -73,7 +73,7 @@ Nothing needs preparing beforehand; `npm start` handles it:
 - **OAuth and passphrase state** in `~/.aki/mcpsv/`: generated once and reused on later runs.
 - **Funnel**: checks `tailscale funnel status`; if port `9999` isn't on yet, runs `tailscale funnel --bg 9999` (idempotent: never toggles an already-enabled port).
 - Prints the **Remote MCP server URL** and **Passphrase** used on the confirmation page when a client connects.
-- Opens the **control panel** at `http://127.0.0.1:9998/?t=<token>`. A step header maps the flow (0 Setup · 1 Connectors · 2 Install rules · 3 Instructions · 4 Extension), then the sections follow it: 0 Setup (a 3-tab ingress picker: Tailscale + Funnel / Owned public origin / Hosted domain), 1 Connectors, 2 Install akidevrule, 3 Instructions prompt, 4 Browser utilities, 5 allowed Folders, 6 shell allowlist.
+- Opens the **control panel** at `http://127.0.0.1:9998/?t=<token>`. A step header maps the flow (0 Setup · 1 Connectors · 2 Install rules · 3 Instructions · 4 Extension), then the sections follow it: 0 Setup (a 3-tab ingress picker: Tailscale + Funnel / Owned public origin / Hosted domain), 1 Connectors, 2 Install akidevrule, 3 Instructions prompt, 4 Browser utilities, 5 allowed Folders, 6 shell allowlist, 7 AGY multi-account pool.
 
 The default allowed root is your **home directory** (`$HOME`, or `%USERPROFILE%` on Windows): the one folder guaranteed to exist on any machine and to hold the projects you actually want Claude to reach. In plain terms, that means the whole home folder (Desktop, Documents, Downloads, Photos, everything under it), not just the projects you meant to share. Add/remove folders from **panel section 5**: click "+ Add folder…" and type an absolute path (`/Users/you/projects` or `C:\Users\you\projects`). Saving takes effect immediately for every tool — shell, find, search, and file read/write/edit alike — no restart. To change the root from the start: `MCP_DATA_DIR=/other/path npm start` (or `set MCP_DATA_DIR=D:\work` then `npm start` on Windows cmd).
 
@@ -104,7 +104,7 @@ claude.ai connects and calls the in-house `aki__*` tool suite (39 tools):
 - **Dev Servers & Ports**: `aki__port_status`, `aki__kill_port`
 - **Git Operations**: `aki__git_status`, `aki__git_diff`, `aki__git_log`
 - **SQLite Database**: `aki__sqlite_schema`, `aki__sqlite_query`
-- **Agent & Context**: `aki__agy_run`, `aki__kiro_read`, `aki__akidevrule_context`
+- **Agent & Context**: `aki__agy_run` (local AGY or a named multi-account loopback worker), `aki__kiro_read`, `aki__akidevrule_context`
 - **Postman Control**: `aki__postman_status`, `aki__postman_eval`, `aki__postman_rename_conversation`, `aki__postman_panel_fullwidth`
 
 **Note on the connector icon:** claude.ai doesn't read the icon from the MCP server. It queries Google's favicon service with the tailnet's **apex domain**, not your host: `https://t2.gstatic.com/faviconV2?...&url=http://<tailnet>.ts.net&size=32`. `<tailnet>.ts.net` has no public DNS record, so Google returns 404 and claude.ai falls back to a default letter icon. This server serves `/favicon.ico` publicly, but no file placed here can change that result: your subdomain never appears in the query Google receives.
@@ -196,7 +196,7 @@ Grok's scheduled prompts turn your machine into a headless "personal remote AI n
 ## Requirements
 
 - Node.js 22, on Windows, Linux, or macOS.
-- **Windows only:** [Git for Windows](https://git-scm.com/download/win) (or WSL) on `PATH` — the shell/search tools shell out to Unix binaries (`ls cat pwd grep head tail wc file stat tree ps df du whoami uname`), and akidevrule's `install.sh` needs `bash`; Git for Windows' `usr/bin` ships the coreutils/findutils/grep/diffutils this needs. Same category of prerequisite as Tailscale below, not a code dependency.
+- **Windows only:** [Git for Windows](https://git-scm.com/download/win) (or WSL) with its `usr/bin` directory on `PATH` — having only `Git/cmd` on `PATH` finds `git.exe` but leaves commands such as `tail.exe` unavailable. The shell/search tools use Unix binaries (`ls cat pwd grep head tail wc file stat tree ps df du whoami uname`), and akidevrule's `install.sh` needs `bash`. Same category of prerequisite as Tailscale below, not a code dependency.
 - Tailscale (one-time setup):
   1. [Install Tailscale](https://tailscale.com/download) and sign in (on macOS, the app or `brew install tailscale` both work as long as `tailscale` is on PATH)
   2. Enable [Funnel](https://tailscale.com/docs/features/tailscale-funnel) for your tailnet: free on every plan, a one-time toggle via the `login.tailscale.com/f/funnel` link `npm start` prints if it isn't on yet
@@ -222,7 +222,7 @@ gatekeeper.js  — public port 9999
 tools-server.js — one shared McpServer, in-process (InMemoryTransport, no child, no SSE), tools:
                                   search-mcp.js       (find_path/search_content, whole-tree in one call)
                                   shell-mcp.js        (allowlisted commands, curated to read-only)
-                                  agy-mcp.js          (Antigravity CLI, read-only plan mode)
+                                  agy-mcp.js          (Antigravity CLI, local or named role worker; plan by default)
                                   kiro-mcp.js         (kiro_read, read-only, needs kiro-cli on PATH)
                                   filesystem-mcp.js   (native read/write/edit inside the allowed folders)
                                   postman-mcp.js      (Postman daemon status/eval/rename/panel tools)
@@ -264,7 +264,12 @@ aki-mcp-sv/
 │   ├── tools-server.js           # builds the one shared McpServer mounting every tool arm below
 │   ├── http.js                   # shared HTTP helpers: readBody / json / serveStatic (+ MIME)
 │   ├── shell-mcp.js              # allowlist-gated shell tool (curated to read-only)
-│   ├── agy-mcp.js                # register() module for the agy CLI (mounted by tools-server.js)
+│   ├── agy-mcp.js                # local AGY execution + named worker routing
+│   ├── agy-runner.js             # shared AGY argv/process runner
+│   ├── agy-worker.js             # loopback worker server for an isolated AGY account context
+│   ├── agy-pool-config.js        # four-role config + local control-secret initialization
+│   ├── agy-pool-manager.js       # fixed-role provision/login/logout/status/start/stop + Windows runas launcher
+│   ├── agy-provision-users.ps1   # one-UAC creation/repair of the three fixed AGY role identities
 │   ├── kiro-mcp.js               # Kiro arm: kiro_read (read-only) tool, sonnet-4.5 locked, needs kiro-cli on PATH
 │   ├── filesystem-mcp.js         # native read/write/edit tools, symlink-safe path containment
 │   ├── postman-mcp.js            # postman_status/eval/rename/panel_fullwidth tools + daemon launch/kill path
@@ -305,6 +310,7 @@ Your data lives outside the repo, at `~/.aki/mcpsv/` (the same convention CLIs l
 ├── oauth-dcr-clients.json # clients that self-registered via /register, one per ChatGPT connector (0600)
 ├── passphrase.txt        # passphrase for the /authorize consent screen (0600)
 ├── tokens.json           # access/refresh tokens (0600)
+├── agy-pool-secrets.json # local bearer secrets for named AGY workers (0600)
 └── prompts/              # per-provider chat prompts (aki-pmcontrol), seeded from scripts/aki-pmcontrol/assets/prompts/
 ```
 
@@ -315,6 +321,12 @@ A clone stays exactly as checked out: editing folders/allowlist from the panel n
 ## Configuration
 
 Copy `.env.example` to `.env` and uncomment what you need — `start.js` loads it automatically on boot (falls back silently to defaults when `.env` is absent, so the default Tailscale flow is unaffected). Supported vars: `PUBLIC_ORIGIN`, `GATEKEEPER_PORT`, `PANEL_PORT`, `MCP_DATA_DIR`, `MCP_REQUEST_TIMEOUT_MS`. For a one-off alternate profile, pass `node --env-file=.env.user ./scripts/start.js` instead.
+
+### Multiple AGY accounts at once
+
+`aki__agy_run` can optionally target a named loopback worker. The control panel's **7 · AGY multi-account pool** section manages four fixed roles (`advisor`, `executor`, `experiment`, `reviewer`) from one window. Advisor uses the current Windows account; the other three use fixed low-privilege identities (`agy-executor`, `agy-experiment`, `agy-reviewer`) that the panel can create/repair through one UAC flow. All four workers default to the dedicated `~/.aki/mcpsv/agy-workspaces` root; for one-UAC provisioning on another project directory, set **all four** `agy.workers.<role>.root` values to the same directory in `setting.json` before **Create role identities**. Click **Login** for a role to open one visible AGY CLI window under that identity, complete sign-in or paste an authorization code in the CLI, close the window, then click **Start**. To change an account, use **Logout → Login**. Automatic helpers and daily workers run hidden. The panel shows each available AGY account name (the email before `@`) beside its 5-hour and weekly quota bars. Cross-user workers reuse the main installed `agy.exe`, so three extra AGY installs and persistent browser/CDP sessions are not required. Worker-side mode gates keep advisor/reviewer `plan`-only while executor/experiment may explicitly allow `accept-edits`. Setup: [AGY multi-account pool](docs/ref/agy-multi-account.md).
+
+The four-account pool currently requires Windows. On macOS and Linux, use the local `aki__agy_run` path without `worker`; the panel's role provisioning and Login flow are not implemented there.
 
 ## Exposing to the internet
 

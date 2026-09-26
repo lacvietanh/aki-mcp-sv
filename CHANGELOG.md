@@ -4,6 +4,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 
 ## [Unreleased]
 
+### Added
+- **One-window multi-account AGY pool**: `aki__agy_run` can route to named, token-authenticated loopback workers for advisor/executor/experiment/reviewer under fixed Windows identities. The panel manages initialization, one-UAC role creation, per-role Login/Logout and Start/Stop, Start All/Stop All, and live identity/worker health. Clicking Login intentionally opens one visible AGY CLI window under that role identity for sign-in and any authorization-code entry; close it before clicking Start. Automatic CMD/PowerShell helpers and daily workers stay hidden. Changing an AGY account requires Logout then Login. Workers reuse the main installation's explicit `agy.exe` path and run a headless login/eligibility probe before reporting ready. Provisioning stores the internal role password as DPAPI-protected `PSCredential` CLIXML, removes the legacy `.dpapi` file, and reports actionable errors; cross-user worker launch waits for its loopback port before token cleanup. Failed readiness probes stop the worker and show a concise recovery message. Daily execution needs no persistent browser/CDP sessions (`docs/ref/agy-multi-account.md`).
+- **Per-account AGY quota bars and account labels**: the panel shows remaining 5-hour and weekly limits for Gemini and Claude/GPT on each running role, with reset times, manual refresh, and visible last-known states. It also shows the signed-in AGY email before `@` when available, so each role's quota has a recognizable account label. Reads run hidden under each worker's own Windows identity (`docs/ref/agy-multi-account.md`).
+
+### Fixed
+- **AGY pool workspace scope**: new role workers default to the dedicated `USER_DIR/agy-workspaces` directory instead of the first general MCP root, which could be the owner's entire Windows profile. Provisioning creates the default workspace, grants role access there, and rejects an owner-home root; explicit custom roots remain configurable before role creation. Distinct custom roots require separately verified Windows ACLs.
+- **AGY role Login and worker startup on Windows**: removed the unnecessary hidden cleanup step that caused `Access is denied` on Login, surfaced worker startup errors, and granted the three role users only non-inheriting traverse/read-attributes/synchronize rights on the default workspace's parent directories. The credential file keeps its separate ACL.
+
 ## [2.1.0] - 2026-09-18
 
 ### Added

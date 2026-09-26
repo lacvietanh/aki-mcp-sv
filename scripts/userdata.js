@@ -16,6 +16,9 @@ export const PASSPHRASE_PATH = path.join(USER_DIR, 'passphrase.txt');
 export const TOKENS_PATH = path.join(USER_DIR, 'tokens.json');
 export const INGRESS_CONFIG_PATH = path.join(USER_DIR, 'ingress.json');
 export const CLOUDFLARED_CRED_PATH = path.join(USER_DIR, 'cloudflared-cred.json');
+export const AGY_POOL_SECRETS_PATH = path.join(USER_DIR, 'agy-pool-secrets.json');
+export const AGY_ROLE_CREDENTIAL_PATH = path.join(USER_DIR, 'agy-role-credential.clixml');
+export const AGY_ROLE_LEGACY_CREDENTIAL_PATH = path.join(USER_DIR, 'agy-role-credential.dpapi');
 
 mkdirSync(USER_DIR, { recursive: true, mode: 0o700 });
 

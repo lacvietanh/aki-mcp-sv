@@ -191,7 +191,6 @@ function collectAllowlist() {
   return map;
 }
 
-// Editable trust zones. A zone overlapping a writable root is disabled server-side (write+exec = RCE); the panel shows it with a ✕ and names the offending folder, but still lets the user fix or remove it.
 function markTrustedDirty() {
   document.querySelector('[data-act="saveTrusted"]').classList.add('primary');
   say('msgTrusted', 'unsaved changes', false);
@@ -253,7 +252,7 @@ function renderSavedIngress(saved) {
   box.append(p);
 }
 
-// Pure visibility toggle: hides non-matching chips/rows, never touches collectAllowlist()'s data. Position matters (above #cmdChips, below the add-input at the bottom): a filter box and an add box that looked identical would collide in the user's mental model.
+// Filter visibility only; saving still collects hidden rows.
 function filterCommands(q) {
   const needle = q.trim().toLowerCase();
   for (const el of document.querySelectorAll('#cmdChips .chip, #cmdRows .cmdrow')) {
@@ -315,6 +314,149 @@ async function loadPostmanDaemon() {
   say('msgPmDaemon', postmanStatusMessage(s), s.attached);
 }
 
+const AGY_ROLES = ['advisor', 'executor', 'experiment', 'reviewer'];
+const AGY_USAGE_FAMILIES = [['gemini', 'Gemini'], ['claudeGpt', 'Claude/GPT']];
+const AGY_USAGE_WINDOWS = [['fiveHour', '5h'], ['weekly', 'Week']];
+const lastAgyUsage = new Map();
+const agyUsageEpoch = new Map(AGY_ROLES.map((role) => [role, 0]));
+let agyUsageRequest = null;
+
+function agyUsageRoot(role) {
+  const row = document.querySelector('[data-agy-role="' + role + '"]');
+  let root = row.querySelector('.agy-usage');
+  if (root) return root;
+  root = document.createElement('div');
+  root.className = 'agy-usage';
+  const groups = AGY_USAGE_FAMILIES.map(([family, name]) => '<div class="agy-usage-group" data-family="' + family + '"><strong>' + name + '</strong><div class="agy-usage-windows">' + AGY_USAGE_WINDOWS.map(([windowName, label]) => '<div class="agy-usage-window" data-window="' + windowName + '"><div class="agy-usage-line"><span>' + label + '</span><span data-remaining>—</span></div><progress max="100" hidden></progress><small data-reset></small></div>').join('') + '</div></div>').join('');
+  root.innerHTML = '<p class="agy-usage-state" aria-live="polite">Checking usage…</p><div class="agy-usage-groups">' + groups + '</div>';
+  row.append(root);
+  return root;
+}
+
+function agyUsageTime(value) {
+  const date = new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) : 'unknown time';
+}
+
+function renderAgyUsage(role, item) {
+  const root = agyUsageRoot(role);
+  if (item?.state === 'ready') lastAgyUsage.set(role, item);
+  const snapshot = item?.state === 'ready' ? item : lastAgyUsage.get(role);
+  const accountHandle = item?.accountHandle || snapshot?.accountHandle || null;
+  document.getElementById('agyAccount-' + role).textContent = accountHandle
+    ? 'AGY: ' + accountHandle + (item?.state === 'ready' ? '' : ' · last known')
+    : 'AGY: unknown';
+  const state = root.querySelector('.agy-usage-state');
+  const stale = Boolean(snapshot) && (item?.state !== 'ready' || item.stale || Date.now() - Date.parse(snapshot.checkedAt) >= 600_000);
+  root.classList.toggle('stale', stale);
+  const reason = { offline: 'worker offline', busy: 'worker busy', uninitialized: 'pool not initialized', unavailable: 'usage unavailable', error: 'usage unavailable' }[item?.state] || 'usage unavailable';
+  state.textContent = snapshot
+    ? (item?.state === 'ready' && !item.stale && Date.now() - Date.parse(snapshot.checkedAt) < 600_000 ? 'Updated ' : 'Last known ') + agyUsageTime(snapshot.checkedAt) + (item?.state === 'ready' ? '' : ' · ' + reason)
+    : item ? 'Usage unavailable · ' + reason : 'Checking usage…';
+  for (const [family, familyName] of AGY_USAGE_FAMILIES) {
+    for (const [windowName, windowLabel] of AGY_USAGE_WINDOWS) {
+      const cell = root.querySelector('[data-family="' + family + '"] [data-window="' + windowName + '"]');
+      const metric = snapshot?.quotas?.[family]?.[windowName];
+      const remaining = metric?.remainingPercent;
+      const valid = typeof remaining === 'number' && Number.isFinite(remaining) && remaining >= 0 && remaining <= 100;
+      cell.querySelector('[data-remaining]').textContent = valid ? remaining + '% remaining' : '—';
+      const progress = cell.querySelector('progress');
+      progress.hidden = !valid;
+      if (valid) {
+        progress.value = remaining;
+        progress.setAttribute('aria-label', role + (accountHandle ? ' AGY ' + accountHandle : '') + ' ' + familyName + ' ' + windowLabel + ': ' + remaining + '% remaining');
+      }
+      cell.querySelector('[data-reset]').textContent = valid && metric.resetAt ? 'Resets ' + agyUsageTime(metric.resetAt) : '';
+    }
+  }
+}
+
+function loadAgyUsage(fresh = false) {
+  if (agyUsageRequest) return fresh ? agyUsageRequest.catch(() => {}).then(() => loadAgyUsage(true)) : agyUsageRequest;
+  const epoch = new Map(agyUsageEpoch);
+  agyUsageRequest = api(fresh ? 'POST' : 'GET', '/api/agy-pool/usage')
+    .then((data) => { for (const role of AGY_ROLES) if (epoch.get(role) === agyUsageEpoch.get(role)) renderAgyUsage(role, data.roles?.[role]); })
+    .catch((error) => { for (const role of AGY_ROLES) if (epoch.get(role) === agyUsageEpoch.get(role)) renderAgyUsage(role, { state: 'error' }); throw error; })
+    .finally(() => { agyUsageRequest = null; });
+  return agyUsageRequest;
+}
+
+function clearAgyUsage(role, state = 'offline') {
+  agyUsageEpoch.set(role, agyUsageEpoch.get(role) + 1);
+  lastAgyUsage.delete(role);
+  renderAgyUsage(role, { state });
+}
+
+function markAgyUsageOffline(role) {
+  agyUsageEpoch.set(role, agyUsageEpoch.get(role) + 1);
+  renderAgyUsage(role, { state: 'offline' });
+}
+
+function renderAgyPool(status) {
+  const initialized = Boolean(status.initialized);
+  const runningCount = Number(status.runningCount) || 0;
+  const readyCount = Number(status.readyCount) || 0;
+  const poolDot = document.getElementById('agyPoolDot');
+  poolDot.textContent = initialized ? (readyCount === AGY_ROLES.length ? '✓' : '✕') : '…';
+  poolDot.className = 'dot' + (initialized ? (readyCount === AGY_ROLES.length ? ' ok' : ' err') : '');
+  document.getElementById('agyPoolInit').hidden = initialized;
+  document.getElementById('agyPoolProvision').hidden = !status.provisionRequired;
+  const startAll = document.querySelector('[data-act="startAgyPool"]');
+  if (startAll) startAll.disabled = Boolean(status.provisionRequired);
+  const poolMsg = !initialized
+    ? 'not initialized — click Initialize'
+    : status.missingIdentityCount
+      ? status.missingIdentityCount + ' role identities missing — click Create role identities'
+      : !status.roleCredentialReady
+        ? 'role credential missing — click Create role identities'
+        : readyCount + '/4 ready · ' + runningCount + '/4 workers running · controller ' + status.currentUser;
+  say('msgAgyPool', poolMsg, initialized && !status.provisionRequired && readyCount === AGY_ROLES.length);
+
+  for (const role of AGY_ROLES) {
+    const item = status.roles?.[role];
+    if (!item) continue;
+    const last = lastAgyUsage.get(role);
+    if (item.running && last?.workerStartedAt && item.startedAt && last.workerStartedAt !== item.startedAt) clearAgyUsage(role, 'unavailable');
+    document.getElementById('agyUser-' + role).textContent = item.user;
+    const dot = document.getElementById('agyDot-' + role);
+    const ready = item.identityExists && item.running && item.agyReady === true;
+    dot.textContent = ready ? '✓' : '✕';
+    dot.className = 'dot ' + (ready ? 'ok' : 'err');
+    const detail = !item.identityExists
+      ? 'Windows identity missing — click Create role identities'
+      : !item.running
+        ? item.accountIneligible
+          ? 'account is not eligible for Antigravity'
+          : 'stopped · after Login, close the AGY CLI window, then click Start'
+        : item.agyAvailable === false
+          ? 'worker PID ' + item.pid + ' · shared AGY executable unavailable'
+          : item.agyError
+            ? 'AGY login/eligibility failed · ' + item.agyError
+            : item.checking
+              ? 'PID ' + item.pid + ' · checking AGY login/eligibility…'
+              : item.agyReady
+                ? 'PID ' + item.pid + (item.busy ? ' · busy' : ' · ready') + ' · ' + item.allowedModes.join(',')
+                : 'PID ' + item.pid + ' · not ready';
+    say('agyMsg-' + role, detail, ready);
+    const row = document.querySelector('[data-agy-role="' + role + '"]');
+    const login = row?.querySelector('[data-act="loginAgyRole"]');
+    const logout = row?.querySelector('[data-act="logoutAgyRole"]');
+    const start = row?.querySelector('[data-act="startAgyRole"]');
+    const stop = row?.querySelector('[data-act="stopAgyRole"]');
+    const roleCredentialReady = item.usesCurrentUser || status.roleCredentialReady;
+    if (login) login.disabled = !item.identityExists || !roleCredentialReady || item.running;
+    if (logout) logout.disabled = !item.identityExists || !roleCredentialReady;
+    if (start) { start.hidden = item.running; start.disabled = !item.identityExists || !roleCredentialReady; }
+    if (stop) stop.hidden = !item.running;
+  }
+}
+
+async function loadAgyPool() {
+  const status = await api('GET', '/api/agy-pool');
+  renderAgyPool(status);
+  return status;
+}
+
 const ACTIONS = {
   tailscale: (btn) => act(btn, 'msgTs', loadTailscale),
   // Buttons flip only from the handler's real running/pid — never before spawn/kill returns.
@@ -329,6 +471,72 @@ const ACTIONS = {
     return s.message;
   }),
   newWindowPostman: (btn) => act(btn, 'msgPmDaemon', async () => (await api('POST', '/api/postman-new-window')).message),
+  initAgyPool: (btn) => act(btn, 'msgAgyPool', async () => {
+    const result = await api('POST', '/api/agy-pool/init');
+    await loadAgyPool();
+    return result.message;
+  }),
+  refreshAgyPool: (btn) => act(btn, 'msgAgyPool', async () => {
+    const status = await loadAgyPool();
+    await loadAgyUsage(true);
+    return status.readyCount + '/4 ready';
+  }),
+  provisionAgyRoles: (btn) => act(btn, 'msgAgyPool', async () => {
+    await api('POST', '/api/agy-pool/init');
+    const result = await api('POST', '/api/agy-pool/provision');
+    await loadAgyPool();
+    return result.message;
+  }),
+  loginAgyRole: (btn) => act(btn, 'agyMsg-' + btn.dataset.role, async () => {
+    await api('POST', '/api/agy-pool/init');
+    const result = await api('POST', '/api/agy-pool/login-role', { role: btn.dataset.role });
+    clearAgyUsage(btn.dataset.role);
+    return result.message;
+  }),
+  logoutAgyRole: (btn) => act(btn, 'agyMsg-' + btn.dataset.role, async () => {
+    const result = await api('POST', '/api/agy-pool/logout-role', { role: btn.dataset.role });
+    clearAgyUsage(btn.dataset.role);
+    await loadAgyPool();
+    return result.message;
+  }),
+  startAgyPool: (btn) => act(btn, 'msgAgyPool', async () => {
+    const timer = setInterval(() => loadAgyPool().catch(() => {}), 750);
+    try {
+      const result = await api('POST', '/api/agy-pool/start');
+      renderAgyPool(result.status);
+      for (const [role, item] of Object.entries(result.results || {})) {
+        if (!item.ok) say('agyMsg-' + role, item.message || 'launch failed', false);
+      }
+      const failed = Object.values(result.results || {}).filter((item) => !item.ok).length;
+      void loadAgyUsage().catch(() => {});
+      return failed ? failed + ' role(s) need Login or account eligibility fix' : 'all four workers ready';
+    } finally {
+      clearInterval(timer);
+    }
+  }),
+  stopAgyPool: (btn) => act(btn, 'msgAgyPool', async () => {
+    const result = await api('POST', '/api/agy-pool/stop');
+    renderAgyPool(result.status);
+    for (const role of AGY_ROLES) if (!result.status?.roles?.[role]?.running) markAgyUsageOffline(role);
+    return result.ok ? 'all workers stopped' : 'stop completed with errors; Recheck';
+  }),
+  startAgyRole: (btn) => act(btn, 'agyMsg-' + btn.dataset.role, async () => {
+    await api('POST', '/api/agy-pool/init');
+    const result = await api('POST', '/api/agy-pool/start-role', { role: btn.dataset.role });
+    await loadAgyPool();
+    if (!result.ok) {
+      await loadAgyUsage().catch(() => {});
+      throw new Error(result.message || 'AGY role failed to start');
+    }
+    void loadAgyUsage().catch(() => {});
+    return result.message;
+  }),
+  stopAgyRole: (btn) => act(btn, 'agyMsg-' + btn.dataset.role, async () => {
+    const result = await api('POST', '/api/agy-pool/stop-role', { role: btn.dataset.role });
+    await loadAgyPool();
+    if (result.ok) markAgyUsageOffline(btn.dataset.role);
+    return result.message;
+  }),
   addFolder: (btn) => { addPath('', true); document.querySelector('#paths input:last-of-type')?.focus(); },
   savePaths: (btn) => act(btn, 'msgPaths', async () => {
     const paths = [...document.querySelectorAll('#paths input')].map((i) => i.value.trim()).filter(Boolean);
@@ -414,6 +622,7 @@ document.querySelectorAll('.tabs').forEach((nav) => {
   nav.querySelectorAll('.tab').forEach((tab) => (tab.onclick = () => {
     scope.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t === tab));
     scope.querySelectorAll('.tabpane').forEach((p) => p.classList.toggle('active', p.id === 'tab-' + tab.dataset.tab));
+    if (tab.dataset.tab === 'agy') void loadAgyUsage().catch(() => {});
   }));
 });
 
@@ -437,8 +646,13 @@ document.querySelectorAll('.qr-tab').forEach((btn) => (btn.onclick = () => {
 }));
 
 renderSavedIngress(SAVED_INGRESS);
-
 // One failed /api/state leaves three sections blank, so the failure is reported next to each of them.
 loadState().catch((e) => ['msgPaths', 'msgAllow', 'msgTrusted', 'msgRules'].forEach((id) => say(id, e.message, false)));
 loadTailscale().then((m) => say('msgTs', m, m.startsWith('ready'))).catch((e) => say('msgTs', e.message, false));
 loadPostmanDaemon().catch((e) => { document.getElementById('msgPmDaemon').textContent = e.message; });
+loadAgyPool().catch((e) => say('msgAgyPool', e.message, false));
+AGY_ROLES.forEach(agyUsageRoot);
+loadAgyUsage().catch(() => {});
+setInterval(() => {
+  if (!document.hidden && document.getElementById('tab-agy')?.classList.contains('active')) void loadAgyUsage().catch(() => {});
+}, 120_000);
