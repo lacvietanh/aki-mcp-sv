@@ -7,7 +7,7 @@ const CDP = require('chrome-remote-interface');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
 const { fetchAllUsage } = require('./scripts/cdp-usage');
 const { PostmanSession } = require('./scripts/postman-session');
 const { eligibleTargets, attachmentTargets, deterministicOwnerTargetId, waitForEligibleTargets, openOwnedWindow } = require('./scripts/postman-ownership');
@@ -27,12 +27,11 @@ const PROMPTS_DIR = path.join(AKI_DATA_DIR, 'prompts');
 const ASSETS_PROMPTS_DIR = path.join(__dirname, 'assets', 'prompts');
 const PROVIDER = 'postman';
 const SUM_PROMPT_NAME = 'aki-prompt-sum-to-new-chat.md';
-// DESIGN LOCK — postman.md is injected verbatim as the Postman AI instruction. It MUST keep two hard-lock lines: "Always use subagent shell or Aki MCP tool cmd run instead of readFile." and "Fall back to subagent shell if run_cmd is not efficient." Commit 40008be trimmed them and the AI began refusing write verbs (git commit/push, npm publish) as "no permission" instead of escalating to the subagent shell. Do not drop/soften on the next trim.
+// DESIGN LOCK: preserve both subagent-shell fallback lines in postman.md; removing them made write verbs fail as "no permission" (40008be).
 const DEFAULT_PROMPT_PATH = path.join(ASSETS_PROMPTS_DIR, `${PROVIDER}.md`);
 const SHARED_PROMPT_USER_PATH = path.join(PROMPTS_DIR, SUM_PROMPT_NAME);
 const SHARED_PROMPT_DEFAULT_PATH = path.join(ASSETS_PROMPTS_DIR, SUM_PROMPT_NAME);
 
-// Writable runtime dir for daemon state (data.json/ownership-status/usage-turns). The Postman instruction is now served natively read-only from the bundled repo asset — no user-editable copy, no legacy fallback.
 const LEGACY_CDP_DIR = path.join(os.homedir(), '.aki', 'cdp-postman');
 const DATA_JSON_PATH = path.join(LEGACY_CDP_DIR, 'data.json');
 const OWNERSHIP_STATUS_PATH = path.join(LEGACY_CDP_DIR, 'ownership-status.json');
@@ -51,7 +50,7 @@ let akiConfig = null;
 let loggedMissingRule = false;
 const CHAT_URL_RE = /gateway\.postman\.com\/chat/i;
 
-// Per-turn usage instrumentation: the chat SSE only carries the weekly team-pool `usage` (millicredits), never a per-chat token count, so this logs one JSONL row per turn (keyed by conversationId+model, next to data.json) to test whether the delta tracks a single conversation's context growth. Best-effort; analyzed offline after a live run.
+// Chat SSE exposes only team-pool millicredits; log per-turn deltas for offline, conversation-level analysis.
 const TURN_LOG_PATH = path.join(LEGACY_CDP_DIR, 'usage-turns.jsonl');
 const convoState = new Map(); // conversationId -> { turns, startUsage, lastUsage }
 let lastGlobalUsageMilli = null;
@@ -180,7 +179,7 @@ function applyChatUsageFromSSE(client, sseText, ctx) {
   pushUsageToPage(client);
 }
 
-// Appends one JSONL row per turn for offline validation (docs/research/session-context-capture.md); delta = usageMilli minus the previous same-conversation reading (falls back to the last global reading), so a positive monotonic delta signals context growth — noisy when isTeamPooled (shared pool).
+// Shared-pool deltas can include other chats; compare them offline (docs/research/session-context-capture.md).
 function logUsageTurn(ctx, latest, convo) {
   try {
     const usageMilli = latest.usage || 0;
@@ -218,10 +217,7 @@ function logUsageTurn(ctx, latest, convo) {
   } catch (e) {}
 }
 
-// Panel → daemon IPC for the "New window" panel button (scripts/panel.js's
-// POST /api/postman-new-window, via postman-mcp.js's requestNewWindow): a flag file next to
-// data.json is the smallest transport that works — the panel is the only writer, this is the
-// only reader/deleter, and it rides discover()'s existing 1s tick instead of a new interval.
+// Panel writes this flag for "New window"; discover() consumes it on its existing tick.
 const NEW_WINDOW_FLAG_PATH = path.join(LEGACY_CDP_DIR, 'new-window.flag');
 
 async function consumePendingNewWindow() {
@@ -260,7 +256,6 @@ function loadAkiData() {
 
 function loadInstructionFile() {
   // Served natively read-only from the bundled repo asset — intentionally no user/home/legacy override.
-  // DESIGN LOCK: the loaded postman.md must retain its two subagent-shell hard-lock lines (see DEFAULT_PROMPT_PATH note). They authorize escalating write/non-allowlisted verbs to the subagent shell; without them the AI reports write steps "skipped".
   return loadInstruction([DEFAULT_PROMPT_PATH]);
 }
 
@@ -296,6 +291,40 @@ function saveAkiData(data) {
   }
 }
 
+function launchAlibabaReview() {
+  const repoRoot = path.resolve(__dirname, '..', '..');
+  const claudePm = path.join('D:\\LacViet\\claude-pm', 'clpm.cmd');
+  if (!fs.existsSync(claudePm)) return { ok: false, message: `Claude PM launcher not found: ${claudePm}` };
+  const prompt = [
+    'Perform a full Alibaba Open Code Review in DELEGATION MODE for the current repository.',
+    `Repository: ${repoRoot}`,
+    '',
+    'Mandatory workflow:',
+    `1. Run: ocr delegate preview --format json --repo "${repoRoot}"`,
+    '2. Treat every file in reviewable_files as mandatory review scope.',
+    '3. Run: ocr delegate rule --format json <every reviewable file> and review every returned rule set.',
+    '4. Review every reviewable file; batching is allowed only for context/size, never as silent omission.',
+    '5. Report Critical/High/Medium findings with precise file and line evidence.',
+    '6. Report coverage: total reviewable files, reviewed files, skipped files, and an explicit reason for every skip.',
+    '7. Do NOT run ocr review, ocr llm test, configure an OCR LLM, request API keys, or modify repository files.',
+    '',
+    'Use Claude Code as the host reviewer. Return the complete review report directly in this Claude Code session.'
+  ].join('\\n');
+  try {
+    const child = spawn(claudePm, ['-p', prompt], {
+      cwd: repoRoot,
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: false,
+      shell: true,
+    });
+    child.unref();
+    return { ok: true, launched: true, pid: child.pid, message: 'Alibaba Review launched in Claude PM — review is running in the new CLPM session' };
+  } catch (error) {
+    return { ok: false, message: error.message || String(error) };
+  }
+}
+
 function runCmd(command, args, cwd) {
   return new Promise((resolve) => {
     execFile(command, args, { cwd, timeout: 180000, maxBuffer: 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
@@ -320,9 +349,7 @@ async function installAkiRule() {
     }
     repo = RULES_CLONE_DIR;
   }
-  // akidevrule ships install.ps1 for Windows on purpose: a bare `bash.exe` there resolves to the WSL
-  // launcher (System32\bash.exe) and dies with "execvpe(/bin/bash) failed" when no WSL distro is installed. Choose a
-  // real interpreter by platform (PowerShell on Windows, bash otherwise); never fall through to WSL bash.
+  // Bare bash.exe may resolve to WSL on Windows; use install.ps1 to avoid requiring a distro.
   let cmd, args;
   if (process.platform === 'win32') {
     if (fs.existsSync(path.join(repo, 'install.ps1'))) {
@@ -425,6 +452,11 @@ async function setupCDP(target, port) {
       await client.Runtime.addBinding({ name: '__cdpRequestSummarize' });
     } catch (e) {}
 
+    // 3d. Binding Alibaba Open Code Review → launch the user's Claude PM host agent.
+    try {
+      await client.Runtime.addBinding({ name: '__cdpAlibabaReview' });
+    } catch (e) {}
+
     client.Runtime.bindingCalled(async (event) => {
       if (event.name === '__cdpSaveAkiConfig') {
         try {
@@ -452,6 +484,11 @@ async function setupCDP(target, port) {
         }
         await refreshUsageData(tokenToUse);
         pushUsageToPage(client);
+      } else if (event.name === '__cdpAlibabaReview') {
+        const result = launchAlibabaReview();
+        client.Runtime.evaluate({
+          expression: `window.__pmAlibabaReviewResult = ${JSON.stringify(result)}; if (typeof window.__pmRenderAlibabaReview === 'function') window.__pmRenderAlibabaReview();`
+        }).catch(() => {});
       } else if (event.name === '__cdpRequestSummarize') {
         const summarizePrompt = loadSummarizePromptFile();
         client.Runtime.evaluate({
@@ -490,10 +527,7 @@ async function setupCDP(target, port) {
   }
 }
 
-// Hosts confirmed (from live daemon logs) to be genuine Postman app/product surfaces —
-// the main desktop shell and the billing views this daemon's own "View on team" button opens.
-// Anything else (marketing/promo popups like "Welcome to the Postman API Network", external
-// OAuth pages, ...) is left alone: no panel injected, no clutter.
+// Limit injection to Postman app/product hosts; leave marketing and OAuth pages untouched.
 const KNOWN_POSTMAN_HOSTS = ['desktop.postman.com', 'app.getpostman.com', 'postman.co'];
 
 function isKnownPostmanSurface(url) {
@@ -557,9 +591,7 @@ async function discover() {
   } catch (e) {}
 }
 
-// Undoes what setupCDP's Runtime.evaluate injected (cdp-autoclicker.js): without this, the
-// auto-click loop and the floating panel keep running live inside Postman's own renderer after
-// the daemon exits, because they no longer depend on the CDP connection once evaluated.
+// Injected page timers and UI outlive the CDP connection, so remove them on daemon exit.
 const TEARDOWN_SCRIPT = `
   if (window.__pmMasterInterval) clearInterval(window.__pmMasterInterval);
   document.getElementById('aki-control-panel')?.remove();

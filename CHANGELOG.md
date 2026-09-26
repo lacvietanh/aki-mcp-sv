@@ -4,6 +4,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 
 ## [Unreleased]
 
+### Added
+- **Alibaba Open Code Review delegation in the Postman control panel**: the in-app Postman overlay can launch a read-only Claude PM review session that resolves Alibaba review scope/rules and requires explicit file coverage reporting.
+
+### Changed
+- **Alibaba Review regression coverage is hermetic and part of `npm test`**: the test now injects a fake launcher instead of spawning a real Claude PM process while verifying the launch contract.
+- **Background-task test uses a cross-platform probe**: `git rev-parse --show-toplevel` replaces `pwd`, keeping the full test suite runnable on Windows.
+
+### Fixed
+- **Section 3 rule/method checkboxes were cosmetic**: checked files are now serialized into the copied AI Instructions, Audit Flow and Deep Think are selected by default, and selected contextual methods auto-apply without requiring `/akirule`, `/akithink`, or `/akiflow` in every session.
+
 ## [2.1.0] - 2026-09-18
 
 ### Added

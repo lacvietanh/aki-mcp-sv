@@ -78,9 +78,7 @@
       this.stats = this._hydrateStats();
     }
 
-    // Merges defaults into whatever survives a non-navigation re-injection (daemon restart,
-    // AKI_UI_V rebuild) instead of an all-or-nothing `||` — a field added after __pmStats
-    // already existed in the page used to stay `undefined` forever until a full page reload.
+    // Re-injection can retain old __pmStats; merge new fields without requiring a page reload.
     _hydrateStats() {
       const defaults = {};
       this.targets.forEach((t) => { defaults[t.statKey] = 0; });
@@ -129,9 +127,7 @@
       });
     }
 
-    // Which stat bucket a click counts toward, by priority (continue > run > try again > approve
-    // fallback) — independent of which config flag made the button clickable, same as the
-    // original if/continue-else-run-else-retry-else-approve chain.
+    // Classification priority is independent of the flag that enabled the click.
     _classify(text) {
       const hit = this.targets
         .filter((t) => t.classifyText)
@@ -152,7 +148,7 @@
   const autoClicker = new AutoClickManager(AUTO_CLICK_TARGETS);
   window.__pmAutoClicker = autoClicker;
 
-  // Cancel slot of the same pending surface — only when copy is this folder dialog.
+  // Reject only the matching local-folder dialog.
   const AUTO_REJECT_PICK_FOLDER = {
     configKey: 'autoRejectPickFolder',
     statKey: 'rejectPickFolderCount',
@@ -292,7 +288,7 @@
     creditArm();
 
     permissionCards().forEach((card) => {
-      // A press is async, so a card can survive several 400ms ticks before leaving the DOM; without a per-card marker the loop re-presses it every tick, and that double-press is what freezes the chat session — mark it once pressed and skip anything already marked (flow.B6).
+      // Presses resolve asynchronously; re-pressing the same card on the next tick can freeze chat.
       if (card.dataset.akiPressed === '1') return;
       const copy = cardCopy(card);
       const folderIntent = cfg[AUTO_REJECT_PICK_FOLDER.configKey] && copy.toLowerCase().includes(AUTO_REJECT_PICK_FOLDER.bodyNeedle);
@@ -328,9 +324,7 @@
     return true;
   }
 
-  // Live-caught: agent openBrowserPage → rspack 946554.g(url, {forceNew}) →
-  // transitionTo('build.browser-tab', {}, {url: encodeURIComponent(url)}, {tabOptions:{forceNew}}).
-  // Module id is hashed per Postman build; find by the unique route string.
+  // Rspack module ids change per build; locate the browser-tab route by its stable string.
   function webpackRequire() {
     if (typeof window.__akiReq === 'function') return window.__akiReq;
     const chunks = window.rspackChunk_postman_app_renderer;
@@ -370,10 +364,7 @@
     return false;
   }
 
-  // Opens a URL in the OS default browser via Postman's own openExternalLink (the same function its
-  // Docs / Support / billing links use), so links leave the app instead of opening an in-app tab.
-  // The defining module's id is hashed per build, so find it by its unique export signature — never a
-  // fixed id — cache the resolved function, and fall back to window.open if the module can't be found.
+  // Resolve Postman's openExternalLink by export signature so links open externally across builds.
   function openExternalUrl(url) {
     if (!url) return false;
     try {
@@ -504,7 +495,7 @@
     return !list.textContent || !list.textContent.trim();
   }
 
-  // The send button is only present/enabled (React onClick attached) while the input has text and nothing is streaming (confirmed live on 12.26.5); returns whether it actually got pressed so the caller can retry a tick-too-early miss.
+  // The send button appears only after React accepts input; return false for an early retry.
   function submitChatInput(inputEl) {
     const chat = inputEl.closest('[data-testid="ai-chat-container"]');
     const sendBtn = chat && chat.querySelector('.ai-chat-input-send-button');
@@ -556,10 +547,7 @@
 
     const btn = agentSwitchOpenBtn(pending.kind);
     if (!btn) {
-      // The model/settings control lives inside the AI chat panel; if it's collapsed or still loading at
-      // bootstrap, open it and wait instead of silently giving up — this is what made the toggle feel "not
-      // bound" on a fresh start. Only refund the give-up tick while we actually issued an open, so a truly
-      // absent control still expires and can never permanently stall the permission-card loop.
+      // Refund a retry tick only when opening the collapsed chat; an absent control must still expire.
       if (ensureAiChatOpen()) {
         console.log('[⚡ AutoRun] Opening AI Chat Panel to apply ' + pending.kind + ' toggle...');
         pending.ticks = Math.max(0, pending.ticks - 1);
@@ -572,7 +560,7 @@
     }
   }
 
-  // Opens the AI chat side panel when it is hidden; returns whether a click was issued. Shared by startup and the agent-toggle apply path so Thinking / Auto-run work even when the chat is collapsed or still loading.
+  // Shared by startup and agent toggles when the chat panel is collapsed.
   function ensureAiChatOpen() {
     const toggleBtn = document.querySelector('button[data-testid="toggle-right-sidebar"]');
     if (!toggleBtn || !isVisible(toggleBtn)) return false;
@@ -615,12 +603,10 @@
     'auto': { label: 'Auto', auto: true },
   };
 
-  // Postman renders the Auto row label as "AutoOptimized for most tasks" (no separator) and the
-  // model-menu button's aria-label as "Auto" while Auto is on. Match a leading "auto" — /^auto\b/
-  // fails on "AutoOptimized" (no word boundary between the two letters).
+  // AutoOptimized has no word boundary after "Auto", so /^auto\b/ would miss it.
   const looksAuto = (t) => /^auto/i.test((t || '').trim());
 
-  // Opens the AI chat model menu (reusing the same menu-open button as the agent-switch 'thinking' path) and waits a couple of rAF frames for the menu items to mount. Returns the menu element or null.
+  // Wait for menu items to mount after opening the shared model/thinking control.
   async function openModelMenu() {
     let menu = document.querySelector('[data-testid="ai-chat-model-menu"]');
     if (menu) return menu;
@@ -639,12 +625,7 @@
 
   function closeModelMenu() { closeAgentMenuIfOpened('thinking'); }
 
-  // Inside an open model menu, reveal the collapsed 'More models' submenu if present.
-  // Reuses the file's rAF frame-wait style. Safe no-op when the button is absent.
-  // "More models" opens on HOVER (onPointerEnter), not click, and renders its items in a
-  // separate portal (aether-portals) outside [data-testid="ai-chat-model-menu"] — so we hover
-  // to open and the caller must re-scan document-wide (see modelMenuItems). Mount is ~instant
-  // but we poll (holding hover) until the item set grows, to be robust.
+  // "More models" opens on hover and renders outside the menu portal; poll until its items appear.
   async function expandMoreModels() {
     const more = document.querySelector('[data-testid="ai-chat-more-models-button"]');
     if (!more) return false;
@@ -660,17 +641,13 @@
     return modelMenuItems().length > before;
   }
 
-  // Scan document-wide (ignore the `menu` arg): the "More models" submenu renders its items
-  // in a portal (aether-portals) OUTSIDE [data-testid="ai-chat-model-menu"], so scoping to the
-  // menu container would miss GPT-5.6 Luna et al. The model menu is modal, so document-wide is safe.
+  // More-model items live in a separate portal, so search beyond the menu container.
   function modelMenuItems(menu) {
     return [...document.querySelectorAll('[role="menuitemradio"], [role="menuitem"]')]
       .filter((el) => !/enable extended thinking/i.test((el.textContent || '').trim()));
   }
 
-  // Reads the currently active model + thinking state. The model-menu button label is the reliable live
-  // signal ("Auto" while Auto is on, else the model name): Postman sets no aria-checked on the menu items,
-  // and localStorage keeps naming the last concrete model even while Auto is on. No menu open needed.
+  // Button label is the live Auto signal; localStorage retains the prior concrete model.
   async function getCurrentModelSelection() {
     return { modelText: currentModelLabelCheap(), thinking: readPostmanAgentMode().thinking, id: localStorage.getItem('ai-chat-last-selected-model') };
   }
@@ -696,18 +673,14 @@
     return model.auto ? looksAuto(text) : text === model.label;
   }
 
-  // Confirms a live selection is the requested model. Auto is a toggle whose only reliable signal is the
-  // model-button label ("Auto"); localStorage keeps naming the previous concrete id, so while Auto is on
-  // no concrete model may match. For concrete models the live label OR the committed id is authoritative.
+  // Auto overrides the stale concrete id in localStorage; use the live button label first.
   function selectionMatches(selection, model) {
     if (model.auto) return looksAuto(selection.modelText);
     if (looksAuto(selection.modelText)) return false;
     return selection.modelText === model.label || selection.id === model.id;
   }
 
-  // Applies the requested model. Auto is a TOGGLE whose row collapses the menu to just itself while on,
-  // not a peer radio: to pick Auto we press its row; to pick a concrete model while Auto is on we first
-  // toggle Auto off (which re-expands the concrete list), then click the target. Verified via the button label.
+  // Auto collapses concrete choices; toggle it off before selecting a specific model.
   async function selectModel(model) {
     if (!model) return false;
     if (selectionMatches(await getCurrentModelSelection(), model)) return true;
@@ -764,7 +737,7 @@
     return true;
   }
 
-  // Sets the "extended thinking" toggle to `want` using the same __pmPendingAgentSwitch/applyPendingAgentSwitch mechanism the panel thinking checkbox uses. Toggles only if the live state differs from desired.
+  // Reuse the panel's pending switch and toggle only when the live state differs.
   async function setThinkingEnabled(want) {
     want = !!want;
     if (readPostmanAgentMode().thinking === want) return;
@@ -869,7 +842,7 @@
     return String(h).padStart(2, '0') + ':' + m[2] + ':' + m[3];
   }
 
-  // Horizontal context-length bar mounted at the bottom of .ai-chat-footer, right under the chat input, so the "time to start a new chat" signal sits at the edge of where the user types; fill width is chars/red capped at 100%, color crosses green→amber→red at the thresholds.
+  // Keep context length visible beside the chat input; thresholds shift the bar from green to red.
   function renderContextBar() {
     const footer = document.querySelector('[data-testid="ai-chat-container"] .ai-chat-footer');
     const host = footer && footer.querySelector('.ai-chat-center-content');
@@ -1628,6 +1601,14 @@
 
         <div class="aki-stack aki-rule">
           <div class="aki-row">
+            <span class="aki-section-label">CODE REVIEW</span>
+            <button type="button" id="aki-btn-alibaba-review" class="aki-btn">ALIBABA REVIEW → DELEGATE</button>
+          </div>
+          <div id="aki-alibaba-review-status" class="aki-muted">Claude PM host agent · read-only delegation</div>
+        </div>
+
+        <div class="aki-stack aki-rule">
+          <div class="aki-row">
             <span class="aki-section-label">ANTI-BOT<span class="aki-help" title="Sites can check navigator.webdriver to tell a browser is automated. Protected = Postman was launched with the flag that hides it. Unprotected = it wasn't (still works fine, just detectable).">?</span></span>
             <button type="button" id="aki-btn-new-browser-tab" class="aki-btn">NEW BROWSER TAB</button>
           </div>
@@ -1671,9 +1652,7 @@
         openNewBrowserTab();
       };
 
-      // One handler for every static external link in the panel (brand akimcp.top, AkiDevRule repo, …):
-      // route them all through the OS default browser instead of a Postman in-app tab. DRY — team View
-      // links bind the same opener where they are re-rendered.
+      // Open static panel links in the OS browser; dynamic team links bind the same opener on render.
       panel.querySelectorAll('[data-aki-ext]').forEach((el) => {
         el.onclick = (e) => {
           e.preventDefault();
@@ -1778,6 +1757,31 @@
       };
     }
 
+    const alibabaBtn = panel.querySelector('#aki-btn-alibaba-review');
+    if (alibabaBtn) {
+      alibabaBtn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (alibabaBtn.dataset.busy === '1') return;
+        alibabaBtn.dataset.busy = '1';
+        alibabaBtn.textContent = 'LAUNCHING…';
+        const status = panel.querySelector('#aki-alibaba-review-status');
+        if (status) status.textContent = 'Starting Claude PM…';
+        try {
+          if (typeof window.__cdpAlibabaReview === 'function') window.__cdpAlibabaReview('');
+          else {
+            if (status) status.textContent = 'Review binding not ready. Restart the Aki Postman daemon.';
+            alibabaBtn.dataset.busy = '';
+            alibabaBtn.textContent = 'ALIBABA REVIEW → DELEGATE';
+          }
+        } catch (err) {
+          if (status) status.textContent = 'Error: ' + ((err && err.message) || err);
+          alibabaBtn.dataset.busy = '';
+          alibabaBtn.textContent = 'ALIBABA REVIEW → DELEGATE';
+        }
+      };
+    }
+
     const installBtn = panel.querySelector('#aki-btn-install-rule');
     if (installBtn) {
       installBtn.onclick = (e) => {
@@ -1818,6 +1822,30 @@
     renderRuleStatus();
   }
 
+  window.__pmRenderAlibabaReview = function () {
+    const panel = document.getElementById('aki-control-panel');
+    if (!panel) return;
+    const btn = panel.querySelector('#aki-btn-alibaba-review');
+    const status = panel.querySelector('#aki-alibaba-review-status');
+    const r = window.__pmAlibabaReviewResult || {};
+    if (r.ok && r.launched) {
+      if (btn) {
+        btn.dataset.busy = '';
+        btn.textContent = 'ALIBABA REVIEW → DELEGATE';
+      }
+      if (status) status.innerHTML = `<span class="aki-ok">Claude PM started</span> · PID ${escapeHtml(String(r.pid || '?'))} · review running`;
+      return;
+    }
+    if (btn) {
+      btn.dataset.busy = '';
+      btn.textContent = 'ALIBABA REVIEW → DELEGATE';
+    }
+    if (status) {
+      status.textContent = r.message || 'Unable to launch Claude PM.';
+      status.classList.add('aki-err');
+    }
+  };
+
   window.__pmRenderInstallRuleResult = function () {
     const panel = document.getElementById('aki-control-panel');
     if (!panel) return;
@@ -1836,7 +1864,7 @@
     status.classList.add('aki-err');
   };
 
-  // Lexical editor (contenteditable): a synthetic 'beforeinput' event is ignored (no getTargetRanges()), so this drives it via the native execCommand pipeline instead, then double-rAF-waits for Lexical's DOM reconciliation (not synchronous with this tick) before the button reads the typed state.
+  // Lexical ignores synthetic beforeinput; native insertion needs two frames before Send reads the text.
   async function typeAndSubmitChat(input, text) {
     if (input && input.__lexicalEditor) {
       const ed = input.__lexicalEditor;

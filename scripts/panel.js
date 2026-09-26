@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Loopback-only, never behind the Funnel: it writes config and runs commands. Token-gated so no other browser page can POST to it.
 import http from 'node:http';
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, readdirSync, unlinkSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -29,7 +29,7 @@ function writeJsonAtomic(file, data) {
   renameSync(tmp, file);
 }
 
-// Folders are a containment boundary (coding.C4): written atomically so a partial write can never transiently widen it. Mirrors setShellAllowlist below, but folders are security-load-bearing enough to warrant the extra step.
+// Write the folder containment boundary atomically to prevent a partial allowlist.
 function setFolders(paths) {
   const settings = readSettings();
   settings.folders = paths;
@@ -57,7 +57,7 @@ function validatePaths(paths) {
 const sameSubs = (a, b) =>
   a === null || b === null ? a === b : Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => x === b[i]);
 
-// Diff against DEFAULT_ALLOWLIST so a deleted default lands in `revoked`, not silently back to default. `added` is the 2-level array (string = any, [bin, ...subs] = restricted): no hand-written null.
+// Track deleted defaults in revoked so they cannot silently return.
 const entryOf = ([bin, subs]) => (subs === null ? bin : [bin, ...subs]);
 function toStored(effective) {
   const added = Object.entries(effective)
@@ -139,9 +139,7 @@ async function installRules() {
     }
     repo = RULES_CLONE_DIR;
   }
-  // akidevrule ships install.ps1 for Windows on purpose: a bare `bash.exe` there resolves to the WSL
-  // launcher (C:\Windows\System32\bash.exe) and dies with "execvpe(/bin/bash) failed" when no WSL distro is installed.
-  // Pick a real interpreter by platform (PowerShell on Windows, bash otherwise); never fall through to WSL bash.
+  // Bare bash.exe may resolve to WSL on Windows; use install.ps1 without requiring a distro.
   let cmd, args;
   if (IS_WIN) {
     if (existsSync(path.join(repo, 'install.ps1'))) {
@@ -165,7 +163,7 @@ async function installRules() {
   }
 }
 
-// Pull this repo, but only when the tree is clean — an unattended pull over local edits can conflict or lose work (agent.B3). Checked at click-time, not page-load, since the tree can change in between.
+// Check for local edits at click-time before pulling so an intervening edit cannot be overwritten.
 async function pullUpdate() {
   if (!existsSync(path.join(REPO_ROOT, '.git'))) {
     throw new Error('installed via npm: run `npm i -g @akinet/akimcp` in your terminal to update');
@@ -178,7 +176,7 @@ async function pullUpdate() {
   return 'pulled latest — restart akimcp to load the new code';
 }
 
-// Mirror shell-mcp's classification: a zone overlapping a writable root is dropped (write+exec = RCE). Name the offending root so the panel can show why a zone is disabled.
+// Surface the writable-root conflict that disables a trusted script directory.
 function trustedDirStatus() {
   const roots = getRoots().map((p) => path.resolve(p));
   return loadAllowlistDirs().map((dir) => {
@@ -187,7 +185,7 @@ function trustedDirStatus() {
   });
 }
 
-// A rule install updates the on-disk corpus but not the boot-time updateInfo, so without this a reload re-rendered a stale "update available" banner. Recompute current from disk against the boot-time latest.
+// Recompute the installed rule version after an install; boot-time updateInfo is stale.
 function refreshLocalVersions(updateInfo) {
   const local = getLocalVersions();
   for (const key of ['mcp', 'rule']) {
@@ -195,6 +193,87 @@ function refreshLocalVersions(updateInfo) {
     updateInfo[key].updateAvailable = cmpSemver(local[key], updateInfo[key].latest) < 0;
   }
   writeStatusFile(updateInfo);
+}
+
+async function alibabaReviewPreview() {
+  const runOcr = (argv) => new Promise((resolve, reject) => {
+    const command = IS_WIN ? (process.env.ComSpec || 'cmd.exe') : 'ocr';
+    const args = IS_WIN
+      ? ['/c', ['ocr', ...argv.map((a) => /\s/.test(a) ? '"' + a.replace(/"/g, '\\\"') + '"' : a)].join(' ')]
+      : argv;
+    execFile(command, args, { cwd: REPO_ROOT, timeout: 180_000, maxBuffer: 4 * 1024 * 1024, windowsHide: true }, (err, stdout, stderr) => {
+      if (err) return reject(new Error((stderr || err.message).trim()));
+      resolve((stdout || stderr || '').trim());
+    });
+  });
+
+  try {
+    const output = JSON.parse(await runOcr(['delegate', 'preview', '--format', 'json', '--repo', REPO_ROOT]));
+    let rules = null;
+    const files = Array.isArray(output.reviewable_files) ? output.reviewable_files : [];
+    if (files.length) {
+      const paths = files.map((f) => typeof f === 'string' ? f : f.path).filter(Boolean);
+      if (paths.length) {
+        try {
+          rules = JSON.parse(await runOcr(['delegate', 'rule', '--format', 'json', ...paths]));
+        } catch (e) {
+          if (/unknown flag.*format/i.test(e.message)) rules = await runOcr(['delegate', 'rule', ...paths]);
+          else throw e;
+        }
+      }
+    }
+    return { mode: 'json', output, rules };
+  } catch (e) {
+    if (/unknown flag.*format/i.test(e.message)) {
+      return { mode: 'text', output: await runOcr(['delegate', 'preview', '--repo', REPO_ROOT]) };
+    }
+    if (/ENOENT|not recognized|not found/i.test(e.message)) {
+      throw new Error('Alibaba Open Code Review CLI is not installed or not on PATH — install @alibaba-group/open-code-review first');
+    }
+    throw e;
+  }
+}
+
+export async function launchAlibabaReview({
+  spawnFn = spawn,
+  existsFn = existsSync,
+  claudeCmd = path.join('D:', 'LacViet', 'claude-pm', 'clpm.cmd'),
+} = {}) {
+  if (!existsFn(claudeCmd)) {
+    throw new Error('Claude PM launcher not found: ' + claudeCmd);
+  }
+
+  const prompt = [
+    'Perform a full Alibaba Open Code Review in DELEGATION MODE for the current repository.',
+    'Repository: ' + REPO_ROOT,
+    '',
+    'Mandatory workflow:',
+    '1. Run: ocr delegate preview --format json --repo "' + REPO_ROOT + '"',
+    '2. Put every reviewable_files entry into an explicit checklist.',
+    '3. Run: ocr delegate rule --format json <every reviewable file path>.',
+    '4. Review every reviewable file using the resolved rules. Batch only for context/size; do not silently omit files.',
+    '5. Report Critical, High, and Medium findings with precise file and line evidence.',
+    '6. Report coverage: total reviewable, reviewed, skipped, and skip reasons.',
+    '7. Do NOT run ocr review, ocr llm test, configure an OCR LLM, request API keys, or modify files.',
+    '',
+    'This is a read-only review. Return the final review report directly in this Claude Code session.'
+  ].join('\\n');
+
+  const child = spawnFn(claudeCmd, ['-p', prompt], {
+    cwd: REPO_ROOT,
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: false,
+    shell: true,
+  });
+  child.unref();
+
+  return {
+    ok: true,
+    launched: true,
+    pid: child.pid,
+    message: 'Alibaba Review launched in Claude PM — review is running in the new CLPM session',
+  };
 }
 
 export const ROUTES = {
@@ -209,7 +288,9 @@ export const ROUTES = {
   'GET /api/tailscale': async () => funnelStatus(process.env.GATEKEEPER_PORT || '9999'),
   // Same function aki__postman_status calls (scripts/postman-mcp.js) — one status shape, two readers.
   'GET /api/postman-status': async () => getDaemonStatus(),
-  // The one launch action (panel Postman tab button) — spawn-or-recognize lives in launchPostmanDaemon itself (scripts/postman-mcp.js), so N clicks here behave like one, same as every other panel action.
+  // Deterministic Alibaba OCR delegation step: returns reviewable files/ref metadata only; the host agent performs the actual review.
+  'POST /api/alibaba-review': async () => launchAlibabaReview(),
+  // launchPostmanDaemon handles repeated clicks by recognizing the running daemon.
   'POST /api/postman-launch': async () => launchPostmanDaemon(),
   // Quit returns the real post-kill status (running/pid), never a placeholder "stopping…".
   'POST /api/postman-quit': async () => killPostmanDaemon(),
