@@ -10,9 +10,9 @@ AIObox dựng connector AkiMCP trên Claude, Grok và ChatGPT bằng macro, và 
 
 ## Id và tên
 
-- Tên connector/app trên provider luôn là **`AkiMCP`**, đúng chữ đó. Đây là id cứng: macro nhận connector của mình bằng tên (trim, không phân biệt hoa thường), không bằng host hay URL.
+- Tên connector/app macro tạo trên provider luôn là **`AkiMCP`**, đúng chữ đó. Macro nhận connector của mình bằng tên, không bằng host hay URL: tên viết thường, bỏ khoảng trắng mà chứa `akimcp` (`AkiMCP`, `Aki MCP Server`, `Aki MCP Server from local Shell & FileSystem`, `AkiMCPSV`), hoặc là tên cũ `Aki Mac MCPSV Shell & Filesystem` (danh sách `LEGACY` trong macro). Mọi tên AkiMCP từng gợi ý đều là của macro.
 - Mỗi tài khoản provider chỉ có một `AkiMCP`. Một `AkiMCP` trỏ URL khác (máy khác, domain ingress cũ, path cũ) bị macro xoá không hỏi; máy chạy macro sau cùng thắng. Một tài khoản dùng nhiều máy cùng lúc: không hỗ trợ.
-- Tên khác (ví dụ `Aki MCP Server from local Shell & FileSystem`) không bao giờ bị macro đụng tới. Mọi hướng dẫn phía AkiMCP (README, panel, snippet copy cho Claude/ChatGPT/Grok) phải bảo đặt tên `AkiMCP`, không gợi ý tên khác.
+- Tên ngoài luật trên không bao giờ bị macro đụng tới. Mọi hướng dẫn phía AkiMCP (README, panel, snippet copy cho Claude/ChatGPT/Grok) phải bảo đặt tên `AkiMCP`, không gợi ý tên khác; một tên gợi ý mới không chứa `akimcp` thì phải thêm vào `LEGACY` của cả ba macro trong cùng phiên.
 - URL connector = `origin` của `ingress.json` + `/mcp`. Đổi domain ingress nghĩa là `AkiMCP` cũ thành sai URL và bị thay.
 
 ## Hợp đồng AIObox đọc từ AkiMCP
