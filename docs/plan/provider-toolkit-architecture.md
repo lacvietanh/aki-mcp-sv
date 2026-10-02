@@ -239,6 +239,20 @@ Rủi ro theo bước và cách lùi:
 - 2026-10-02 · (2) ĐẠT: `POST /api/providers {id:'postman', enabled:false}` → chat Notion mới (P4, wepro000) `mcp_list_tools` không còn tool nào chứa `postman`, `aki__aiobox` có; bật lại sau ~64 s. Thử trên Notion thay claude.ai (cùng đường `tools/list`).
 - 2026-10-02 · (3) ĐẠT (process đang chạy, chưa có `op=new_window`): chat Notion mới P4·W4 gọi `aki__aiobox` 4 lần cho 4 bước: `op=windows` 10 tab khớp `windows.json`; `read` P8·W1 ra tin cuối (chat v1); `screenshot` P8·W1 ra PNG (cửa sổ Notion, không phải ChatGPT); `read` P9·W9 → `no window 'P9·W9'; open: …`. Bài mục tiêu "đọc một cửa sổ" = 1 lần gọi (≤ 3). Còn lại sau restart: `aiobox_write op=new_window`.
 
+## Bàn giao (2026-10-02, P2·W1 → P2·W2)
+
+Trạng thái: P0–P4, P6 xong và đã kiểm thật (Amendments ở trên). `main` đi trước origin 7 commit (kể cả commit bàn giao này), chưa push; cây sạch; `npm run test` qua ở lần đổi code cuối. Bề mặt 38 tool, 32.540 ký tự (ngân sách 32.615).
+
+Còn tồn, theo thứ tự:
+1. **Restart AkiMCP** (chỉ khi chủ cho; nhiều phiên đang chạy, restart cắt mọi lần gọi MCP dang dở). Kiểm trước bằng `~/.aki/mcpsv/task/aiobox-sessions.mjs` (tab nào `busy`). Process hiện tại đã có `aki__aiobox` nhưng chưa có `aiobox_write op=new_window`.
+2. Sau restart: chat mới gọi `aki__aiobox_write op=new_window window=<handle>` trên một cửa sổ rảnh → ra handle mới; đóng cửa sổ đó sau; ghi kết quả vào Amendments.
+3. **Push / release 2.3.0 chỉ khi chủ ra lệnh**: cổng B7, bump version, stamp `> updated YYYY-MM-DD · v2.3.0`, CHANGELOG, dời plan sang `docs/plan/done/`.
+4. **P5**: chờ chủ chọn provider.
+5. Phụ thuộc repo aiobox (phiên aiobox làm, không commit hộ, không `git add -A` bên đó): bản hợp đồng `IMPORTANT-akimcp-aiobox-contract.md` có dòng `newWindow()/online` chưa commit; ghi chú "Open" phím icon pill trong `docs/feat/window-panel.md` § Brand; X4 gửi prompt cần capability chuẩn phía aiobox (Notion có `compose` v1 nhưng không gửi). Hai bản hợp đồng phải giống nhau trừ dòng 3.
+6. Dọn tuỳ chủ: 2 chat thử trong Notion wepro000 ("Tool availability check", "AkiMCP read window P8·W1"), 1 chat thử ChatGPT lacvietanh ("AkiMCP file operations").
+
+Lưu ý làm việc: mở tab thử bằng `PUT http://127.0.0.1:<port>/json/new?<url>` và đóng ngay bằng `/json/close/<id>`; mỗi bài một tab. Đổi cài đặt dùng chung (provider trên panel, quyền app ChatGPT) thì trả về như cũ ngay sau khi thử.
+
 ## Liên quan
 
 - `docs/plan/repo-architecture-subtraction-reorg.md` — khi dời file, `provider-registry.js` và các module đi cùng một đợt.
