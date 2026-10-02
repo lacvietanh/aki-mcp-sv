@@ -136,6 +136,26 @@ assert.match((await call('aiobox', { op: 'read', window: 'P7·W2·T2' })).text, 
 live[1111] = [];
 assert.match((await call('aiobox', { op: 'read', window: 'P1·W1' })).text, /window map is stale: P1·W1 \(target T-NOTION\) is no longer open/);
 
+// new_window goes through akipanel.newWindow(), then finds the handle AIObox adds to this profile in windows.json.
+assert.equal((await call('aiobox_write', { op: 'new_window' })).text, 'rejected: op=new_window needs window');
+pages['T-GPT'].akipanel = undefined;
+assert.equal((await call('aiobox_write', { op: 'new_window', window: 'P7·W2' })).text, 'rejected: P7·W2: this window has no AIObox panel');
+pages['T-GPT'].akipanel = readonlyPanel({ online: false, newWindow: () => assert.fail('offline panel must not be asked') });
+assert.equal((await call('aiobox_write', { op: 'new_window', window: 'P7·W2' })).text, 'rejected: P7·W2: the AIObox panel in this window is offline');
+let asked = 0;
+pages['T-GPT'].akipanel = readonlyPanel({
+  online: true,
+  newWindow: () => {
+    asked += 1;
+    const map = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
+    map.profiles[1].windows.push({ handle: 'P7·W4', windowId: 4, state: 'normal', tabs: [{ handle: 'P7·W4', targetId: 'T-NEW', url: 'https://chatgpt.com/', title: 'P7·W4 · lac · ChatGPT' }] });
+    fs.writeFileSync(mapFile, JSON.stringify(map));
+  },
+});
+const opened = JSON.parse((await call('aiobox_write', { op: 'new_window', window: 'p7w2' })).text);
+assert.equal(asked, 1);
+assert.deepEqual(opened, { window: 'P7·W4', opener: 'P7·W2', provider: 'gpt', url: 'https://chatgpt.com/', title: 'lac · ChatGPT' });
+
 assert.equal((await call('aiobox_write', { op: 'eval', window: 'P7·W2' })).text, 'rejected: op=eval needs expression');
 const evaluated = JSON.parse((await call('aiobox_write', { op: 'eval', window: 'T-GPT', expression: '6*7' })).text);
 assert.equal(evaluated.window, 'P7·W2', 'a targetId addresses the window too');

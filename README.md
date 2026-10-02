@@ -6,7 +6,7 @@ One command opens a much larger operating surface: build and edit projects from 
 
 <img width="1672" height="941" alt="AKIMCP v2 control panel" src="public/img/akimcp-v2.jpg" />
 
-[![Version](https://img.shields.io/badge/version-2.0.4-blue.svg)](CHANGELOG.md) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![npm version](https://img.shields.io/npm/v/@akinet/akimcp.svg)](https://www.npmjs.com/package/@akinet/akimcp) [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](#install--run)
+[![Version](https://img.shields.io/badge/version-2.2.0-blue.svg)](CHANGELOG.md) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![npm version](https://img.shields.io/npm/v/@akinet/akimcp.svg)](https://www.npmjs.com/package/@akinet/akimcp) [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](#install--run)
 
 **Contents:** [Why this exists](#why-this-exists) · [When to use & Core Use-Cases](#when-to-use--core-use-cases) · [Install & Run](#install--run) · [Connecting from Claude web](#connecting-from-claude-web) · [Connecting from ChatGPT](#connecting-from-chatgpt) · [Connecting from Grok and Gemini](#connecting-from-grok-and-gemini) · [Connecting from Postman](#connecting-from-postman) · [Connecting local IDEs](#connecting-local-ides-cursor-claude-code-agy-codex) · [Autonomous Cloud Automation](#autonomous-cloud-automation-grok--local-mcp) · [Requirements](#requirements) · [Architecture](#architecture) · [Directory layout](#directory-layout) · [Configuration](#configuration) · [Exposing to the internet](#exposing-to-the-internet) · [Finding files](#finding-files) · [Security](#security)
 
@@ -106,7 +106,7 @@ claude.ai connects and calls the in-house `aki__*` tool suite (38 tools). Tools 
 - **SQLite Database**: `aki__sqlite_schema`, `aki__sqlite_query`
 - **Agent & Context**: `aki__agy_run`, `aki__kiro_read`, `aki__akidevrule_context`
 - **Postman Control**: `aki__postman_status`, `aki__postman_eval`, `aki__postman_rename_conversation`, `aki__postman_panel_fullwidth`
-- **AIObox windows**: `aki__aiobox` (`op` = `windows` | `read` | `text` | `screenshot`, a window named by its handle such as `P7·W2`), `aki__aiobox_write` (`op` = `eval`)
+- **AIObox windows**: `aki__aiobox` (`op` = `windows` | `read` | `text` | `screenshot`, a window named by its handle such as `P7·W2`), `aki__aiobox_write` (`op` = `new_window` | `eval`)
 
 **Note on the connector icon:** claude.ai doesn't read the icon from the MCP server. It queries Google's favicon service with the tailnet's **apex domain**, not your host: `https://t2.gstatic.com/faviconV2?...&url=http://<tailnet>.ts.net&size=32`. `<tailnet>.ts.net` has no public DNS record, so Google returns 404 and claude.ai falls back to a default letter icon. This server serves `/favicon.ico` publicly, but no file placed here can change that result: your subdomain never appears in the query Google receives.
 

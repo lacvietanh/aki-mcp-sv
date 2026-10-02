@@ -154,7 +154,41 @@ const READ_OPS = {
   },
 };
 
+// akipanel.newWindow() is AIObox's own way to open a window (same profile and provider, AIObox's start page and panel), so a new chat opened here is the same as one opened from the panel button.
+const NEW_WINDOW_JS = `(() => {
+  const panel = window.akipanel;
+  if (!panel || typeof panel.newWindow !== 'function') return { error: 'this window has no AIObox panel' };
+  if (!panel.online) return { error: 'the AIObox panel in this window is offline' };
+  panel.newWindow();
+  return { ok: true };
+})()`;
+const NEW_WINDOW_WAIT_MS = 15_000;
+const NEW_WINDOW_POLL_MS = 500;
+
+const windowsOfProfile = (map, port) => (map.profiles || []).find((p) => p.port === port)?.windows || [];
+
 const WRITE_OPS = {
+  async new_window(args) {
+    need('new_window', args, ['window']);
+    const tab = resolveTab(readMap(), args.window);
+    const target = await liveTarget(tab);
+    const before = new Set(windowsOfProfile(readMap(), tab.port).map((w) => w.handle));
+    const { value } = await cdp.evaluate({ port: tab.port, target, expression: NEW_WINDOW_JS });
+    if (value?.error) throw new Error(`${tab.handle}: ${value.error}`);
+    // AIObox rewrites windows.json once the window exists; the new handle is the one this profile did not have before.
+    for (const end = Date.now() + NEW_WINDOW_WAIT_MS; Date.now() < end; await new Promise((r) => setTimeout(r, NEW_WINDOW_POLL_MS))) {
+      let map;
+      try {
+        map = readMap();
+      } catch {
+        continue;
+      }
+      const opened = windowsOfProfile(map, tab.port).find((w) => !before.has(w.handle));
+      const first = opened?.tabs?.[0];
+      if (first) return ok(JSON.stringify({ window: opened.handle, opener: tab.handle, provider: providerOf(first.url), url: first.url, title: stripHandle(first.title) }, null, 2));
+    }
+    throw new Error(`AIObox did not list a new window for ${tab.handle}'s profile within ${NEW_WINDOW_WAIT_MS / 1000}s`);
+  },
   async eval(args) {
     need('eval', args, ['window', 'expression']);
     const tab = resolveTab(readMap(), args.window);
@@ -202,13 +236,13 @@ export function register(server) {
   server.registerTool(
     'aiobox_write',
     {
-      title: 'AIObox: run JS in a window',
+      title: 'AIObox: open a window or run JS in one',
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description:
-        'Run JavaScript in an AIObox window named by handle (P#·W#, see aki__aiobox) and return the serialized result. op=eval: expression runs in window; awaitPromise (default true) waits for a returned Promise. It can click, type and change the page.',
+        'Act in AIObox windows named by handle (P#·W#, see aki__aiobox). op=new_window: AIObox opens a new window of the same profile and provider as window (a new chat), the way its panel button does, and returns the new handle. op=eval: expression runs in window and the serialized result returns; awaitPromise (default true) waits for a returned Promise. It can click, type and change the page.',
       inputSchema: {
-        op: z.enum(Object.keys(WRITE_OPS)).describe('eval'),
-        window: z.string().optional().describe('eval: handle P#·W# in any typed form, or a CDP targetId'),
+        op: z.enum(Object.keys(WRITE_OPS)).describe('new_window | eval'),
+        window: z.string().optional().describe('new_window, eval: handle P#·W# in any typed form, or a CDP targetId'),
         expression: z.string().optional().describe('eval: JS evaluated in the page; the last expression is returned'),
         awaitPromise: z.boolean().optional().describe('eval: await a returned Promise (default true)'),
       },
