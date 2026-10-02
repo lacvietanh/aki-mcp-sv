@@ -97,11 +97,14 @@ export async function executeFetch({
   }
 }
 
+export const provider = { id: 'fetch', title: 'Local HTTP fetch', register };
+
 export function register(server) {
   server.registerTool(
     'local_fetch',
     {
       title: 'Localhost & Intranet HTTP Fetcher',
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description:
         'Make HTTP/HTTPS requests to localhost, local dev servers, or internal LAN services with SSRF protection (blocks cloud metadata/link-local addresses; enforces 500KB cap and max 15s timeout).',
       inputSchema: {

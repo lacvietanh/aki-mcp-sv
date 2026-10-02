@@ -38,6 +38,14 @@ export function readSettings() {
   }
 }
 
+// Atomic (temp file + rename) so a reader never sees a half-written setting.json, which readSettings would treat as empty.
+export function writeSettings(settings) {
+  fs.mkdirSync(path.dirname(SETTINGS_PATH), { recursive: true });
+  const tmp = `${SETTINGS_PATH}.tmp-${process.pid}-${Date.now()}`;
+  fs.writeFileSync(tmp, `${JSON.stringify(settings, null, 2)}\n`);
+  fs.renameSync(tmp, SETTINGS_PATH);
+}
+
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
 // Normalizes three stored shapes to { overrides, revoked }: v3 { added:[entries], revoked }, v2 { overrides:{bin:null|array}, revoked }, v1 flat map. `revoked` records a removed default that an absent key cannot (the P0 bug). Format detail: docs/plan/done/shell-allowlist.md.

@@ -168,6 +168,7 @@ footer { border-top: 1px solid var(--line); margin-top: 24px; padding: 24px 0 28
 .datatable { border-collapse: collapse; width: 100%; font-size: 12px; }
 .datatable th, .datatable td { text-align: left; vertical-align: top; padding: 6px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 .datatable th { color: var(--muted); font-weight: 600; }
-.datatable tr.pending { opacity: .6; }
+.datatable tr.pending, .datatable tr.off { opacity: .6; }
+.datatable td.wrap { white-space: normal; }
 .datatable .helptext { margin: 0; font-size: 11px; }
 .logbox { font-family: ui-monospace, Menlo, monospace; font-size: 11px; max-height: 320px; overflow: auto; margin: 0 0 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; white-space: pre; }

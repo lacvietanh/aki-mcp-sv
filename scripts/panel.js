@@ -17,6 +17,7 @@ import { readBody, json, serveStatic, serveFontAwesome } from './http.js';
 import { failures, readLimits, validateLimits, LIMIT_DEFAULTS } from './rate-limit.js';
 import { getLocalVersions, cmpSemver, writeStatusFile, getRuleStatus } from './update-check.js';
 import { getDaemonStatus, launchPostmanDaemon, killPostmanDaemon, requestNewWindow } from './postman/postman-mcp.js';
+import { listProviders, setEnabled, redetect } from './provider-registry.js';
 import { fileURLToPath } from 'node:url';
 
 const IS_WIN = process.platform === 'win32';
@@ -265,6 +266,13 @@ export const ROUTES = {
   'POST /api/trusted-dirs': async (body) => {
     setTrustedDirs(validateTrustedDirs(body.dirs));
     return { ok: true, message: `saved trusted directories to ${SETTINGS_PATH}` };
+  },
+  // Same registry the tools server mounts from (provider-registry.js), in this process: a switch enables/disables the tools on the live shared server, and clients see it on their next tools/list.
+  'GET /api/providers': async () => listProviders(),
+  'POST /api/providers': async (body) => {
+    if (body.redetect === true) return redetect();
+    setEnabled(body.id, body.enabled);
+    return listProviders();
   },
   'GET /api/security': async () => ({ limits: readLimits(), defaults: LIMIT_DEFAULTS, blocked: failures.blockedList(), clients: listClients(), callers: listCallers(), log: readSecurityLog() }),
   'POST /api/clients/remove': async (body) => ({ ok: true, message: removeClient(typeof body.clientId === 'string' ? body.clientId : '') }),

@@ -1,6 +1,6 @@
 # aki-mcp-sv (`@akinet/akimcp`)
 
-Turn Claude on the web, ChatGPT, Grok, and Postman into secure operators for your local machine. AKIMCP v2 exposes a governed suite of 36 tools for files, shell, search, Git, SQLite, browser automation, DevTools, background tasks, localhost services, clipboard, notifications, ports, and Postman control through one OAuth-gated MCP endpoint. *(Gemini support remains experimental.)*
+Turn Claude on the web, ChatGPT, Grok, and Postman into secure operators for your local machine. AKIMCP v2 exposes a governed suite of 38 tools for files, shell, search, Git, SQLite, browser automation, DevTools, background tasks, localhost services, clipboard, notifications, ports, Postman control, and AIObox windows through one OAuth-gated MCP endpoint. *(Gemini support remains experimental.)*
 
 One command opens a much larger operating surface: build and edit projects from the browser, inspect databases and local APIs, drive browser workflows, manage long-running jobs, debug through DevTools, and control Postman without giving every client unrestricted shell access.
 
@@ -73,7 +73,7 @@ Nothing needs preparing beforehand; `npm start` handles it:
 - **OAuth and passphrase state** in `~/.aki/mcpsv/`: generated once and reused on later runs.
 - **Funnel**: checks `tailscale funnel status`; if port `9999` isn't on yet, runs `tailscale funnel --bg 9999` (idempotent: never toggles an already-enabled port).
 - Prints the **Remote MCP server URL** and **Passphrase** used on the confirmation page when a client connects.
-- Opens the **control panel** at `http://127.0.0.1:9998/?t=<token>`. A step header maps the flow (0 Ingress · 1 Connectors · 2 Install rules · 3 Instructions · 4 Extension · 7 Security), then the sections follow it: 0 Ingress (optional; a 3-tab ingress picker: Tailscale + Funnel / Owned public origin / Hosted domain), 1 Connectors, 2 Install akidevrule, 3 Instructions prompt, 4 Browser utilities, 5 allowed Folders, 6 shell allowlist, 7 Security & connection limits (rate limit settings, blocked callers and Release, registered clients with Remove, callers active since start, the security log).
+- Opens the **control panel** at `http://127.0.0.1:9998/?t=<token>`. A step header maps the flow (0 Ingress · 1 Connectors · 2 Install rules · 3 Instructions · 4 Extension · 7 Security), then the sections follow it: 0 Ingress (optional; a 3-tab ingress picker: Tailscale + Funnel / Owned public origin / Hosted domain), 1 Connectors, 2 Install akidevrule, 3 Instructions prompt, 4 Browser utilities, 5 allowed Folders, 6 shell allowlist, 7 Security & connection limits (rate limit settings, blocked callers and Release, registered clients with Remove, callers active since start, the security log), 8 Tool providers (each provider's tools, whether its app is installed, an on/off switch, Detect again).
 
 The default allowed root is your **home directory** (`$HOME`, or `%USERPROFILE%` on Windows): the one folder guaranteed to exist on any machine and to hold the projects you actually want Claude to reach. In plain terms, that means the whole home folder (Desktop, Documents, Downloads, Photos, everything under it), not just the projects you meant to share. Add/remove folders from **panel section 5**: click "+ Add folder…" and type an absolute path (`/Users/you/projects` or `C:\Users\you\projects`). Saving takes effect immediately for every tool — shell, find, search, and file read/write/edit alike — no restart. To change the root from the start: `MCP_DATA_DIR=/other/path npm start` (or `set MCP_DATA_DIR=D:\work` then `npm start` on Windows cmd).
 
@@ -93,7 +93,7 @@ Claude discovers OAuth automatically. No Client ID or Client Secret is needed.
 
 Why not token-in-URL: `docs/ref/claude-connector.md`, `docs/research/claude-ai-oauth-connector.md`.
 
-claude.ai connects and calls the in-house `aki__*` tool suite (36 tools):
+claude.ai connects and calls the in-house `aki__*` tool suite (38 tools). Tools of an app that is not installed (agy, Kiro CLI, Postman, Chrome, AIObox) are not served, and panel section 8 turns any optional provider off; the client sees the change on its next tool list, usually a new chat. Every tool declares MCP annotations, so ChatGPT stops asking to confirm read-only tools:
 - **Chromium Remote & Profiles**: `aki__chrome_profiles`, `aki__chrome_launch`, `aki__chrome_tabs`, `aki__chrome_interact`, `aki__chrome_stop` (stealth port-0 clone, auto-port fallback, React/Vue synthetic typing, scroll-to-center click)
 - **DevTools & CDP**: `aki__devtools_targets`, `aki__devtools_eval`, `aki__devtools_screenshot`
 - **OS Native Integration**: `aki__notify_user` (desktop notification banner & chime sound), `aki__clipboard_read`, `aki__clipboard_write` (system clipboard read/write bridge)
@@ -106,6 +106,7 @@ claude.ai connects and calls the in-house `aki__*` tool suite (36 tools):
 - **SQLite Database**: `aki__sqlite_schema`, `aki__sqlite_query`
 - **Agent & Context**: `aki__agy_run`, `aki__kiro_read`, `aki__akidevrule_context`
 - **Postman Control**: `aki__postman_status`, `aki__postman_eval`, `aki__postman_rename_conversation`, `aki__postman_panel_fullwidth`
+- **AIObox windows**: `aki__aiobox` (`op` = `windows` | `read` | `text` | `screenshot`, a window named by its handle such as `P7·W2`), `aki__aiobox_write` (`op` = `eval`)
 
 **Note on the connector icon:** claude.ai doesn't read the icon from the MCP server. It queries Google's favicon service with the tailnet's **apex domain**, not your host: `https://t2.gstatic.com/faviconV2?...&url=http://<tailnet>.ts.net&size=32`. `<tailnet>.ts.net` has no public DNS record, so Google returns 404 and claude.ai falls back to a default letter icon. This server serves `/favicon.ico` publicly, but no file placed here can change that result: your subdomain never appears in the query Google receives.
 
@@ -221,7 +222,7 @@ gatekeeper.js  — public port 9999
       │           /mcp                  requires a valid Bearer access token, else 401
       │                                 POST → real Streamable HTTP (scripts/streamable-bridge.js)
       ▼
-tools-server.js — one shared McpServer, in-process (InMemoryTransport, no child, no SSE), tools:
+tools-server.js — one shared McpServer, in-process (InMemoryTransport, no child, no SSE), tools mounted by provider-registry.js:
                                   search-mcp.js       (find_path/search_content, whole-tree in one call)
                                   shell-mcp.js        (allowlisted commands, inspection-first defaults)
                                   agy-mcp.js          (Antigravity CLI, read-only plan mode)
@@ -232,6 +233,7 @@ tools-server.js — one shared McpServer, in-process (InMemoryTransport, no chil
                                   chrome-mcp.js       (profile clone, stealth launch, tabs, interact)
                                   chrome-profile.js   (Chrome/Brave/Edge profile clone + cookie decrypt)
                                   cdp-mcp.js          (devtools_targets/eval/screenshot over CDP)
+                                  aiobox-mcp.js       (AIObox windows by handle: list, read chat, text, screenshot, eval)
                                   cdp-engine.js       (shared CDP launch/target/eval engine)
                                   fetch-mcp.js        (SSRF-protected localhost/LAN HTTP fetch)
                                   task-mcp.js         (detached background task start/manage)
@@ -268,6 +270,8 @@ aki-mcp-sv/
 │   ├── security-log.js           # [security] events to console + security.log (rotated at 1 MB)
 │   ├── streamable-bridge.js      # Streamable HTTP shim <-> the in-process tools server (InMemoryTransport)
 │   ├── tools-server.js           # builds the one shared McpServer mounting every tool arm below
+│   ├── provider-registry.js      # the list of tool providers: detect once, register all, hide unavailable or switched-off ones
+│   ├── find-on-path.js           # PATH lookup without spawning (PATHEXT on Windows), used by provider detect
 │   ├── stdio.js                  # the same tools server over stdin/stdout, for Antigravity CLI and IDE
 │   ├── http.js                   # shared HTTP helpers: readBody / json / serveStatic (+ MIME)
 │   ├── shell-mcp.js              # allowlist-gated shell tool (inspection-first defaults)
@@ -280,6 +284,7 @@ aki-mcp-sv/
 │   ├── chrome-mcp.js             # chrome_profiles/launch/tabs/interact/stop tools
 │   ├── chrome-profile.js         # clones real browser profiles (Keychain/DPAPI cookie decryption)
 │   ├── cdp-mcp.js                # devtools_targets/eval/screenshot tools over CDP
+│   ├── aiobox-mcp.js             # aki__aiobox / aiobox_write: AIObox windows by handle, from ~/.aki/aiobox/cdp/windows.json
 │   ├── cdp-engine.js             # app-agnostic CDP launch/target/eval engine shared by chrome-mcp/postman-mcp
 │   ├── fetch-mcp.js              # aki__local_fetch: SSRF-protected localhost/LAN HTTP client
 │   ├── task-mcp.js               # aki__task_start/task_manage: detached background task runner

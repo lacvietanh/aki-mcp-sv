@@ -21,11 +21,19 @@ function resolvePort(explicitPort) {
   return p;
 }
 
+export const provider = {
+  id: 'chrome',
+  title: 'Chrome profiles & tabs',
+  detect: () => (listInstalledBrowsers().length ? { available: true } : { available: false, reason: 'no Chromium browser installed (Chrome, Brave, Edge)' }),
+  register,
+};
+
 export function register(server) {
   server.registerTool(
     'chrome_profiles',
     {
       title: 'Chromium: list installed browsers and profiles',
+      annotations: { readOnlyHint: true, openWorldHint: false },
       description:
         'List installed Chromium browsers (Chrome, Brave, Edge) and their profiles (name, email, folder ID) by inspecting Local State.',
       inputSchema: {
@@ -48,6 +56,7 @@ export function register(server) {
     'chrome_launch',
     {
       title: 'Chromium: launch cloned stealth profile on dynamic port',
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
       description:
         'Clones a real profile (preserving Keychain/DPAPI logins and cookies without touching the live browser), purges locks, and launches stealth Chrome with --remote-debugging-port=0.',
       inputSchema: {
@@ -77,6 +86,7 @@ export function register(server) {
     'chrome_tabs',
     {
       title: 'Chromium: manage tabs (list, open, close, activate)',
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description:
         'Manage page tabs on the active Chrome session or target port. Supports listing open tabs, opening new URL, closing, and activating a tab.',
       inputSchema: {
@@ -119,6 +129,7 @@ export function register(server) {
     'chrome_interact',
     {
       title: 'Chromium: interact with DOM element (click or type)',
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description:
         'Interacts with a web page: "click" scrolls the element into center view before clicking; "type" dispatches synthetic input and change events so React/Vue/SPA forms accept the value.',
       inputSchema: {
@@ -161,6 +172,7 @@ export function register(server) {
     'chrome_stop',
     {
       title: 'Chromium: stop active or specified Chrome session',
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       description: 'Terminates the spawned Chromium process and cleans up active session state.',
       inputSchema: {
         pid: z.number().int().optional().describe('process PID to kill (default: active session PID)'),

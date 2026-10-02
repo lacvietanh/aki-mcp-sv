@@ -114,11 +114,14 @@ export async function clipboardWrite(text = '') {
   });
 }
 
+export const provider = { id: 'system', title: 'Notifications & clipboard', register };
+
 export function register(server) {
   server.registerTool(
     'notify_user',
     {
       title: 'OS Notification & Sound Alert',
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       description:
         'Display a native OS desktop notification and sound alert (macOS notification banner with Glass chime, Windows Toast, Linux notify-send) to alert the user when a long task completes.',
       inputSchema: {
@@ -141,6 +144,7 @@ export function register(server) {
     'clipboard_read',
     {
       title: 'Read System Clipboard',
+      annotations: { readOnlyHint: true, openWorldHint: false },
       description: 'Read the current text content from the operating system clipboard (pbpaste / Get-Clipboard / xclip).',
       inputSchema: {},
     },
@@ -158,6 +162,7 @@ export function register(server) {
     'clipboard_write',
     {
       title: 'Write to System Clipboard',
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       description: 'Copy text into the operating system clipboard so the user can immediately paste it (pbcopy / Set-Clipboard / xclip).',
       inputSchema: {
         text: z.string().describe('text to copy into the clipboard'),

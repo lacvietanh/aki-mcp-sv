@@ -146,12 +146,15 @@ async function applyFileEdits(filePath, edits, dryRun) {
   return formatted;
 }
 
+export const provider = { id: 'filesystem', title: 'Filesystem', required: true, register };
+
 export function register(server) {
 
   server.registerTool(
     'read_text_file',
     {
       title: 'Read Text File',
+      annotations: { readOnlyHint: true, openWorldHint: false },
       description: 'Read the complete contents of a text file. Use "tail"/"head" to read only the last/first N lines of a large file instead of the whole thing. Only works under the configured roots.',
       inputSchema: {
         path: z.string(),
@@ -175,6 +178,7 @@ export function register(server) {
     'write_file',
     {
       title: 'Write File',
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       description: 'Create a new file or completely overwrite an existing one. Use with caution — overwrites without warning. Only works under the configured roots.',
       inputSchema: { path: z.string(), content: z.string() },
     },
@@ -193,6 +197,7 @@ export function register(server) {
     'edit_file',
     {
       title: 'Edit File',
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       description: 'Make targeted edits to a text file: each edit replaces an exact (or whitespace-tolerant) text match with new text. Returns a git-style diff of what changed. Set dryRun to preview without writing.',
       inputSchema: {
         path: z.string(),
@@ -214,6 +219,7 @@ export function register(server) {
     'create_directory',
     {
       title: 'Create Directory',
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
       description: 'Create a directory (and any missing parents). Succeeds silently if it already exists.',
       inputSchema: { path: z.string() },
     },
@@ -233,6 +239,7 @@ export function register(server) {
     'move_file',
     {
       title: 'Move File',
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       description: 'Move or rename a file/directory. Fails if the destination already exists. Both source and destination must be under the configured roots — this is the only sanctioned move/rename path (the shell tool\'s allowlist deliberately excludes mv).',
       inputSchema: { source: z.string(), destination: z.string() },
     },
@@ -252,6 +259,7 @@ export function register(server) {
     'get_file_info',
     {
       title: 'Get File Info',
+      annotations: { readOnlyHint: true, openWorldHint: false },
       description: 'Get size, timestamps, permissions, and type for a file or directory, without reading its content.',
       inputSchema: { path: z.string() },
     },
@@ -279,6 +287,7 @@ export function register(server) {
     'list_allowed_directories',
     {
       title: 'List Allowed Directories',
+      annotations: { readOnlyHint: true, openWorldHint: false },
       description: 'List the directories this server can currently read/write. Subdirectories within them are also accessible.',
       inputSchema: {},
     },

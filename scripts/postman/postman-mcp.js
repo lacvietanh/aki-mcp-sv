@@ -14,6 +14,7 @@ import '../userdata.js'; // sets AKI_DATA_DIR before postman-data-paths.cjs read
 import paths from './postman-data-paths.cjs';
 import daemonPid from './postman-daemon-pid.cjs';
 import { normalizeOwnershipStatus } from './postman-ownership.cjs';
+import postmanPaths from './postman-paths.cjs';
 const { AKI_DATA_DIR, DATA_JSON_PATH, NEW_WINDOW_FLAG_PATH, OWNERSHIP_STATUS_PATH } = paths;
 import cdp from '../cdp-engine.js';
 
@@ -244,11 +245,23 @@ const FULLWIDTH_JS = (enable) => `(() => {
   return { ok: true, enabled: true, targetFound: !!document.getElementById('global-contextbar-overlay-container') };
 })()`;
 
+// getPostmanPaths falls back to one `which`/`where` call only when the app is not at its standard install path.
+export const provider = {
+  id: 'postman',
+  title: 'Postman',
+  detect: () => {
+    const { execPath } = postmanPaths.getPostmanPaths();
+    return execPath && existsSync(execPath) ? { available: true } : { available: false, reason: 'Postman app not found' };
+  },
+  register,
+};
+
 export function register(server) {
   server.registerTool(
     'postman_status',
     {
       title: 'Postman Control Status',
+      annotations: { readOnlyHint: true, openWorldHint: false },
       description:
         "Report whether the Postman control daemon is running and its live CDP ownership state. Does not launch Postman or open a connection.",
       inputSchema: {},
@@ -260,6 +273,7 @@ export function register(server) {
     'postman_eval',
     {
       title: 'Postman: evaluate JS in the app',
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description:
         "Evaluate a JavaScript expression inside the running Postman desktop renderer over CDP and return the serialized result. Auto-discovers Postman's remote-debugging endpoint (launch Postman from the Aki panel first) and its main renderer target. Use it to inspect or drive Postman's own UI.",
       inputSchema: { expression: z.string().describe('JS evaluated in the Postman renderer; the last expression is returned') },
@@ -274,6 +288,7 @@ export function register(server) {
     'postman_rename_conversation',
     {
       title: 'Postman: rename current chat',
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       description:
         "Rename the currently open Agent Mode conversation by driving Postman's own inline edit (double-click → type → Enter) so the change persists in app state.",
       inputSchema: { name: z.string().min(1).describe('the new conversation title') },
@@ -288,6 +303,7 @@ export function register(server) {
     'postman_panel_fullwidth',
     {
       title: 'Postman: toggle right panel full width',
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       description:
         "Override the width of Postman's right context panel (#global-contextbar-overlay-container) to fill the window via an injected style tag that survives re-renders. Pass enable=false to restore.",
       inputSchema: { enable: z.boolean().optional().describe('true (default) = full width; false = restore') },

@@ -427,7 +427,44 @@ async function loadSecurity() {
   renderSecurityLog(log);
 }
 
+function providerSwitch(p) {
+  if (p.required) return 'always on';
+  const label = document.createElement('label');
+  label.className = 'chk';
+  const box = document.createElement('input');
+  box.type = 'checkbox';
+  box.checked = p.enabled;
+  box.onchange = () => act(box, 'msgProviders', async () => {
+    renderProviders(await api('POST', '/api/providers', { id: p.id, enabled: box.checked }));
+    return `${p.title} switched ${box.checked ? 'on' : 'off'}; AI clients see it on their next tool list`;
+  });
+  label.append(box, p.enabled ? 'on' : 'off');
+  return label;
+}
+function providerInstalledCell(p) {
+  const box = document.createElement('div');
+  box.append(p.available ? 'yes' : 'no');
+  if (!p.available) box.append(mutedNote(p.reason));
+  return box;
+}
+function renderProviders(list) {
+  renderTable('providersList', [
+    ['Provider', (p) => p.title],
+    ['Installed', providerInstalledCell],
+    ['Tools', (p) => p.tools.map((n) => n.replace(/^aki__/, '')).join(', ')],
+    ['Switch', providerSwitch],
+  ], list, 'No providers.', (p) => (p.available && p.enabled ? '' : 'off'));
+  document.querySelectorAll('#providersList td:nth-child(3)').forEach((td) => td.classList.add('wrap'));
+}
+async function loadProviders() {
+  renderProviders(await api('GET', '/api/providers'));
+}
+
 const ACTIONS = {
+  redetectProviders: (btn) => act(btn, 'msgProviders', async () => {
+    renderProviders(await api('POST', '/api/providers', { redetect: true }));
+    return 'detected again';
+  }),
   saveLimits: (btn) => act(btn, 'msgLimits', async () => (await api('POST', '/api/rate-limit', { limits: readLimitInputs() })).message),
   resetLimits: () => { fillLimits(limitDefaults); say('msgLimits', 'defaults filled in — press Save to apply', true); },
   refreshBlocked: (btn) => act(btn, 'msgBlocked', async () => { await loadSecurity(); return 'refreshed'; }),
@@ -565,4 +602,5 @@ renderSavedIngress(SAVED_INGRESS);
 loadState().catch((e) => ['msgPaths', 'msgAllow', 'msgTrusted', 'msgRules'].forEach((id) => say(id, e.message, false)));
 loadTailscale().then((m) => say('msgTs', m, m.startsWith('ready'))).catch((e) => say('msgTs', e.message, false));
 loadSecurity().catch((e) => say('msgLimits', e.message, false));
+loadProviders().catch((e) => say('msgProviders', e.message, false));
 loadPostmanDaemon().catch((e) => { document.getElementById('msgPmDaemon').textContent = e.message; });

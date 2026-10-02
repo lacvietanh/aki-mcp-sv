@@ -30,6 +30,21 @@ AIObox dựng connector AkiMCP trên Claude, Grok và ChatGPT bằng macro, và 
 
 Đổi bất kỳ dòng nào: sửa `provider/akimcp.rs` hoặc macro, test (`cargo test --lib`, `node --test src-tauri/src/provider/macros.test.mjs`) và file này ở cả hai repo.
 
+## Hợp đồng AkiMCP đọc từ AIObox
+
+Provider `aiobox` của AkiMCP (`scripts/aiobox-mcp.js`, tool `aki__aiobox` và `aki__aiobox_write`) chỉ đọc các file dưới đây, không bao giờ ghi; AIObox là bên ghi. Provider tự ẩn khi không có `~/.aki/aiobox/`.
+
+| Thứ | Hình dạng AkiMCP dựa vào | Ai ghi, ai đọc |
+|---|---|---|
+| `~/.aki/aiobox/cdp/windows.json` | `{ version: 1, profiles: [{ name, port, windows: [{ handle, tabs: [{ handle, targetId, url, title }] }] }] }`; provider suy từ host của `url`, theo id AIObox (`gpt`, `claude`, `grok`, `gemini`, `notion`, `gmail`, `cloudflare`) | AIObox ghi; AkiMCP đọc lại mỗi lần gọi, version khác 1 thì báo lỗi, target không còn trên port hoặc title mang handle khác thì báo map cũ (trang chưa có tiêu đề hoặc không có tiền tố handle vẫn nhận) |
+| Handle cửa sổ | `P<n>·W<n>[·T<n>]` | AIObox `cdp/handle.rs::parse_handle`; AkiMCP `scripts/aiobox-mcp.js` cùng luật và cùng ví dụ test (`test/aiobox-mcp.test.js`) |
+| `window.akipanel.capabilities` | `{ usage?: 1, chat?: 1 }`: capability chuẩn trang này có, số = version shape; thiếu key = không có (aiobox `docs/arch/provider-capabilities.md`, SSoT `desktop/panel/providers/capabilities.ts`) | AIObox panel cài vào trang; AkiMCP kiểm `capabilities.chat === 1` trước khi gọi `live.chat()`, version khác thì báo lỗi rõ |
+| `window.akipanel.live.chat()` | đồng bộ, chỉ đọc, không throw: `{ ok: true, data: { messages: [{ role: 'user'\|'assistant', text }], busy } }` hoặc `{ ok: false, error }` (không phải trang chat của provider, DOM đổi); chat mới chưa có tin là `ok` với `messages: []`; cũ nhất trước, bỏ thinking/tool step | AIObox provider adapter (Notion từ 2026-10-02, AP11, chỉ chat toàn trang `app.notion.com/chat` hoặc `/ai`, side panel chưa hỗ trợ); AkiMCP `op=read` trả lại `error` nguyên văn; trang không có capability thì đọc `document.body.innerText` (Notion không có `main`; cắt 20000 ký tự cuối) |
+| `window.akipanel.account` | `{ label, plan, login: 'unknown'\|'signed_in'\|'signed_out', observedAt } \| null` (observe của AIObox, không phải trang) | AIObox Rust `PanelAccount`; mọi provider |
+| Đọc object `akipanel` qua CDP | `akipanel` là readonly Proxy: `Runtime.evaluate` `returnByValue` trả `{}` cho field object (`capabilities`, `account`, `window`); bọc `JSON.stringify(...)` rồi parse. Kết quả `live.chat()` là object thường, trả thẳng được | AkiMCP `scripts/aiobox-mcp.js` |
+
+Đổi bất kỳ dòng nào: sửa `cdp/handle.rs` hoặc chỗ ghi `windows.json` bên AIObox, sửa `scripts/aiobox-mcp.js` bên AkiMCP, chạy `node ./test/aiobox-mcp.test.js` và cập nhật file này ở cả hai repo.
+
 ## Identity — việc chủ máy cần (chưa làm)
 
 Hiện AkiMCP cấp **một access token chung** cho mọi client và chỉ phân biệt client theo redirect host. Hệ quả: `signedIn` là theo provider chứ không theo tài khoản. Hai tài khoản ChatGPT trên hai profile đọc như nhau; một profile đã đăng nhập làm profile kia trông như ổn. Vì vậy macro chỉ dùng tín hiệu này để reconnect một lần, không bao giờ để xoá.

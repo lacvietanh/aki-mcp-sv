@@ -99,11 +99,15 @@ const OPS = {
   },
 };
 
+export const provider = { id: 'git', title: 'Git (read-only)', register };
+
 export function register(server) {
   server.registerTool(
     'git',
     {
       title: 'Read-only git',
+      // openWorld: op=tags remote= reaches the network through ls-remote.
+      annotations: { readOnlyHint: true, openWorldHint: true },
       description:
         'Read-only git with compact output, cheaper in tokens than run_cmd. op=status: branch, upstream, staged/unstaged/untracked as JSON. op=diff: working-tree diff (staged=true for the index, file= to narrow); a big diff shows whole files first and names the omitted ones so you can ask for them with file=. op=log: last commits as JSON (limit, max 50). op=tags: local tags newest first, or the remote\'s tags when remote=<configured remote name>. Anything that writes (commit, push, branch, tag creation) goes through run_cmd.',
       inputSchema: {

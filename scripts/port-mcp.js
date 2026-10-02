@@ -74,11 +74,14 @@ export function isProtectedPort(port) {
   return port === gatePort || port === panelPort;
 }
 
+export const provider = { id: 'port', title: 'Ports', register };
+
 export function register(server) {
   server.registerTool(
     'port_status',
     {
       title: 'Check listening ports and dev servers',
+      annotations: { readOnlyHint: true, openWorldHint: false },
       description:
         'Inspect active TCP listening ports and processes (e.g. dev servers on port 3000, 5173, 8080). Provide `port` to check a specific port, or omit to list all listening ports.',
       inputSchema: {
@@ -99,6 +102,7 @@ export function register(server) {
     'kill_port',
     {
       title: 'Kill process listening on a port',
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       description:
         'Terminate the process(es) listening on a specific TCP port (e.g. freeing port 3000 when EADDRINUSE). Will refuse to kill the Aki MCP server itself.',
       inputSchema: {

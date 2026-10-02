@@ -7,7 +7,7 @@ import { ok, okImage, fail } from './mcp-tool.js';
 import cdp from './cdp-engine.js';
 import { getActivePort, NO_CDP_PORT_MESSAGE } from './chrome-profile.js';
 
-const NO_SESSION_HINT = 'A window not launched by aki__chrome_launch has no active session: find its port with aki__port_status first, then pass port.';
+const NO_SESSION_HINT = 'A window not launched by aki__chrome_launch has no active session: find its port with aki__port_status first, then pass port. An AIObox window is reached by its handle (P#·W#) through aki__aiobox instead.';
 
 function resolvePort(port) {
   const p = port || getActivePort();
@@ -17,11 +17,15 @@ function resolvePort(port) {
   return p;
 }
 
+// No detect: it also serves Postman, VS Code and AIObox's Chrome, so hiding it by "no session running" would hide it exactly when an attach needs it.
+export const provider = { id: 'cdp', title: 'DevTools (CDP)', register };
+
 export function register(server) {
   server.registerTool(
     'devtools_targets',
     {
       title: 'DevTools: list targets',
+      annotations: { readOnlyHint: true, openWorldHint: false },
       description:
         'List the CDP page targets on a Chromium/Electron remote-debugging endpoint (Chrome, Postman, VS Code, …). Provide port or omit to use active Chrome session. ' + NO_SESSION_HINT,
       inputSchema: {
@@ -46,8 +50,9 @@ export function register(server) {
     'devtools_eval',
     {
       title: 'DevTools: evaluate JS',
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description:
-        'Evaluate a JavaScript expression inside a page/renderer over CDP and return the serialized result (throws surface the page-side error). Optionally pick the target by a url/title substring (filter) or an exact targetId; default = first page. ' + NO_SESSION_HINT,
+        'Evaluate a JavaScript expression inside a page/renderer over CDP and return the serialized result (throws surface the page-side error). Optionally pick the target by a url/title substring (filter) or an exact targetId; default = first page. For Postman, aki__postman_eval finds its endpoint and main renderer itself. ' + NO_SESSION_HINT,
       inputSchema: {
         expression: z.string().describe('JS evaluated in the page; the last expression is returned (returnByValue)'),
         port: z.number().int().optional().describe('remote-debugging port (default: active Chrome session)'),
@@ -72,6 +77,7 @@ export function register(server) {
     'devtools_screenshot',
     {
       title: 'DevTools: capture screenshot',
+      annotations: { readOnlyHint: true, openWorldHint: false },
       description:
         'Capture a screenshot of a Chromium/Electron target page over CDP. Returns image directly in MCP response. ' + NO_SESSION_HINT,
       inputSchema: {

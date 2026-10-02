@@ -2,6 +2,7 @@
 import { execFile } from 'node:child_process';
 import { z } from 'zod';
 import { resolveOrFail } from './roots.js';
+import { findOnPath } from './find-on-path.js';
 import { ok, err, fail } from './mcp-tool.js';
 
 // Owner requirement ("khóa cứng"): the model is not a tool parameter, so a prompt cannot escalate to a pricier or different tier.
@@ -30,11 +31,19 @@ function run(trustTools, { prompt, effort, cwd }) {
 
 const effortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional().describe('kiro-cli --effort, thinking budget');
 
+export const provider = {
+  id: 'kiro',
+  title: 'Kiro CLI (read-only)',
+  detect: () => (findOnPath('kiro-cli') ? { available: true } : { available: false, reason: 'kiro-cli is not on PATH' }),
+  register,
+};
+
 export function register(server) {
   server.registerTool(
     'kiro_read',
     {
       title: 'Kiro CLI (read-only)',
+      annotations: { readOnlyHint: true, openWorldHint: false },
       description:
         `Delegate a read-only task to a Kiro CLI session locked to ${MODEL}. ` +
         'Restricted to fs_read by mechanism (--trust-tools=fs_read) — it can read files under the allowed roots but cannot write or run shell. ' +

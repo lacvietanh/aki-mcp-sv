@@ -1,6 +1,6 @@
 # Tools — the local capability suite (anchored)
 
-> updated 2026-09-29 · v2.1.0
+> updated 2026-10-02 · v2.2.0
 
 The product's single purpose: give a remote web AI (claude.ai / ChatGPT / Grok / Gemini / Postman) a set of **local capabilities** on the owner's machine — a pair of hands reaching from the browser into the local filesystem, shell, and local agents. Every tool below exists to serve that anchor. This doc records **why each one is here** so a later subtraction audit does not mistake an anchored capability for redundant code and propose removing it.
 
@@ -15,6 +15,11 @@ The product's single purpose: give a remote web AI (claude.ai / ChatGPT / Grok /
 | `agy_run` | `agy_run` | Delegate a whole task to a **local Antigravity CLI agent** — default mode `plan` (read-only by mechanism), default model `gemini-3.7-flash-medium` (fast, wide-context discovery tier) | The remote model delegates; a local agent reasons |
 | `kiro` | `kiro_read` | Delegate a whole read-only task to a **local Kiro CLI agent**, hard-locked to `claude-sonnet-4.5`, `--trust-tools=fs_read` | The remote model delegates; a local agent reasons |
 | `postman` (`scripts/postman/postman-mcp.js`) | `postman_status` | Reports whether the `scripts/postman/` daemon is running (own child or an externally-started pid at `$AKI_DATA_DIR/daemon.pid`) and its `data.json`. This tree is a frozen copy, not kept in sync with its origin (except `package.json`, a `{"type":"commonjs"}` shim). Launch is a panel action (`POST /api/postman-launch`), not this tool and not boot. | The remote model, directly — read-only, no CDP in the tool |
+| `aiobox` (`scripts/aiobox-mcp.js`) | `aiobox`, `aiobox_write` | Reaches an AIObox window by its handle (`P7·W2`, also the prefix of the page title) from `~/.aki/aiobox/cdp/windows.json`, read again on every call: `op=windows` lists tabs with provider and profile, `op=read` returns the last chat messages through the page's `akipanel.live.chat()` when `akipanel.capabilities.chat === 1` (its `ok: false` error is returned verbatim as the tool error; raw `document.body` text when the page has no chat capability), `op=text` and `op=screenshot`; `aiobox_write op=eval` runs JS in that window. A stale map (target gone, or a title carrying another handle) is refused. Exists beside `devtools_*` because one sentence like "compare the last answer in P7·W2 with P1·W2" would otherwise take 3–4 calls of map reading and target lookup. Contract with AIObox: `plan/IMPORTANT-akimcp-aiobox-contract.md` | The remote model, directly; served only when AIObox is installed |
+
+## Providers and annotations
+
+Each tool module is a provider (`scripts/provider-registry.js`; contract: [`arch/provider-toolkit.md`](../arch/provider-toolkit.md)). A provider whose app is not installed is not served (agy and Kiro CLI not on `PATH`, no Postman app, no Chromium browser, no `~/.aki/aiobox/`), and panel section 8 switches any optional provider off (`providers.<id>.enabled` in `setting.json`); `rule`, `filesystem`, `search` and `shell` are always on. Every tool declares MCP annotations: `readOnlyHint: true` only when it cannot write by mechanism, so ChatGPT stops asking to confirm reads while every write tool still asks. `test/tool-surface.test.js` holds the size budget of `tools/list`, the annotations, the 700-character description cap and the cross-references between descriptions.
 
 ## Layout of `scripts/postman/` (Postman only)
 

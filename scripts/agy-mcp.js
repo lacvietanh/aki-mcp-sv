@@ -2,6 +2,7 @@
 import { execFile } from 'node:child_process';
 import { z } from 'zod';
 import { readSettings } from './allowlist.js';
+import { findOnPath } from './find-on-path.js';
 import { resolveOrFail } from './roots.js';
 import { ok, err, fail } from './mcp-tool.js';
 
@@ -31,11 +32,21 @@ function run(args, cwd) {
   });
 }
 
+export const provider = {
+  id: 'agy',
+  title: 'Antigravity CLI (agy)',
+  detect: () => (findOnPath('agy') ? { available: true } : { available: false, reason: 'agy is not on PATH' }),
+  register,
+};
+
 export function register(server) {
+  // Read once at registration: read-only by mechanism only while 'plan' is the sole allowed mode; widening the modes takes a restart to drop the hint.
+  const modes = loadAllowedModes();
   server.registerTool(
     'agy_run',
     {
       title: 'Antigravity CLI',
+      annotations: { readOnlyHint: modes.length === 1 && modes[0] === 'plan', destructiveHint: false, openWorldHint: false },
       description:
         'Run the agy CLI for read-only retrieval, never judgment (akiflow/harness-facts.md § Model tiers). ' +
         `Defaults to mode "plan" (read-only by mechanism) and model "${DEFAULT_MODEL}" (fast, wide-context discovery tier). ` +

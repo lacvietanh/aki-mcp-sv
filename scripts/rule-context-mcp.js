@@ -11,10 +11,14 @@ const RESUME_STEP = 'If you are a stateless web chat with no session memory of y
 export const RULE_CONTEXT_DESCRIPTION = `Call once before the first substantive action in every chat to load the effective default guidance. The server resolves global imports and applicable project CLAUDE.local/AGENTS context itself; do not search for or individually read bootstrap files. Pass an absolute workingPath when known. Read-only. ${AKIRULE_STEP} ${CONDUCT_STEP} ${RESUME_STEP}`;
 export const RULE_CONTEXT_INSTRUCTIONS = `Before the first substantive action, call aki__akidevrule_context once; pass an absolute workingPath when known. Do not discover or read bootstrap files individually. A returned receipt is the only success signal. ${AKIRULE_STEP} ${CONDUCT_STEP} ${RESUME_STEP}`;
 
+// Required: the aiobox prompt and WEB_PROMPT call aki__akidevrule_context by name.
+export const provider = { id: 'rule', title: 'Rule context', required: true, register };
+
 export function register(server, options = {}) {
   const assemble = options.assemble || assembleRuleContext;
   server.registerTool(RULE_CONTEXT_TOOL, {
     title: RULE_CONTEXT_TITLE,
+    annotations: { readOnlyHint: true, openWorldHint: false },
     description: RULE_CONTEXT_DESCRIPTION,
     inputSchema: {
       workingPath: z.string().optional().describe('Absolute local file or directory path for applicable project context'),

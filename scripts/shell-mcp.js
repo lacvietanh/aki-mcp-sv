@@ -173,12 +173,16 @@ export class Shell {
 
 const shell = new Shell();
 
+export const provider = { id: 'shell', title: 'Shell (allowlisted commands)', required: true, register };
+
 export function register(server) {
   server.registerTool(
     'run_cmd',
     {
       title: 'Run Command',
-      description: 'Run one shell command from the allowlist. Ships an inspection-first default set (ls, cat, grep, head, tail, stat, git status/log/diff/show, …), extendable in the local control panel. Output is cleaned (ANSI codes and progress redraws removed, repeated lines collapsed); past about 20k characters only the start and end are shown, and the full text is saved to a file whose path the output states. A failing command returns its stdout, stderr and exit code. Cheaper dedicated tools first: find_path/search_content for file/text lookup (find is not in the set because its own flags escape read-only), read_text_file for file contents, the git tool for status/diff/log/tags (compact output). Pass cwd (absolute path under an allowed root, or relative to the first configured root) to run inside a specific project directory — this is how you target a repo. No chaining, no redirection — one command per call.',
+      // destructive: the owner's allowlist can hold write commands (git commit/push).
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+      description: 'Run one allowlisted shell command. Default set is inspection-first (ls, cat, grep, head, tail, stat, git status/log/diff/show, …); the owner extends it in the panel. Output is cleaned (ANSI, progress redraws and repeats removed); past ~20k chars only start and end are shown, the full text saved to a file the output names. A failure returns stdout, stderr and exit code. Commands stop after 10s; a dev server or watch fits aki__task_start. Dedicated tools are cheaper: find_path/search_content, read_text_file, git (find is not allowlisted: its flags escape read-only). cwd: absolute path under an allowed root, or relative to the first root. One command per call, no chaining/redirection.',
       inputSchema: { command: z.string(), cwd: z.string().optional() },
     },
     ({ command, cwd }) => shell.execute(command, cwd),

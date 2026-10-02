@@ -9,11 +9,14 @@ import { resolveUnderRoot } from './roots.js';
 
 const DISALLOWED_SQL_WORDS = /^\s*(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|ATTACH|DETACH|REPLACE|VACUUM|REINDEX)\b/i;
 
+export const provider = { id: 'sqlite', title: 'SQLite (read-only)', register };
+
 export function register(server) {
   server.registerTool(
     'sqlite_schema',
     {
       title: 'Inspect SQLite database schema',
+      annotations: { readOnlyHint: true, openWorldHint: false },
       description:
         'Read schema of a local SQLite database (.sqlite, .db, .sqlite3). Returns all tables, views, columns, and indexes.',
       inputSchema: {
@@ -47,6 +50,7 @@ export function register(server) {
     'sqlite_query',
     {
       title: 'Execute read-only SQL query on SQLite database',
+      annotations: { readOnlyHint: true, openWorldHint: false },
       description:
         'Execute a read-only SQL query (SELECT, PRAGMA, EXPLAIN, WITH) on a local SQLite database. Writes and DDL are strictly rejected. Output capped at 100 rows.',
       inputSchema: {
