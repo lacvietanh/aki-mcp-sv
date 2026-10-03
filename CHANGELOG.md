@@ -23,6 +23,10 @@ Major because `chrome_launch` no longer clones profiles and lost `refresh`: it o
 ### Fixed
 - **Unauthenticated crashes in OAuth** (found in PR #7): `client_id=constructor` / `__proto__` / `toString` resolved an `Object.prototype` member and killed the process; a `/register` body of `null`, an array or a scalar did the same. Both now return `400`. Rejected callbacks log only their origin, unknown grant types log as `unsupported`, request logs drop the query string.
 - **`test/streamable-bridge.test.js` aborted the Windows test run with a libuv assertion at exit** (issue #8): the test now closes fetch's keep-alive connections and exits on the next turn. Not reproduced on macOS; to confirm on Windows.
+- **A CDP socket that drops mid-call no longer kills the server** (`scripts/cdp-engine.js`): the short-lived `devtools_*` client now listens for `error`, so a target closing during `devtools_eval` / `devtools_screenshot` fails that call instead of raising an uncaught exception. From PR #9 by @QuachGia1994.
+- **Windows finds 64-bit Chrome and Edge** (`scripts/chrome-profile.js`): the binary lookup tried `ProgramFiles(x86)` only; it now takes the first that exists of `ProgramFiles`, `ProgramFiles(x86)` and `LocalAppData` (per-user installs). From PR #9 by @QuachGia1994.
+- **`test/task-mcp.test.js` runs on Windows**: it started `pwd`, a shell builtin with no binary there; it now runs `git log -1 --oneline` (PR #9 used `git rev-parse`, which an owner-narrowed allowlist may refuse). From PR #9 and PR #10 by @QuachGia1994.
+- **`.mcp.json` is ignored by git**: Claude Code's project-local registration holds the bearer token. From PR #9 by @QuachGia1994.
 
 ### Removed
 - **`chrome_launch` `refresh` and the akimcp profile cloner** (allowlist copy, `.aki-clone.json`, `~/.aki/mcpsv/chrome-clones/`): it copied SQLite files while open, could rename a profile out from under a running Chrome, and duplicated AIObox's cloner. The old `chrome-clones` folder is no longer read and can be deleted.

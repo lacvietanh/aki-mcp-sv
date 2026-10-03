@@ -38,24 +38,31 @@ export function getBrowserInfo(browser = 'chrome') {
 
   if (process.platform === 'win32') {
     const localAppData = process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
-    const progFiles = process.env['ProgramFiles(x86)'] || process.env.ProgramFiles || 'C:\\Program Files';
+    const pf = process.env.ProgramFiles || 'C:\\Program Files';
+    const pf86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
+    // 64-bit Chrome/Edge install under ProgramFiles; per-user installs under LocalAppData. Trying
+    // ProgramFiles(x86) first missed the common 64-bit install (fix adopted from PR #9).
+    const firstExisting = (roots, rel) => {
+      const candidates = roots.map((r) => path.join(r, ...rel));
+      return candidates.find((p) => fs.existsSync(p)) || candidates[0];
+    };
     if (b.includes('brave')) {
       return {
         name: 'Brave Browser',
-        binary: path.join(localAppData, 'BraveSoftware', 'Brave-Browser', 'Application', 'brave.exe'),
+        binary: firstExisting([localAppData, pf, pf86], ['BraveSoftware', 'Brave-Browser', 'Application', 'brave.exe']),
         userDataDir: path.join(localAppData, 'BraveSoftware', 'Brave-Browser', 'User Data'),
       };
     }
     if (b.includes('edge')) {
       return {
         name: 'Microsoft Edge',
-        binary: path.join(progFiles, 'Microsoft', 'Edge', 'Application', 'msedge.exe'),
+        binary: firstExisting([pf, pf86], ['Microsoft', 'Edge', 'Application', 'msedge.exe']),
         userDataDir: path.join(localAppData, 'Microsoft', 'Edge', 'User Data'),
       };
     }
     return {
       name: 'Google Chrome',
-      binary: path.join(progFiles, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+      binary: firstExisting([pf, pf86, localAppData], ['Google', 'Chrome', 'Application', 'chrome.exe']),
       userDataDir: path.join(localAppData, 'Google', 'Chrome', 'User Data'),
     };
   }

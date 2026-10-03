@@ -39,6 +39,16 @@ export function readDevToolsPort(app = 'postman') {
   }
 }
 
+// A short-lived CDP client whose socket drops (target closed, app quit mid-call) emits 'error' on
+// the client EventEmitter; with no listener Node treats that as an uncaught exception and the whole
+// MCP server exits. Log it and let the pending call reject on its own (adopted from PR #9).
+async function openClient(opts) {
+  const client = await CDP(opts);
+  client.on('error', (e) => console.error(`[cdp-engine] socket error: ${e?.message || e}`));
+  client.on('disconnect', () => {});
+  return client;
+}
+
 export async function listTargets({ host = DEFAULT_HOST, port } = {}) {
   return CDP.List({ host, port });
 }
@@ -67,7 +77,7 @@ export async function evaluate({
     resolved = typeof target === 'string' ? targets.find((t) => t.id === target) : selectTarget(targets, filter);
   }
   if (!resolved) throw new Error(`no matching CDP target on ${host}:${port}`);
-  const client = await CDP({ host, port, target: resolved.webSocketDebuggerUrl || resolved.id });
+  const client = await openClient({ host, port, target: resolved.webSocketDebuggerUrl || resolved.id });
   try {
     await client.Runtime.enable().catch(() => {});
     const { result, exceptionDetails } = await client.Runtime.evaluate({ expression, awaitPromise, returnByValue, userGesture, includeCommandLineAPI: true });
@@ -140,7 +150,7 @@ export async function screenshot({
     resolved = typeof target === 'string' ? targets.find((t) => t.id === target) : selectTarget(targets, filter);
   }
   if (!resolved) throw new Error(`no matching CDP target on ${host}:${port}`);
-  const client = await CDP({ host, port, target: resolved.webSocketDebuggerUrl || resolved.id });
+  const client = await openClient({ host, port, target: resolved.webSocketDebuggerUrl || resolved.id });
   try {
     await client.Page.enable().catch(() => {});
     const params = { format };

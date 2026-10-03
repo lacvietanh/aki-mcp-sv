@@ -20,6 +20,9 @@ REPORT.html
 /.postman/
 /postman/
 
+# Claude Code project-local MCP registration — holds a bearer token, never commit
+.mcp.json
+
 # private internal labs — never tracked in this public repo
 labs/
 aiobox/

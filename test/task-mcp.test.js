@@ -66,10 +66,12 @@ async function runTests() {
     'Path traversal in taskId must be rejected',
   );
 
-  // 5. Test starting an allowlisted command (e.g. "pwd")
-  const testId = `test_pwd_${Date.now()}`;
+  // 5. Test starting an allowlisted command. `pwd` is a shell builtin with no binary on Windows, so
+  // use a cross-platform executable instead (fix from PR #9 / #10). `git log` is in the default
+  // allowlist and in owner-narrowed ones, and always prints something in this repo.
+  const testId = `test_gitlog_${Date.now()}`;
   const startResult = await taskStart({
-    command: 'pwd',
+    command: 'git log -1 --oneline',
     cwd: process.cwd(),
     taskId: testId,
   });
