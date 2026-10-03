@@ -1,8 +1,17 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
+import fs from 'node:fs';
 import http from 'node:http';
-import { handleStreamableMcp } from '../scripts/streamable-bridge.js';
+import os from 'node:os';
+import path from 'node:path';
+
+// A temp data dir, so the call log written below never lands in the owner's ~/.aki/mcpsv.
+const dataDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'bridge-test-')));
+process.env.AKI_MCP_DATA_DIR = dataDir;
+const { handleStreamableMcp } = await import('../scripts/streamable-bridge.js');
+const { VERSION } = await import('../scripts/version.js');
+const pkgVersion = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
 const originalConsoleLog = console.log;
 const bridgeLogs = [];
@@ -48,7 +57,8 @@ async function run() {
     assert.equal(firstBody.id, 1);
     assert.match(firstBody.result.instructions, /aki__akidevrule_context/);
     assert.equal(firstBody.result.serverInfo?.name, 'aki-mcp');
-    assert.equal(firstBody.result.serverInfo?.version, '2.0.2');
+    assert.equal(firstBody.result.serverInfo?.version, pkgVersion, 'serverInfo carries the package version');
+    assert.equal(VERSION, pkgVersion);
     assert.ok(firstBody.result.capabilities);
 
     const secondInitialize = await initialize(baseUrl, 2);
@@ -90,6 +100,25 @@ async function run() {
     assert.match(contextTool.description, /Call once before the first substantive action/);
     assert.equal(contextTool.inputSchema.type, 'object');
     assert.deepEqual(Object.keys(contextTool.inputSchema.properties), ['workingPath', 'mode', 'knownReceipt']);
+    // A browser-driving tool call is logged once, with caller and op, never its argument text; a bad op names the stale-schema cause.
+    const callTool = (id, args) => fetch(baseUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'MCP-Session-Id': secondSessionId, 'User-Agent': 'openai-mcp/1.0 test' },
+      body: JSON.stringify({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'aki__devtools_eval', arguments: args } }),
+    }).then((r) => r.json());
+    const bad = await callTool(4, { port: 'not-a-port', expression: 'SECRET_EXPRESSION_TEXT' });
+    const badText = bad.error?.message ?? bad.result?.content?.[0]?.text ?? '';
+    assert.match(badText, /-32602/);
+    assert.match(badText, /tool schema is stale; reconnect AkiMCP/);
+    await callTool(5, { port: 1, expression: 'SECRET_EXPRESSION_TEXT' });
+    const logged = fs.readFileSync(path.join(dataDir, 'tool-calls.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    assert.equal(logged.length, 2, 'one line per tools/call');
+    assert.deepEqual(logged.map((l) => [l.tool, l.client, l.agent, l.ok, l.version]), [
+      ['aki__devtools_eval', secondSessionId.slice(0, 8), 'openai-mcp/1.0 test', false, pkgVersion],
+      ['aki__devtools_eval', secondSessionId.slice(0, 8), 'openai-mcp/1.0 test', false, pkgVersion],
+    ]);
+    assert.equal(logged[1].port, 1);
+    assert.ok(!JSON.stringify(logged).includes('SECRET_EXPRESSION_TEXT'), 'argument text is never logged');
     originalConsoleLog(
       `PASS: repeated initialize reused one internal session and tools/list accepted MCP-Session-Id (${response.result.tools.length} tools)`,
     );

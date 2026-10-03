@@ -10,6 +10,11 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { log } from './log.js';
 import { readBody, json as jsonResponse } from './http.js';
 import { createToolsServer } from './tools-server.js';
+import { isLoggedTool, logToolCall } from './tool-call-log.js';
+import { VERSION } from './version.js';
+
+// A client that cached an older tools/list sends ops or fields this server no longer (or not yet) has; the SDK's -32602 then reads like the caller's typo. Name the likely cause once, here, for every tool.
+const STALE_SCHEMA_HINT = ` (akimcp ${VERSION}: if the tool description lists what you sent, your client's tool schema is stale; reconnect AkiMCP or start a new chat)`;
 
 // The single internal session; null until the first external `initialize` boots it. Nothing in the
 // new in-process transport can independently die the way an upstream SSE socket could, so this only
@@ -152,9 +157,17 @@ export async function handleStreamableMcp(req, res) {
 
   // Real request: remap id so concurrent clients never collide on one session, forward, restore the original id.
   const origId = message.id;
+  const started = Date.now();
   try {
     const response = await requestUpstream(shared.session, { ...message, id: nextUpstreamId++ });
     response.id = origId;
+    if (method === 'tools/call') {
+      // The SDK reports invalid arguments either as a JSON-RPC error or as an isError result whose text starts with the code, depending on its version.
+      if (response.error?.code === -32602 && typeof response.error.message === 'string') response.error.message += STALE_SCHEMA_HINT;
+      const first = response.result?.isError ? response.result.content?.[0] : null;
+      if (first?.type === 'text' && first.text.includes('-32602')) first.text += STALE_SCHEMA_HINT;
+      if (isLoggedTool(message.params?.name)) logToolCall({ sessionId: externalSessionId, agent: req.headers['user-agent'], params: message.params, response, ms: Date.now() - started });
+    }
     return jsonResponse(res, 200, response);
   } catch (e) {
     return jsonResponse(res, 504, { jsonrpc: '2.0', error: { code: -32000, message: e.message }, id: origId });

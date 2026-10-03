@@ -6,10 +6,11 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { RULE_CONTEXT_INSTRUCTIONS } from './rule-context-mcp.js';
 import { mountProviders } from './provider-registry.js';
+import { VERSION } from './version.js';
 
 export function createToolsServer() {
   const server = new McpServer(
-    { name: 'aki-mcp', version: '2.0.2', title: 'Aki MCP' },
+    { name: 'aki-mcp', version: VERSION, title: 'Aki MCP' },
     { instructions: RULE_CONTEXT_INSTRUCTIONS },
   );
   return mountProviders(server, 'aki__');
