@@ -90,15 +90,48 @@ function readMap() {
   }
   const map = JSON.parse(raw);
   if (map.version !== MAP_VERSION) throw new Error(`windows.json version ${map.version} is not supported (expected ${MAP_VERSION}); update AkiMCP or AIObox`);
-  // app { pid, startedAt }: AIObox's run, when it writes one (proposed in the contract); writtenAt: the file's mtime, always.
-  map.generation = { writtenAt, app: map.app && typeof map.app === 'object' ? { pid: map.app.pid ?? null, startedAt: map.app.startedAt ?? null } : null };
+  // AIObox's run (desktop 0.8.0+): epoch = ms its run started (a new one = AIObox restarted), appPid, generation = writes in this run, updatedAt. Older AIObox writes none; writtenAt (the file's mtime) is always there.
+  map.run = { epoch: map.epoch ?? null, appPid: map.appPid ?? null, generation: map.generation ?? null, updatedAt: map.updatedAt ?? null, writtenAt };
   map.renumbered = observe(map);
   return map;
 }
 
+// Ask AIObox to re-read every profile's windows now (desktop 0.8.0+, contract § Định danh bền): one line id in windows.refresh, AIObox deletes it and rewrites windows.json with answered = id. Any later write of the same run (higher generation, or a new epoch) also answers it, so two callers that overwrite each other's id both return; no clock is compared. The only file AkiMCP writes under ~/.aki/aiobox/.
+const refreshFile = () => path.join(aioboxDir(), 'cdp', 'windows.refresh');
+const REFRESH_WAIT_MS = 5_000;
+const REFRESH_POLL_MS = 100;
+let refreshSeq = 0;
+async function refreshMap(before) {
+  const id = `akimcp-${process.pid}-${Date.now()}-${(refreshSeq += 1)}`;
+  const asked = Date.now();
+  const tmp = `${refreshFile()}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, `${id}\n`);
+  fs.renameSync(tmp, refreshFile());
+  for (const end = asked + REFRESH_WAIT_MS; Date.now() < end; await new Promise((r) => setTimeout(r, REFRESH_POLL_MS))) {
+    let map;
+    try {
+      map = readMap();
+    } catch {
+      continue;
+    }
+    const newer = map.run.epoch !== before.epoch || (map.run.generation ?? 0) > (before.generation ?? 0);
+    if (map.answered === id || newer) return map;
+  }
+  try {
+    if (fs.readFileSync(refreshFile(), 'utf8').trim() === id) fs.unlinkSync(refreshFile());
+  } catch {}
+  throw new Error(`AIObox did not answer a window refresh within ${REFRESH_WAIT_MS / 1000}s`);
+}
+
+// The map to act on: when AIObox can refresh (its map carries epoch), op=windows always asks first, so the list is never older than this call.
+async function freshMap() {
+  const map = readMap();
+  return map.run.epoch === null ? map : refreshMap(map.run);
+}
+
 const tabsOf = (map) => (map.profiles || []).flatMap((p) => (p.windows || []).flatMap((w) => (w.tabs || []).map((t) => ({ ...t, port: p.port, profile: p }))));
 const windowHandles = (map) => (map.profiles || []).flatMap((p) => (p.windows || []).map((w) => w.handle));
-const appKey = (g) => (g.app ? `${g.app.pid}@${g.app.startedAt}` : null);
+const appKey = (run) => (run.epoch === null ? null : `${run.appPid}@${run.epoch}`);
 
 function readSeen() {
   try {
@@ -115,7 +148,7 @@ function observe(map) {
   const byTarget = Object.fromEntries(tabs.map((t) => [t.targetId, t.handle]));
   const chatOf = Object.fromEntries(tabs.map((t) => [t.targetId, chatIdOf(t.url)]));
   const prev = readSeen();
-  const app = appKey(map.generation);
+  const app = appKey(map.run);
   let last = prev?.last || null;
   if (prev) {
     const prevByHandle = Object.fromEntries(Object.entries(prev.byTarget).map(([id, h]) => [h, id]));
@@ -135,7 +168,7 @@ function observe(map) {
     try {
       fs.mkdirSync(path.dirname(seenFile()), { recursive: true });
       const tmp = `${seenFile()}.${process.pid}.tmp`;
-      fs.writeFileSync(tmp, JSON.stringify({ at: map.generation.writtenAt, app, byTarget, chatOf, last }));
+      fs.writeFileSync(tmp, JSON.stringify({ at: map.run.updatedAt ?? map.run.writtenAt, app, byTarget, chatOf, last }));
       fs.renameSync(tmp, seenFile());
     } catch (e) {
       process.stderr.write(`[aiobox] ${seenFile()} not written: ${e.message}\n`);
@@ -179,13 +212,26 @@ const WARN_FOR_MS = 2 * 60 * 60 * 1000;
 
 const renumberWarning = (r) => `handles renumbered since ${r.since}${r.restarted ? ' (AIObox restarted)' : ''}: ${r.changes.map((c) => `${c.was} -> ${c.handle}`).join(', ') || 'see op=windows'}. A handle is only the current label; name a window by its chat id or pass expect.`;
 
-// Resolve and check one window for an op: fresh map, live target, optional expect.
+// Resolve and check one window for an op: freshly read map, live target, optional expect. A miss (no such window, target gone, title naming another handle) asks AIObox to refresh once when it can, then decides on the new map; expect is never retried into a match.
 async function openTab(args) {
+  const attempt = async (map) => {
+    const tab = resolveTab(map, args.window);
+    const live = await liveTarget(tab);
+    return { map, tab, live };
+  };
+  let found;
   const map = readMap();
-  const tab = resolveTab(map, args.window);
-  const live = await liveTarget(tab);
-  checkExpect(tab, live, args.expect);
-  return { map, tab, live, used: usedTab(tab, live, map) };
+  try {
+    found = await attempt(map);
+  } catch (e) {
+    if (map.run.epoch === null) throw e;
+    const fresh = await refreshMap(map.run).catch((r) => {
+      throw new Error(`${e.message} (${r.message})`);
+    });
+    found = await attempt(fresh);
+  }
+  checkExpect(found.tab, found.live, args.expect);
+  return { ...found, used: usedTab(found.tab, found.live, found.map) };
 }
 
 // The map and Chrome can disagree for a moment (a window just closed, a handle renumbered). A live target whose title carries a different written handle, or no live target at all, means the map is stale: refuse rather than act on the wrong window. A page without a title prefix (chrome://, new tab) is accepted, since AIObox cannot prefix it.
@@ -233,11 +279,11 @@ function need(op, args, fields) {
 }
 
 const READ_OPS = {
-  windows() {
-    const map = readMap();
+  async windows() {
+    const map = await freshMap();
     const tabs = tabsOf(map).map((t) => ({ handle: t.handle, chatId: chatIdOf(t.url), targetId: t.targetId, profileId: t.profile.id ?? null, provider: providerOf(t.url), profile: t.profile.name, title: stripHandle(t.title), url: t.url }));
     const renumbered = map.renumbered ? { ...map.renumbered, warning: renumberWarning(map.renumbered) } : null;
-    return ok(JSON.stringify({ generation: map.generation, renumbered, tabs }, null, 2));
+    return ok(JSON.stringify({ run: map.run, renumbered, tabs }, null, 2));
   },
   async read(args) {
     need('read', args, ['window']);
@@ -343,7 +389,7 @@ export function register(server) {
       title: 'AIObox: read windows by handle',
       annotations: { readOnlyHint: true, openWorldHint: false },
       description:
-        'Read AIObox Chrome windows. A handle P#·W# (·T# for a later tab; p7w2, P7.W2 work) is only the label AIObox gives a window now, and a restart renumbers it. Stable names: chatId (URL: Notion ?t=, ChatGPT /c/) and targetId; window takes any of the three. Before acting on another session call op=windows (tabs with chatId, targetId, profileId, plus generation and renumbered) and name it by chatId or pass expect. op=read: last messages (last=N) from AIObox\'s reader, else page text, plus account. op=text: elements matching selector. op=screenshot. Results name the tab used. No windows.json: AIObox not running. JS: aki__aiobox_write.',
+        'Read AIObox Chrome windows. A handle P#·W# (·T# for a later tab; p7w2, P7.W2 work) is only the label AIObox gives a window now, and a restart renumbers it. Stable names: chatId (URL: Notion ?t=, ChatGPT /c/) and targetId; window takes any of the three. Before acting on another session call op=windows (tabs with chatId, targetId, profileId, plus run and renumbered) and name it by chatId or pass expect. op=read: last messages (last=N) from AIObox\'s reader, else page text, plus account. op=text: elements matching selector. op=screenshot. Results name the tab used. No windows.json: AIObox not running. JS: aki__aiobox_write.',
       inputSchema: {
         op: z.enum(Object.keys(READ_OPS)).describe('windows | read | text | screenshot'),
         window: windowArg,

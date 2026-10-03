@@ -76,13 +76,30 @@ fs.writeFileSync(mapFile, JSON.stringify({
 }));
 assert.equal(provider.detect().available, true);
 
+// A fake AIObox 0.8.0 refresh responder: takes the id in windows.refresh, deletes the file, rewrites windows.json with answered = id (onRefresh may change the windows first). Only maps that carry epoch are ever refreshed.
+const refreshFile = path.join(home, '.aki', 'aiobox', 'cdp', 'windows.refresh');
+let onRefresh = null;
+let answering = true;
+let refreshes = 0;
+const responder = setInterval(() => {
+  if (!answering || !fs.existsSync(refreshFile)) return;
+  const id = fs.readFileSync(refreshFile, 'utf8').trim();
+  fs.unlinkSync(refreshFile);
+  const map = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
+  onRefresh?.(map);
+  onRefresh = null;
+  refreshes += 1;
+  fs.writeFileSync(mapFile, JSON.stringify({ ...map, generation: (map.generation || 0) + 1, updatedAt: new Date().toISOString(), answered: id }));
+}, 20);
+
 const listed = JSON.parse((await call('aiobox', { op: 'windows' })).text);
 const windows = listed.tabs;
 assert.deepEqual(windows.map((w) => [w.handle, w.provider, w.profile]), [['P1·W1', 'notion', 'nt@x.com'], ['P7·W2', 'gpt', 'lac'], ['P7·W2·T2', 'claude', 'lac']]);
 assert.equal(windows[0].title, 'nt@x.com · Chat | Notion', 'the handle prefix is stripped from the title');
 assert.deepEqual(windows.map((w) => [w.chatId, w.targetId, w.profileId]), [['abc', 'T-NOTION', 'chrome-profile-11'], ['123', 'T-GPT', 'chrome-profile-10'], [null, 'T-CLAUDE', 'chrome-profile-10']], 'every tab carries its stable ids');
-assert.match(listed.generation.writtenAt, /^\d{4}-\d\d-\d\dT/);
-assert.equal(listed.generation.app, null, 'no app block in the map yet');
+assert.match(listed.run.writtenAt, /^\d{4}-\d\d-\d\dT/);
+assert.equal(listed.run.epoch, null, 'an AIObox before 0.8.0 writes no epoch');
+assert.equal(refreshes, 0, 'and is never asked to refresh');
 assert.equal(listed.renumbered, null, 'first sight: nothing to compare with');
 assert.ok(fs.existsSync(seenFile), 'the map seen is kept in AkiMCP\'s data dir');
 
@@ -163,14 +180,18 @@ assert.match(wrong.text, /handle P1·W1 now points to "nt@x.com · Chat \| Notio
 // AIObox restarts: the same tabs come back under new numbers (P7's window becomes W1) and the old P7·W2 now names a new tab. Every read compares with the map seen before.
 const before = fs.readFileSync(mapFile, 'utf8');
 const moved = JSON.parse(before);
-moved.app = { pid: 4242, startedAt: 1 };
+Object.assign(moved, { epoch: 1, appPid: 4242, generation: 1, updatedAt: '2026-10-03T18:38:05.000Z', answered: null });
 moved.profiles[1].windows = [
   { handle: 'P7·W1', windowId: 2, state: 'normal', tabs: [{ handle: 'P7·W1', targetId: 'T-GPT', url: 'https://chatgpt.com/c/123', title: 'lac · Review' }] },
   { handle: 'P7·W2', windowId: 9, state: 'normal', tabs: [{ handle: 'P7·W2', targetId: 'T-OTHER', url: 'https://chatgpt.com/c/999', title: 'lac · Other' }] },
 ];
 fs.writeFileSync(mapFile, JSON.stringify(moved));
 const after = JSON.parse((await call('aiobox', { op: 'windows' })).text);
-assert.deepEqual(after.generation.app, { pid: 4242, startedAt: 1 });
+assert.equal(refreshes, 1, 'op=windows asks an AIObox that can refresh, every time');
+assert.equal(after.run.epoch, 1);
+assert.equal(after.run.appPid, 4242);
+assert.equal(after.run.generation, 2, 'the list is the one AIObox wrote after the request');
+assert.ok(!fs.existsSync(refreshFile));
 assert.deepEqual(after.renumbered.changes.map((c) => [c.was.split(' ')[0], c.handle, c.targetId]), [['P7·W2', 'P7·W1', 'T-GPT'], ['P7·W2', 'P7·W2', 'T-OTHER']]);
 assert.match(after.renumbered.warning, /^handles renumbered since .*: P7·W2 -> P7·W1, P7·W2 of another tab \(target T-GPT, chat 123\) -> P7·W2\./);
 live[7777] = [{ id: 'T-GPT', type: 'page', title: 'P7·W1 · lac · Review', url: 'https://chatgpt.com/c/123' }, { id: 'T-OTHER', type: 'page', title: 'P7·W2 · lac · Other', url: 'https://chatgpt.com/c/999' }];
@@ -182,7 +203,16 @@ assert.equal(byChat.window, 'P7·W1');
 assert.equal(byChat.targetId, 'T-GPT');
 // The renumbering is remembered on disk, so a restarted AkiMCP (or another call) still reports it; an unchanged map adds nothing new.
 assert.deepEqual(JSON.parse((await call('aiobox', { op: 'windows' })).text).renumbered.changes, after.renumbered.changes);
-assert.ok(JSON.parse(fs.readFileSync(seenFile, 'utf8')).last.restarted, 'the app block changed: AIObox restarted');
+assert.ok(JSON.parse(fs.readFileSync(seenFile, 'utf8')).last.restarted, 'a new epoch: AIObox restarted');
+// A window the map does not name yet (just opened) is found after one refresh; without an answer the call fails naming both, and leaves no request behind.
+live[7777].push({ id: 'T-W5', type: 'page', title: 'P7·W5 · lac · Fresh', url: 'https://chatgpt.com/c/555' });
+onRefresh = (map) => map.profiles[1].windows.push({ handle: 'P7·W5', windowId: 5, state: 'normal', tabs: [{ handle: 'P7·W5', targetId: 'T-W5', url: 'https://chatgpt.com/c/555', title: 'lac · Fresh' }] });
+assert.equal(JSON.parse((await call('aiobox_write', { op: 'eval', window: 'P7·W5', expression: '1' })).text).targetId, 'T-W5');
+answering = false;
+const unanswered = await call('aiobox_write', { op: 'eval', window: 'P7·W9', expression: '1' });
+assert.match(unanswered.text, /no window 'P7·W9'.*\(AIObox did not answer a window refresh within 5s\)/);
+assert.ok(!fs.existsSync(refreshFile), 'an unanswered request is taken back');
+answering = true;
 fs.writeFileSync(mapFile, before);
 await call('aiobox', { op: 'windows' });
 live[7777] = [{ id: 'T-GPT', type: 'page', title: 'P7·W2 · lac · Review', url: 'https://chatgpt.com/c/123' }, { id: 'T-CLAUDE', type: 'page', title: 'P7·W3 · Claude', url: 'https://claude.ai/new' }];
@@ -233,6 +263,7 @@ const evaluated = JSON.parse((await call('aiobox_write', { op: 'eval', window: '
 assert.equal(evaluated.window, 'P7·W2', 'a targetId addresses the window too');
 assert.equal(evaluated.value, 42);
 
+clearInterval(responder);
 await client.close();
 fs.rmSync(home, { recursive: true, force: true });
 console.log('aiobox-mcp.test.js: ok');
