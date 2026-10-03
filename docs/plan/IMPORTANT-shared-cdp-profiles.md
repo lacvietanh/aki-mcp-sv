@@ -2,7 +2,7 @@
 
 > **IMPORTANT, ràng buộc cả hai repo.** File này có bản sinh đôi ở `aiobox: docs/plan/IMPORTANT-shared-cdp-profiles.md`; hai bản giống nhau trừ dòng này, sửa một bản thì sửa luôn bản kia trong cùng phiên. Nguồn: working plan `~/.aki/mcpsv/task/cdp-unified-clone/plan.md` (port vào hai repo ngày 2026-10-01). Cùng nhóm ràng buộc: `docs/plan/IMPORTANT-akimcp-aiobox-contract.md` (id, tên, file và endpoint AkiMCP mà AIObox dùng).
 
-Bắt đầu: 2026-09-28 · Hợp nhất + deep-think/audit: 2026-10-01 · Chat nguồn: claude.ai/chat/5c884fec-963e-4866-b416-3592d8515cfc (tab `aki-cdp`) · Trạng thái: chủ đã chốt hướng, chưa triển khai · Hai bản IMPORTANT trong hai repo là source of truth cho việc gom CDP (working plan cũ chỉ còn trỏ về đây); các số liệu runtime bên dưới là snapshot kiểm chứng ngày 2026-09-28 và phải được dò lại trước khi thực thi.
+Bắt đầu: 2026-09-28 · Hợp nhất + deep-think/audit: 2026-10-01 · Chat nguồn: claude.ai/chat/5c884fec-963e-4866-b416-3592d8515cfc (tab `aki-cdp`) · Trạng thái: patch aiobox và akimcp đã có trong code (§ Tiến độ aiobox, § Tiến độ akimcp; akimcp commit 2026-10-03, ra trong 3.0.0), đã dời dữ liệu 26/26 profile (2026-10-03), test chéo phía akimcp đạt trên gốc mới (§ Tiến độ akimcp), còn ca aiobox mở profile do akimcp giữ và profile 9 · Hai bản IMPORTANT trong hai repo là source of truth cho việc gom CDP (working plan cũ chỉ còn trỏ về đây); các số liệu runtime bên dưới là snapshot kiểm chứng ngày 2026-09-28 và phải được dò lại trước khi thực thi.
 
 ## Kết luận
 
@@ -130,6 +130,21 @@ H1–H3 và H6 là blocker. H4 là correctness bắt buộc cùng patch akimcp. 
 7. Trước migration, xác minh schema `registry.json` và code consumer không lưu absolute path tới `~/.aki/aiobox/cdp/profiles`; grep cũ chỉ là bằng chứng sơ bộ.
 8. Sửa doc drift 10 vs 6 ở nơi phù hợp nếu file đó vẫn còn authoritative; không để task shared-CDP vô tình thay runtime cap.
 
+### Tiến độ aiobox
+
+- Bước 1: `paths.rs` có `shared_cdp_root()` = `~/.aki/cdp`; `profiles_root()` = `~/.aki/cdp/profiles`; `cdp_root()` giữ `~/.aki/aiobox/cdp`.
+- Bước 2: helper nằm ở `platform/browser_lock.rs` (`state`, `require_free`, `guard_write`, `clear_stale`); `browser/discovery.rs` · `is_browser_running` dùng lại `state`.
+- Bước 3: `cdp/engine.rs` · `launch` gọi `browser_lock::clear_stale` sau kiểm ps; `cleanup_stale_profile_locks` đã bỏ. Owner sống hoặc không xác định thì lỗi, không dọn, không launch.
+- Bước 4: **Xong (2026-10-03).** `os_process::chrome_mains_under` bỏ qua mọi Chrome có `--aki-launcher=` khác `aiobox`, nên `engine::adopt`, `live_chrome_for` và trang Processes không nhận Chrome do akimcp mở (`--aki-launcher=akimcp`). AIObox mở Chrome kèm `--aki-launcher=aiobox` (`engine::build_args`). Chrome không có cờ (mở trước bản này) vẫn được adopt như cũ. Decided (trang Processes cũng ẩn Chrome của akimcp) · because Processes chỉ liệt kê thứ AIObox điều khiển được (Stop, Reconnect); hiện Chrome của akimcp ở đó mời bấm Stop/Reconnect vào tiến trình của tool khác · rejected hiện dạng hàng chỉ đọc "akimcp" (thêm UI cho tiến trình AIObox không được động vào) · reopen if chủ cần thấy Chrome nào đang giữ profile khi AIObox báo `ProfileAlreadyRunning`.
+- Bước 5: `profile/clone.rs` (trước khi tráo), `profile/storage.rs` (`delete_profile_dir`, `remove_extension`), `signin_sync.rs`, `cleanup.rs` đi qua cùng contract. Trên Windows `guard_write` chưa kiểm (Chrome tự khóa file).
+- Bước 6: docs và `desktop/scripts/purge-extension-from-profiles.mjs` đã trỏ gốc mới. `labs/aiobox/cdp.js` dùng thư mục Chrome mặc định nên không đổi.
+- Bước 7: `registry.rs` chỉ lưu `profile_folder` tương đối; `registry.json` và `windows.json` không chứa path tuyệt đối tới profile.
+- Bước 8: số 10 nằm trong tài liệu research không sửa; chỉ ghi chú ở đây, code giữ cap 6.
+- Migration bước 4–5 do app tự làm (chủ gặp lỗi `No such file or directory` khi mở Facebook trên build mới chưa dời dữ liệu, 2026-10-03): `storage::move_legacy_clones` chạy lúc khởi động và trước mỗi lần mở, `rename` từng clone từ `~/.aki/aiobox/cdp/profiles` sang gốc chung; clone có Chrome sống hoặc khóa không xác định thì ở lại, trùng tên ở gốc mới thì ở lại. Mở một profile còn ở gốc cũ thì báo rõ phải thoát Chrome đó (`storage::legacy_clone_error`). Decided · because chủ không phải tự `mv`, và Chrome đang giữ thư mục không bao giờ bị dời dưới chân · rejected `profiles_root()` đọc cả hai gốc (hai nguồn sự thật), dời cả thư mục một lần (một Chrome sống chặn tất cả) · reopen if có máy mà hai gốc nằm trên hai filesystem khác nhau (`rename` lỗi, clone ở lại và log cảnh báo).
+- Sự cố 2026-10-03 (P7·W1): build mới làm mọi panel offline vì `adopt` chỉ quét gốc mới, Chrome còn sống trên gốc cũ không được adopt. Đã sửa (P2·W3): `engine::live_chrome_for` quét cả gốc mới và gốc cũ (`legacy_profiles_root`), dùng cho adopt và launch; trang Processes liệt kê Chrome ở cả hai gốc; bỏ qua Chrome có `--aki-launcher=akimcp` (bước 4); AIObox mở Chrome kèm `--aki-launcher=aiobox`. Decided · because Chrome sống qua lần thoát app và build mới, nên đổi gốc vẫn phải nhận Chrome trên thư mục cũ cho tới khi clone được dời · rejected chỉ quét gốc mới (chính lỗi này), bắt chủ thoát Chrome trước khi chạy build mới · reopen if gốc cũ không còn clone nào trên mọi máy (khi đó bỏ quét gốc cũ).
+- Dời dữ liệu xong 2026-10-03 12:27: chủ thoát AIObox + Chrome rồi chạy `~/.aki/move-cdp-profiles.sh`; 26/26 profile ở `~/.aki/cdp/profiles`, gốc cũ rỗng. Sự cố kèm theo: Chrome do script mở lại khi app đã chạy (`--aki-launcher=aiobox`) không được adopt, vì adopt chỉ chạy lúc khởi động, khi mở profile và khi bấm Reconnect. Đã sửa (P2·W3): `engine::spawn_adopt_all` quét mỗi 10 s (một `ps` mỗi lượt, chỉ adopt Chrome AIObox chưa có session, thuộc profile đã đăng ký); pid adopt lỗi chỉ cảnh báo một lần và nằm ở Processes dạng untracked; `launch` đánh dấu profile đang mở (`launching`) dưới cùng khóa `ADOPTING` để lượt quét không gắn session thứ hai vào Chrome vừa spawn. Decided · because Chrome AIObox mở từ ngoài app (script, lần chạy trước) phải có panel mà không cần bấm · rejected chỉ adopt lúc khởi động (chính lỗi này), quét theo từng profile đăng ký (26 lần `ps` mỗi lượt) · reopen if `ps` mỗi 10 s đo được tốn CPU đáng kể. `~/.aki/aiobox-restart.mjs` (ngoài repo, P7·W2 giữ, không thuộc patch này): khi không còn Chrome nào, dùng ảnh chụp gần nhất còn cửa sổ thay vì ghi ảnh chụp rỗng.
+- Verification aiobox đã có bằng unit test: owner sống giữ nguyên file, host lạ fail closed, owner chết thì file stale bị dọn. Các ca chéo với akimcp chưa chạy.
+
 ## Patch plan — akimcp
 
 1. `scripts/chrome-profile.js`: thay `CHROME_CLONES_DIR = USER_DIR/chrome-clones` bằng gốc độc lập `~/.aki/cdp/profiles`. Nếu cần testability có thể nhận env override, nhưng default không phụ thuộc dev/prod `USER_DIR`.
@@ -145,6 +160,22 @@ H1–H3 và H6 là blocker. H4 là correctness bắt buộc cùng patch akimcp. 
 11. Cập nhật `README.md` tại các đoạn mô tả clone/launch/stop; thêm thay đổi vào `[Unreleased]` của `CHANGELOG.md`, không sửa block release cũ.
 12. Cập nhật `test/chrome-profile.test.js`, `test/chrome-mcp.test.js`: hiện hai file chưa cover clone/launch/attach ownership; thêm cases canonical path, missing profile, owner-live attach, owner-live-but-unattachable, stale port probe, dead-owner cleanup, unknown-owner fail closed, attached-session stop không kill foreign pid, owned-session stop vẫn kill, và semantics `url` khi attach.
 
+### Tiến độ akimcp
+
+- Bước 1: `scripts/chrome-profile.js` `profilesRoot()` = `AKI_CDP_PROFILES_DIR` hoặc `~/.aki/cdp/profiles`; không phụ thuộc `USER_DIR`.
+- Bước 2: bỏ `cloneProfile`, allowlist, `copyDirRecursive`, `removeStrayLockFiles`, `pruneAndCopyLocalState`, `.aki-clone.json`, `refresh`. Kho cũ `~/.aki/mcpsv/chrome-clones` không còn được đọc và đã xóa 2026-10-03 (migration bước 10).
+- Bước 3–5: `resolveSharedProfile`: `Profile 14` → `chrome-profile-14`, id canonical nhận thẳng; browser lấy từ tiền tố `chrome`/`brave`/`edge`, lệch với `browser` của caller thì lỗi. Profile con = `Local State` `profile.last_used` nếu có `Preferences`, không thì thư mục con duy nhất có `Preferences`, còn lại lỗi. Thiếu clone thì lỗi bảo tạo trong aiobox.
+- Bước 6: `readOwner`: unix readlink `SingletonLock` `<host>-<pid>`, host khác `os.hostname()` hoặc không parse được → không xác định; `kill(pid, 0)` (EPERM coi là sống); win32 thử xoá `lockfile`, EBUSY/EPERM = sống. Sống → đọc `DevToolsActivePort`, probe `/json/version` → `status: attached`, `owned: false`; probe hỏng → lỗi `in use but not attachable`, không dọn. Chết/không có → chỉ xoá `SingletonLock`, `SingletonSocket`, `SingletonCookie`, `DevToolsActivePort` rồi spawn, `owned: true`. Không xác định → fail closed.
+- Bước 7: attach có `url` → mở tab mới qua `PUT /json/new`; `headless` chỉ áp dụng khi spawn.
+- Bước 8: `getActivePort` async, probe trước khi trả, chết thì xoá session; một `resolvePort` dùng chung cho `chrome_*` và `devtools_*`.
+- Bước 9: `chrome_stop` không `pid` chỉ kill khi session `owned: true`; session attached chỉ bị xoá, trả `stopped: false, owned: false`. `pid` rõ vẫn kill như cũ.
+- Bước 10–12: mô tả tool, README, CHANGELOG `[Unreleased]`; `test/chrome-profile.test.js` chạy các ca canonical path, thiếu profile, host lạ, owner sống không attach được, attach + `url`, stop attached không kill, port stale, owner chết dọn + spawn (binary giả), stop owned kill; `test/chrome-mcp.test.js` kiểm schema không còn `refresh`.
+- Runtime 2026-10-03 sau migration: `~/.aki/cdp/profiles` có 26 profile (thiếu profile 9), `~/.aki/aiobox/cdp/profiles` rỗng.
+- Thử chéo trên gốc mới 2026-10-03 (`~/.aki/mcpsv/task/cdp-unified-clone/cross-attach-new.mjs`, `cross-spawn.mjs`): 4 Chrome aiobox (profile 8, 10, 11, 14) → `attached`, `owned: false`, `chrome_stop` không kill; profile 38 không owner → spawn headless `status: ready`, `owned: true`, CDP probe được, ps có `--aki-launcher=akimcp`, sau 9 s `windows.json` không có nó (aiobox không adopt), `chrome_stop` kill được. Ca "aiobox mở profile đang do akimcp giữ": đường code đã đúng và có unit test (`os_process.rs` lọc Chrome mang cờ akimcp khỏi adopt/`live_chrome_for`; `engine.rs` `launch` → `browser_lock::clear_stale` trả `ProfileAlreadyRunning` khi owner sống; `browser_lock.rs` test owner sống); chưa bấm thật trên app, làm khi tiện (akimcp mở `chrome-profile-38` = P26, bấm P26 trong AIObox).
+- Thử chéo 2026-10-03, chỉ đọc, không dời dữ liệu (`AKI_CDP_PROFILES_DIR` = gốc cũ `~/.aki/aiobox/cdp/profiles`, script `~/.aki/mcpsv/task/cdp-unified-clone/cross-attach.mjs`): 3 Chrome aiobox đang chạy (profile 8, 10, 14) → `status: attached`, `owned: false`, port probe được; `chrome_stop` trả `stopped: false` và cả 3 pid còn sống; 23 profile còn lại `dead`/`none` nên không mở gì.
+- Liên quan aiobox bước 4 (mở, việc của aiobox vì § Quyết định đã loại foreign-process adoption ở MVP): akimcp chỉ spawn khi gọi `chrome_launch` và profile không có owner, với `--user-data-dir=<clone> --remote-debugging-port=0 --aki-launcher=akimcp` (2026-10-03). Cờ `--aki-launcher=akimcp` là dấu nhận biết: aiobox gặp cờ này thì bỏ qua, không nhận vào registry (đã làm 2026-10-03, `os_process::launched_by_other_tool`). Attach không bị ảnh hưởng.
+- Root sau quyết định dời dữ liệu (2026-10-03): akimcp chỉ đọc/attach/mở ở `~/.aki/cdp/profiles` (`chrome_launch`, `chrome_profiles`), không đọc gốc cũ `~/.aki/aiobox/cdp/profiles`, không tạo thư mục profile; `test/aiobox-contract.test.js` không chứa path profile. Kho `~/.aki/mcpsv/chrome-clones` đã xóa (kiểm lại 2026-10-03: không còn).
+
 ## Thứ tự triển khai và migration
 
 Nguyên tắc: code phải hiểu path mới trước khi dữ liệu được dời; không dời profile khi bất kỳ Chrome nào còn giữ nó.
@@ -157,9 +188,9 @@ Nguyên tắc: code phải hiểu path mới trước khi dữ liệu được d
 6. Mở build aiobox mới, kiểm registry/account mapping và mở vài profile đại diện để xác nhận login còn nguyên, CDP lên, metadata còn hợp lệ.
 7. Patch + verify akimcp theo plan trên, trỏ đúng canonical root và attach vào owner-live thay vì clone.
 8. Chạy test chéo hai chiều trên một profile không quan trọng theo matrix bên dưới.
-9. Profile 9: tạo lại từ Chrome thật bằng aiobox. Audit 2026-09-28 xác nhận source `Profile 9` còn tồn tại và modified 2026-09-28 15:05; phải re-check trước khi clone. Không move clone akimcp cũ vào canonical root vì nó thiếu `.aiobox-clone.json` và không có registry entry của aiobox.
-10. Khi canonical set đã dùng ổn qua ít nhất một chu kỳ thực tế, retire kho cũ `~/.aki/mcpsv/chrome-clones`. Kế hoạch cũ là rename thành `chrome-clones.archive-2026-09-28` trước, rồi mới xóa sau một chu kỳ. Bốn bản 6/10/18/22 không cần chọn theo freshness nữa vì bản aiobox mới hơn trong snapshot; profile 9 đã được re-clone từ source thật.
-11. Chỉ sau khi verification hoàn tất mới coi migration xong; nếu cần rollback trước khi akimcp retire kho cũ, đóng Chrome và move `~/.aki/cdp/profiles` ngược về `~/.aki/aiobox/cdp/profiles`, rồi dùng build aiobox cũ.
+9. Chrome `Profile 9` ("vams main"): không thuộc migration. Kiểm 2026-10-03: không có trong `registry.json` và không có clone, tức chưa từng được thêm vào AIObox (clone akimcp cũ đã mất trước khi xóa kho); Chrome thật còn nguyên. Khi cần điều khiển qua CDP thì thêm vào AIObox như mọi profile. Lưu ý: số `P#` của AIObox là `number` trong registry, không phải số thư mục Chrome (P9 = `chrome-profile-18`).
+10. Xóa thẳng kho cũ `~/.aki/mcpsv/chrome-clones` (và `~/.aki/mcpsv-dev/chrome-clones` nếu có), không archive, không chờ chu kỳ, không chọn theo freshness: clone aiobox là chuẩn (chủ chốt 2026-10-03). Trước khi xóa, từng clone phải không còn Chrome sống giữ (`SingletonLock` + ps); sống hoặc không xác định thì bỏ qua clone đó. Đã làm 2026-10-03: chỉ còn `chrome-Profile_14` (lock → pid 83367 đã chết, không process nào dùng path) và đã xóa; `mcpsv-dev` không có kho.
+11. Chỉ sau khi verification hoàn tất mới coi migration xong; nếu cần rollback, đóng Chrome và move `~/.aki/cdp/profiles` ngược về `~/.aki/aiobox/cdp/profiles`, rồi dùng build aiobox cũ.
 
 ## Verification matrix
 
@@ -188,7 +219,7 @@ Verification khi triển khai phải theo rung nhỏ nhất: static read/typeche
 - `registry.json` không chứa chuỗi path cũ theo grep, nhưng cần xác minh schema/code path consumer trước khi move.
 - Số lượng 26 vs 27 profile giữa đĩa và plan/registry cũ chưa được giải thích.
 - Hai port akimcp cũ 52007 và 53584 chưa được probe trong snapshot; không còn ý nghĩa để quyết định migration hiện tại, nhưng là bằng chứng audit chưa hoàn tất 100% runtime sweep.
-- Scan consumer khác mới xem 20/31 `Local State`; trước khi xóa kho cũ nên search lại toàn bộ `~/.aki`/project configs cho `chrome-clones`, `aiobox/cdp/profiles` và canonical path.
+- Scan consumer khác mới xem 20/31 `Local State`. Trước khi xóa kho cũ (2026-10-03) đã grep lại `/Volumes/DEV/pj` và `~/.aki/**/*.json` cho `chrome-clones`: không còn code/config nào tham chiếu, chỉ docs/CHANGELOG mô tả lịch sử.
 - Hai clone cùng login có làm refresh token invalidation hay không chưa đo; sau migration mỗi profile chỉ còn một clone nên câu hỏi không còn là blocker, nhưng vẫn có thể giải thích session drift lịch sử.
 - Cổng Cursor 61572 chưa xác nhận CDP; ngoài scope.
 - `SingletonLock` hostname có thể đổi theo môi trường mạng; unknown-owner phải fail closed.
@@ -229,7 +260,7 @@ Decided: một canonical `~/.aki/cdp/profiles`, chỉ aiobox provision clone, co
 
 ## Ranh giới hiện tại
 
-- Tài liệu này chưa thực hiện code patch, chưa move/delete data, chưa đóng/mở Chrome và chưa sửa shared rules.
+- Patch aiobox và akimcp đã có trong code; profile đã dời sang `~/.aki/cdp/profiles` (2026-10-03, chủ chạy script), chưa sửa shared rules.
 - Các path/port/process trong snapshot phải được re-check trước execution; không dùng chúng như live state.
 - `registry.json` của aiobox chứa thông tin tài khoản; không trích nội dung nhạy cảm vào plan.
 - Khi task được triển khai xong và verification đạt, plan này mới chuyển sang trạng thái done; cho tới lúc đó nó là working execution source of truth.

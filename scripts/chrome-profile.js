@@ -1,6 +1,5 @@
-// Multi-profile Chromium automation core: discovers installed browsers (Chrome, Brave, Edge),
-// clones profiles via atomic allowlist swap (.incoming), preserves Keychain/DPAPI cookie decryption,
-// and spawns stealth Chromium instances with --remote-debugging-port=0.
+// Chromium profile core: discovers installed browsers (Chrome, Brave, Edge) and opens the shared CDP clones that AIObox provisions,
+// attaching when another process already owns a profile and spawning Chrome with --remote-debugging-port=0 only when none does.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -8,32 +7,7 @@ import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { USER_DIR } from './userdata.js';
 
-const CHROME_CLONES_DIR = path.join(USER_DIR, 'chrome-clones');
 const SESSION_FILE = path.join(USER_DIR, 'chrome-session.json');
-
-const EXCLUDE_NAMES = [/^Singleton/, /lock/i, /^LOCK$/, /^Cache$/, /^Code Cache$/, /^GPUCache$/, /^Crashpad$/];
-
-const PLAIN_FILE_ALLOWLIST = [
-  'Preferences',
-  'Secure Preferences',
-  path.join('Network', 'Network Persistent State'),
-  path.join('Network', 'TransportSecurity'),
-];
-
-const SQLITE_FILE_ALLOWLIST = [
-  'Cookies',
-  path.join('Network', 'Cookies'),
-  'Web Data',
-];
-
-const DIR_ALLOWLIST = [
-  path.join('Local Storage', 'leveldb'),
-  'IndexedDB',
-  'Extensions',
-  'Extension State',
-  'Local Extension Settings',
-  'Extension Rules',
-];
 
 // Resolves standard Chromium install paths across macOS, Windows, and Linux.
 export function getBrowserInfo(browser = 'chrome') {
@@ -152,162 +126,126 @@ export function listProfiles(browser = 'chrome') {
   }
 }
 
-function shouldExclude(fileName) {
-  return EXCLUDE_NAMES.some((re) => re.test(fileName));
+const BROWSER_IDS = ['chrome', 'brave', 'edge'];
+// Files Chrome leaves behind after a crash; only these are cleared, and only once the lock owner is proven gone.
+const STALE_FILES = ['SingletonLock', 'SingletonSocket', 'SingletonCookie', 'DevToolsActivePort'];
+
+// Shared with AIObox (docs/plan/IMPORTANT-shared-cdp-profiles.md): AIObox provisions clones here, AkiMCP only opens or attaches.
+export function profilesRoot() {
+  return process.env.AKI_CDP_PROFILES_DIR || path.join(os.homedir(), '.aki', 'cdp', 'profiles');
 }
 
-function copyDirRecursive(src, dst) {
-  if (!fs.existsSync(src)) return;
-  fs.mkdirSync(dst, { recursive: true });
-  for (const entry of fs.readdirSync(src)) {
-    if (shouldExclude(entry)) continue;
-    const srcPath = path.join(src, entry);
-    const dstPath = path.join(dst, entry);
-    const st = fs.statSync(srcPath);
-    if (st.isDirectory()) {
-      copyDirRecursive(srcPath, dstPath);
-    } else if (st.isFile()) {
-      fs.copyFileSync(srcPath, dstPath);
-    }
+// Same rule as AIObox profile_id, so "Profile 14" and its folder name agree across tools.
+const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+
+const browserKey = (b) => BROWSER_IDS.find((id) => String(b).toLowerCase().includes(id));
+
+/** Maps a profile folder ("Profile 14") or canonical id ("chrome-profile-14") to its shared clone directory. */
+export function resolveSharedProfile(profile = 'Default', browser) {
+  const asked = browser === undefined ? undefined : browserKey(browser);
+  if (browser !== undefined && !asked) throw new Error(`Unsupported browser "${browser}": use chrome, brave or edge.`);
+  const raw = String(profile);
+  const prefix = BROWSER_IDS.find((id) => raw.startsWith(`${id}-`));
+  const canonical = prefix && raw === slug(raw);
+  if (canonical && asked && asked !== prefix) {
+    throw new Error(`Profile id "${raw}" belongs to ${prefix}, but browser "${browser}" was requested.`);
   }
-}
-
-function removeStrayLockFiles(dir) {
-  if (!fs.existsSync(dir)) return;
-  for (const entry of fs.readdirSync(dir)) {
-    const full = path.join(dir, entry);
-    try {
-      const st = fs.statSync(full);
-      if (st.isDirectory()) {
-        removeStrayLockFiles(full);
-      } else if (shouldExclude(entry)) {
-        fs.rmSync(full, { force: true });
-      }
-    } catch {}
+  const key = canonical ? prefix : (asked || 'chrome');
+  const id = canonical ? raw : `${key}-${slug(raw)}`;
+  const dir = path.join(profilesRoot(), id);
+  if (!fs.existsSync(path.join(dir, 'Local State'))) {
+    throw new Error(`Profile "${id}" not found in ${profilesRoot()}. Create it in AIObox first; AkiMCP opens shared profiles but no longer clones them.`);
   }
+  return { id, dir, browser: key };
 }
 
-// Prunes Local State to retain only the target profile while preserving os_crypt (DPAPI/Keychain)
-function pruneAndCopyLocalState(srcLocalState, dstLocalState, profileFolder) {
-  if (!fs.existsSync(srcLocalState)) return;
+/** Ids of the shared clones present on disk. */
+export function listSharedProfiles() {
   try {
-    const root = JSON.parse(fs.readFileSync(srcLocalState, 'utf8'));
-    if (root.profile) {
-      const cache = root.profile.info_cache || {};
-      const targetEntry = cache[profileFolder] || { name: profileFolder, is_using_default_name: false };
-      root.profile.info_cache = { [profileFolder]: targetEntry };
-      root.profile.profiles_order = [profileFolder];
-      root.profile.last_used = profileFolder;
-    }
-    fs.mkdirSync(path.dirname(dstLocalState), { recursive: true });
-    fs.writeFileSync(dstLocalState, JSON.stringify(root, null, 2), 'utf8');
-  } catch (e) {
-    fs.copyFileSync(srcLocalState, dstLocalState);
+    return fs.readdirSync(profilesRoot()).filter((d) => fs.existsSync(path.join(profilesRoot(), d, 'Local State'))).sort();
+  } catch {
+    return [];
   }
 }
 
-// Clones a profile with atomic-swap (.incoming) and allowlist pruning.
-function cloneProfile(profileId = 'Default', { browser = 'chrome', refresh = false } = {}) {
-  const { name: browserName, userDataDir } = getBrowserInfo(browser);
-  const srcProfileDir = path.join(userDataDir, profileId);
-  if (!fs.existsSync(srcProfileDir)) {
-    throw new Error(`Profile "${profileId}" not found at ${srcProfileDir}`);
-  }
+// The clone keeps the real folder name ("Profile 14") under its user-data-dir; renaming it to Default breaks the account mapping.
+function profileSubdir(dir) {
+  const hasPrefs = (name) => fs.existsSync(path.join(dir, name, 'Preferences'));
+  try {
+    const last = JSON.parse(fs.readFileSync(path.join(dir, 'Local State'), 'utf8'))?.profile?.last_used;
+    if (last && hasPrefs(last)) return last;
+  } catch {}
+  const found = fs.readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory() && hasPrefs(e.name)).map((e) => e.name);
+  if (found.length === 1) return found[0];
+  throw new Error(`Cannot tell which profile folder to open in ${dir} (${found.length ? found.join(', ') : 'none has Preferences'}).`);
+}
 
-  const cleanBrowser = browser.toLowerCase().replace(/[^a-z0-9]/g, '');
-  const cleanProfile = profileId.replace(/[^a-zA-Z0-9_-]/g, '_');
-  const targetDir = path.join(CHROME_CLONES_DIR, `${cleanBrowser}-${cleanProfile}`);
-
-  const sidecarFile = path.join(targetDir, '.aki-clone.json');
-  if (fs.existsSync(targetDir) && fs.existsSync(sidecarFile) && !refresh) {
-    return { targetDir, isNew: false, profileId, browser: browserName };
-  }
-
-  const incomingDir = `${targetDir}.incoming`;
-  fs.rmSync(incomingDir, { recursive: true, force: true });
-  fs.mkdirSync(incomingDir, { recursive: true });
-
-  // 1. Prune and copy Local State
-  const srcLocalState = path.join(userDataDir, 'Local State');
-  const dstLocalState = path.join(incomingDir, 'Local State');
-  pruneAndCopyLocalState(srcLocalState, dstLocalState, profileId);
-
-  const dstProfileDir = path.join(incomingDir, profileId);
-  fs.mkdirSync(dstProfileDir, { recursive: true });
-
-  // 2. Copy Plain Files
-  for (const rel of PLAIN_FILE_ALLOWLIST) {
-    const src = path.join(srcProfileDir, rel);
-    if (fs.existsSync(src) && fs.statSync(src).isFile()) {
-      const dst = path.join(dstProfileDir, rel);
-      fs.mkdirSync(path.dirname(dst), { recursive: true });
-      fs.copyFileSync(src, dst);
+/** Chrome's own lock is the ownership record: none | dead | alive | unknown. */
+export function readOwner(dir) {
+  if (process.platform === 'win32') {
+    const lock = path.join(dir, 'lockfile');
+    if (!fs.existsSync(lock)) return { state: 'none' };
+    try {
+      fs.rmSync(lock);
+      return { state: 'dead' };
+    } catch (e) {
+      return e.code === 'EBUSY' || e.code === 'EPERM' ? { state: 'alive', pid: null } : { state: 'unknown', detail: e.code };
     }
   }
-
-  // 3. Copy SQLite Files
-  for (const rel of SQLITE_FILE_ALLOWLIST) {
-    const src = path.join(srcProfileDir, rel);
-    if (fs.existsSync(src) && fs.statSync(src).isFile()) {
-      const dst = path.join(dstProfileDir, rel);
-      fs.mkdirSync(path.dirname(dst), { recursive: true });
-      fs.copyFileSync(src, dst);
-    }
+  let target;
+  try {
+    target = fs.readlinkSync(path.join(dir, 'SingletonLock'));
+  } catch (e) {
+    return e.code === 'ENOENT' ? { state: 'none' } : { state: 'unknown', detail: `SingletonLock unreadable (${e.code})` };
   }
-
-  // 4. Copy Allowlisted Directories
-  for (const rel of DIR_ALLOWLIST) {
-    const src = path.join(srcProfileDir, rel);
-    if (fs.existsSync(src) && fs.statSync(src).isDirectory()) {
-      const dst = path.join(dstProfileDir, rel);
-      copyDirRecursive(src, dst);
-    }
+  const m = /^(.+)-(\d+)$/.exec(target);
+  if (!m) return { state: 'unknown', detail: `SingletonLock -> ${target}` };
+  const [, host, pidStr] = m;
+  const pid = Number(pidStr);
+  if (host !== os.hostname()) return { state: 'unknown', pid, detail: `lock host ${host} is not this machine (${os.hostname()})` };
+  try {
+    process.kill(pid, 0);
+    return { state: 'alive', pid };
+  } catch (e) {
+    return e.code === 'EPERM' ? { state: 'alive', pid } : { state: 'dead', pid };
   }
+}
 
-  // 5. Purge any lock files in incomingDir
-  removeStrayLockFiles(incomingDir);
-
-  // 6. Write Sidecar Provenance
-  const sidecar = {
-    schema: 1,
-    sourceBrowser: browserName,
-    sourceUserDataDir: userDataDir,
-    profileId,
-    clonedAt: new Date().toISOString(),
-    os: process.platform,
-  };
-  fs.writeFileSync(path.join(incomingDir, '.aki-clone.json'), JSON.stringify(sidecar, null, 2), 'utf8');
-
-  // 7. Atomic Swap
-  if (fs.existsSync(targetDir)) {
-    const backupDir = `${targetDir}.old`;
-    fs.rmSync(backupDir, { recursive: true, force: true });
-    fs.renameSync(targetDir, backupDir);
-    fs.renameSync(incomingDir, targetDir);
-    fs.rmSync(backupDir, { recursive: true, force: true });
-  } else {
-    fs.renameSync(incomingDir, targetDir);
+function readPortFile(dir) {
+  try {
+    const [portStr, wsPath] = fs.readFileSync(path.join(dir, 'DevToolsActivePort'), 'utf8').split('\n');
+    const port = parseInt(portStr, 10);
+    return Number.isInteger(port) && port > 0 ? { port, wsPath: wsPath?.trim() } : null;
+  } catch {
+    return null;
   }
+}
 
-  return { targetDir, isNew: true, profileId, browser: browserName };
+/** True when a CDP endpoint answers /json/version on the port; a leftover DevToolsActivePort alone proves nothing. */
+export function probeCdp(port, timeoutMs = 1500) {
+  return new Promise((resolve) => {
+    const req = http.get({ host: '127.0.0.1', port, path: '/json/version', timeout: timeoutMs }, (res) => {
+      let body = '';
+      res.on('data', (c) => { body += c; });
+      res.on('end', () => {
+        try {
+          resolve(res.statusCode === 200 && Boolean(JSON.parse(body)));
+        } catch {
+          resolve(false);
+        }
+      });
+    });
+    req.on('timeout', () => req.destroy());
+    req.on('error', () => resolve(false));
+  });
 }
 
 // Polls for DevToolsActivePort up to timeoutMs
 export async function waitForDevToolsActivePort(targetDir, timeoutMs = 15000) {
-  const filePath = path.join(targetDir, 'DevToolsActivePort');
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
-    if (fs.existsSync(filePath)) {
-      try {
-        const content = fs.readFileSync(filePath, 'utf8').split('\n');
-        const portStr = content[0]?.trim();
-        const wsPath = content[1]?.trim();
-        const port = parseInt(portStr, 10);
-        if (Number.isInteger(port) && port > 0) {
-          return { port, wsPath };
-        }
-      } catch {}
-    }
+    const found = readPortFile(targetDir);
+    if (found) return found;
     await new Promise((r) => setTimeout(r, 150));
   }
   throw new Error(`Timed out waiting for DevToolsActivePort in ${targetDir}`);
@@ -315,16 +253,38 @@ export async function waitForDevToolsActivePort(targetDir, timeoutMs = 15000) {
 
 let activeSession = null;
 
-// Returns current active Chrome CDP port, checking in-memory or persisted session file.
-export function getActivePort() {
-  if (activeSession?.port) return activeSession.port;
-  if (fs.existsSync(SESSION_FILE)) {
-    try {
-      const saved = JSON.parse(fs.readFileSync(SESSION_FILE, 'utf8'));
-      if (saved?.port) return saved.port;
-    } catch {}
+function readSavedSession() {
+  try {
+    return JSON.parse(fs.readFileSync(SESSION_FILE, 'utf8'));
+  } catch {
+    return null;
   }
+}
+
+function setSession(session) {
+  activeSession = session;
+  try {
+    if (session) fs.writeFileSync(SESSION_FILE, JSON.stringify(session, null, 2), 'utf8');
+    else fs.rmSync(SESSION_FILE, { force: true });
+  } catch {}
+}
+
+/** Port of the active session once its endpoint answers; a dead one clears the session. */
+export async function getActivePort() {
+  const session = activeSession || readSavedSession();
+  if (!session?.port) return null;
+  if (await probeCdp(session.port)) {
+    activeSession = session;
+    return session.port;
+  }
+  setSession(null);
   return null;
+}
+
+export async function resolvePort(explicitPort) {
+  const p = explicitPort || (await getActivePort());
+  if (!p) throw new Error(NO_CDP_PORT_MESSAGE);
+  return p;
 }
 
 export function getActiveSession() {
@@ -332,29 +292,59 @@ export function getActiveSession() {
 }
 
 export const NO_CDP_PORT_MESSAGE =
-  'No CDP port specified and no active Chrome session. Launch a clone with aki__chrome_launch, or attach to a window already running with a remote-debugging port: find the port with aki__port_status (a Chrome process listening on 127.0.0.1), run aki__devtools_targets on it, match the tab by title or url, then pass that port and targetId explicitly.';
+  'No CDP port specified and no active Chrome session. Open a shared profile with aki__chrome_launch, or attach to a window already running with a remote-debugging port: find the port with aki__port_status (a Chrome process listening on 127.0.0.1), run aki__devtools_targets on it, match the tab by title or url, then pass that port and targetId explicitly.';
 
-// Launches a cloned Chromium instance with stealth flags and dynamic port 0.
-export async function launchChrome(profileId = 'Default', {
-  browser = 'chrome',
+async function openUrl(port, url) {
+  if (!url) return null;
+  const res = await new Promise((resolve, reject) => {
+    const req = http.request({ host: '127.0.0.1', port, method: 'PUT', path: `/json/new?${encodeURIComponent(url)}`, timeout: 5000 }, (r) => {
+      let body = '';
+      r.on('data', (c) => { body += c; });
+      r.on('end', () => resolve({ status: r.statusCode, body }));
+    });
+    req.on('timeout', () => req.destroy(new Error('timeout')));
+    req.on('error', reject);
+    req.end();
+  });
+  if (res.status !== 200) throw new Error(`Attached, but opening ${url} failed: HTTP ${res.status} ${res.body.slice(0, 200)}`);
+  return JSON.parse(res.body);
+}
+
+/** Opens a shared profile: attaches when another process already runs it, spawns Chrome only when no live owner holds the lock. */
+export async function launchChrome(profile = 'Default', {
+  browser,
   url,
-  refresh = false,
   headless = false,
   timeoutMs = 15000,
+  binary: binaryOverride,
 } = {}) {
-  const { binary, name: browserName } = getBrowserInfo(browser);
-  const { targetDir } = cloneProfile(profileId, { browser, refresh });
+  const { id, dir, browser: key } = resolveSharedProfile(profile, browser);
+  const { binary, name: browserName } = getBrowserInfo(key);
+  const profileDir = profileSubdir(dir);
+  const owner = readOwner(dir);
 
-  // Always delete stale DevToolsActivePort from previous runs
-  const activePortFile = path.join(targetDir, 'DevToolsActivePort');
-  if (fs.existsSync(activePortFile)) {
-    fs.rmSync(activePortFile, { force: true });
+  if (owner.state === 'unknown') {
+    throw new Error(`Profile "${id}" is locked but its owner cannot be verified (${owner.detail}); nothing was removed or launched.`);
   }
 
+  if (owner.state === 'alive') {
+    const found = readPortFile(dir);
+    if (!found || !(await probeCdp(found.port))) {
+      throw new Error(`Profile "${id}" is in use by pid ${owner.pid ?? 'unknown'} but not attachable: ${found ? `port ${found.port} does not answer CDP` : 'no DevToolsActivePort'}. Nothing was removed or launched.`);
+    }
+    const tab = await openUrl(found.port, url);
+    setSession({ port: found.port, wsPath: found.wsPath, pid: owner.pid, owned: false, profileId: id, browser: browserName, targetDir: dir, attachedAt: new Date().toISOString() });
+    return { status: 'attached', owned: false, port: found.port, wsPath: found.wsPath, pid: owner.pid, profileId: id, browser: browserName, ...(tab ? { tab: { id: tab.id, url: tab.url } } : {}) };
+  }
+
+  for (const name of STALE_FILES) fs.rmSync(path.join(dir, name), { force: true });
+
   const args = [
-    `--user-data-dir=${targetDir}`,
-    `--profile-directory=${profileId}`,
+    `--user-data-dir=${dir}`,
+    `--profile-directory=${profileDir}`,
     '--remote-debugging-port=0',
+    // Marker so AIObox engine::adopt can tell this Chrome apart and leave it alone (IMPORTANT-shared-cdp-profiles.md).
+    '--aki-launcher=akimcp',
     '--no-first-run',
     '--no-default-browser-check',
     '--disable-sync',
@@ -364,72 +354,35 @@ export async function launchChrome(profileId = 'Default', {
     '--disable-blink-features=AutomationControlled',
     '--silent-debugger-extension-api',
   ];
+  if (headless) args.push('--headless=new');
+  if (url) args.push(url);
 
-  if (headless) {
-    args.push('--headless=new');
-  }
-
-  if (url) {
-    args.push(url);
-  }
-
-  const child = spawn(binary, args, {
-    detached: true,
-    stdio: 'ignore',
-  });
+  const child = spawn(binaryOverride || binary, args, { detached: true, stdio: 'ignore' });
+  child.on('error', () => {});
   child.unref();
 
-  const { port, wsPath } = await waitForDevToolsActivePort(targetDir, timeoutMs);
-
-  activeSession = {
-    port,
-    wsPath,
-    pid: child.pid,
-    profileId,
-    browser: browserName,
-    targetDir,
-    launchedAt: new Date().toISOString(),
-  };
-
-  try {
-    fs.writeFileSync(SESSION_FILE, JSON.stringify(activeSession, null, 2), 'utf8');
-  } catch {}
-
-  return {
-    status: 'ready',
-    port,
-    wsPath,
-    pid: child.pid,
-    profileId,
-    browser: browserName,
-    url: url || 'about:blank',
-  };
+  const { port, wsPath } = await waitForDevToolsActivePort(dir, timeoutMs);
+  setSession({ port, wsPath, pid: child.pid, owned: true, profileId: id, browser: browserName, targetDir: dir, launchedAt: new Date().toISOString() });
+  return { status: 'ready', owned: true, port, wsPath, pid: child.pid, profileId: id, browser: browserName, url: url || 'about:blank' };
 }
 
-// Stops active or specified Chrome session
-export function stopChrome({ pid, profileId } = {}) {
-  let targetPid = pid || activeSession?.pid;
-  if (!targetPid && fs.existsSync(SESSION_FILE)) {
+/** Default stop ends only a Chrome this server spawned; an attached session is just forgotten. An explicit pid is killed as asked. */
+export function stopChrome({ pid } = {}) {
+  const session = activeSession || readSavedSession();
+  if (pid) {
     try {
-      const saved = JSON.parse(fs.readFileSync(SESSION_FILE, 'utf8'));
-      targetPid = saved?.pid;
+      process.kill(pid, 'SIGTERM');
     } catch {}
+    if (!session || session.pid === pid) setSession(null);
+    return { stopped: true, pid };
   }
-
-  if (targetPid) {
-    try {
-      process.kill(targetPid, 'SIGTERM');
-    } catch (e) {
-      // Process may already be dead
-    }
+  setSession(null);
+  if (!session) return { stopped: false, pid: null, detail: 'no active session' };
+  if (session.owned !== true) {
+    return { stopped: false, owned: false, pid: session.pid ?? null, detail: `attached session to ${session.profileId} cleared; its owner process keeps running` };
   }
-
-  activeSession = null;
-  if (fs.existsSync(SESSION_FILE)) {
-    try {
-      fs.rmSync(SESSION_FILE, { force: true });
-    } catch {}
-  }
-
-  return { stopped: true, pid: targetPid || null };
+  try {
+    process.kill(session.pid, 'SIGTERM');
+  } catch {}
+  return { stopped: true, owned: true, pid: session.pid };
 }

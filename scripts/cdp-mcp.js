@@ -5,17 +5,9 @@
 import { z } from 'zod';
 import { ok, okImage, fail } from './mcp-tool.js';
 import cdp from './cdp-engine.js';
-import { getActivePort, NO_CDP_PORT_MESSAGE } from './chrome-profile.js';
+import { resolvePort } from './chrome-profile.js';
 
 const NO_SESSION_HINT = 'A window not launched by aki__chrome_launch has no active session: find its port with aki__port_status first, then pass port. An AIObox window is reached by its handle (P#·W#) through aki__aiobox instead.';
-
-function resolvePort(port) {
-  const p = port || getActivePort();
-  if (!p) {
-    throw new Error(NO_CDP_PORT_MESSAGE);
-  }
-  return p;
-}
 
 // No detect: it also serves Postman, VS Code and AIObox's Chrome, so hiding it by "no session running" would hide it exactly when an attach needs it.
 export const provider = { id: 'cdp', title: 'DevTools (CDP)', register };
@@ -35,7 +27,7 @@ export function register(server) {
     },
     async ({ port, host }) => {
       try {
-        const p = resolvePort(port);
+        const p = await resolvePort(port);
         const pages = (await cdp.listTargets({ host, port: p }))
           .filter((t) => t.type === 'page')
           .map((t) => ({ id: t.id, url: t.url, title: t.title }));
@@ -64,7 +56,7 @@ export function register(server) {
     },
     async ({ port, expression, filter, targetId, host, awaitPromise }) => {
       try {
-        const p = resolvePort(port);
+        const p = await resolvePort(port);
         const out = await cdp.evaluate({ host, port: p, expression, filter, target: targetId, awaitPromise: awaitPromise ?? true });
         return ok(JSON.stringify(out, null, 2));
       } catch (e) {
@@ -91,7 +83,7 @@ export function register(server) {
     },
     async ({ port, host, filter, targetId, format, quality }) => {
       try {
-        const p = resolvePort(port);
+        const p = await resolvePort(port);
         const { data, mimeType } = await cdp.screenshot({ host, port: p, target: targetId, filter, format, quality });
         return okImage(data, mimeType);
       } catch (e) {

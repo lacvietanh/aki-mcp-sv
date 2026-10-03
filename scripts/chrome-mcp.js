@@ -1,5 +1,5 @@
 // Chromium Profile & Remote Automation MCP tools (chrome_*).
-// Discovers profiles, clones with zero lock conflict, launches stealth Chrome on dynamic port 0,
+// Discovers profiles, opens or attaches to the shared CDP clones AIObox provisions (stealth Chrome on dynamic port 0),
 // provides interactive typing & scroll-to-center clicking, tab management, and AI session probing.
 import { z } from 'zod';
 import { ok, fail } from './mcp-tool.js';
@@ -7,19 +7,12 @@ import cdp from './cdp-engine.js';
 import {
   listProfiles,
   listInstalledBrowsers,
+  listSharedProfiles,
+  profilesRoot,
   launchChrome,
   stopChrome,
-  getActivePort,
-  NO_CDP_PORT_MESSAGE,
+  resolvePort,
 } from './chrome-profile.js';
-
-function resolvePort(explicitPort) {
-  const p = explicitPort || getActivePort();
-  if (!p) {
-    throw new Error(NO_CDP_PORT_MESSAGE);
-  }
-  return p;
-}
 
 export const provider = {
   id: 'chrome',
@@ -35,7 +28,7 @@ export function register(server) {
       title: 'Chromium: list installed browsers and profiles',
       annotations: { readOnlyHint: true, openWorldHint: false },
       description:
-        'List installed Chromium browsers (Chrome, Brave, Edge) and their profiles (name, email, folder ID) by inspecting Local State.',
+        'List installed Chromium browsers (Chrome, Brave, Edge) and their profiles (name, email, folder ID) from Local State, plus shared clone ids for chrome_launch.',
       inputSchema: {
         browser: z.string().optional().describe('chrome, brave, or edge (default chrome)'),
       },
@@ -45,7 +38,7 @@ export function register(server) {
         const browsers = listInstalledBrowsers();
         const b = browser || 'chrome';
         const profiles = listProfiles(b);
-        return ok(JSON.stringify({ detectedBrowsers: browsers.map((x) => x.name), selectedBrowser: b, profiles }, null, 2));
+        return ok(JSON.stringify({ detectedBrowsers: browsers.map((x) => x.name), selectedBrowser: b, profiles, sharedRoot: profilesRoot(), sharedProfiles: listSharedProfiles() }, null, 2));
       } catch (e) {
         return fail(e);
       }
@@ -55,24 +48,22 @@ export function register(server) {
   server.registerTool(
     'chrome_launch',
     {
-      title: 'Chromium: launch cloned stealth profile on dynamic port',
+      title: 'Chromium: open shared profile on a CDP port',
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
       description:
-        'Clones a real profile (preserving Keychain/DPAPI logins and cookies without touching the live browser), purges locks, and launches stealth Chrome with --remote-debugging-port=0.',
+        'Opens a shared profile clone made by AIObox (logins kept). If another process runs it, attaches to its CDP port (owned false) and opens url as a new tab; else launches stealth Chrome on --remote-debugging-port=0 (owned true). Never clones.',
       inputSchema: {
-        profile: z.string().optional().describe('profile folder id like Default or Profile 1 (default Default)'),
+        profile: z.string().optional().describe('Profile 14 or shared id chrome-profile-14 (default Default)'),
         browser: z.string().optional().describe('chrome, brave, or edge (default chrome)'),
-        url: z.string().optional().describe('initial URL to open'),
-        refresh: z.boolean().optional().describe('force re-sync clone from source profile (default false)'),
-        headless: z.boolean().optional().describe('run in headless mode (default false)'),
+        url: z.string().optional().describe('URL to open (new tab on attach)'),
+        headless: z.boolean().optional().describe('only for a new launch (default false)'),
       },
     },
-    async ({ profile, browser, url, refresh, headless }) => {
+    async ({ profile, browser, url, headless }) => {
       try {
         const res = await launchChrome(profile || 'Default', {
-          browser: browser || 'chrome',
+          browser,
           url,
-          refresh: refresh ?? false,
           headless: headless ?? false,
         });
         return ok(JSON.stringify(res, null, 2));
@@ -98,7 +89,7 @@ export function register(server) {
     },
     async ({ action = 'list', url, targetId, port }) => {
       try {
-        const p = resolvePort(port);
+        const p = await resolvePort(port);
         if (action === 'open') {
           const tab = await cdp.openTab({ port: p, url: url || 'about:blank' });
           return ok(JSON.stringify({ opened: true, tab }, null, 2));
@@ -144,7 +135,7 @@ export function register(server) {
     },
     async ({ action, selector, text, clear, enter, targetId, port }) => {
       try {
-        const p = resolvePort(port);
+        const p = await resolvePort(port);
         if (action === 'click') {
           const res = await cdp.click({ port: p, target: targetId, selector });
           return ok(JSON.stringify(res, null, 2));
@@ -173,9 +164,9 @@ export function register(server) {
     {
       title: 'Chromium: stop active or specified Chrome session',
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
-      description: 'Terminates the spawned Chromium process and cleans up active session state.',
+      description: 'Ends the active session: kills a Chrome this server launched (owned true), only forgets an attached one (owner keeps running). An explicit pid is always killed.',
       inputSchema: {
-        pid: z.number().int().optional().describe('process PID to kill (default: active session PID)'),
+        pid: z.number().int().optional().describe('PID to kill (default: active session if owned)'),
       },
     },
     async ({ pid }) => {
