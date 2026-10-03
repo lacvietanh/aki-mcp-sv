@@ -4,6 +4,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 
 ## [Unreleased]
 
+A chat that cached AkiMCP's earlier tool list does not see the new ops: reconnect AkiMCP (AIObox macro Connect AkiMCP, option reconnect) or open a new chat.
+
+### Added
+- **`aki__aiobox op=state`: one call shows every AIObox window and returns the rules for acting in AIObox** (`scripts/aiobox-mcp.js`): each chat tab with `busy` and `account` (probed in parallel, 3 s each, a frozen tab is left out rather than guessed), each provider's macros, the server version and its `ops`, and `guide`, a short versioned list of steps (find yourself, name windows by chatId, compose never sends, wait before reading, eval last). The guide lives in the result, not the description, so a client holding an older schema still gets the running server's copy, and the description stays inside its budget.
+- **`aki__aiobox op=whoami quote=`: an AI finds its own window**: it passes 20+ characters copied from its user's latest message; AIObox's chat reader is matched first, page text otherwise, a busy tab wins, and two chats showing the quote come back as `ambiguous` instead of a guess.
+- **`aki__aiobox op=wait_idle`** waits until a chat stops answering (reader `busy`, polled every second, default 120 s, `timeout` up to 300) and returns its last messages; a page without an AIObox chat reader is refused with `no_adapter` rather than guessed from the DOM.
+- **`aki__aiobox_write op=run_macro`** runs one of the window's AIObox macros (`macro`, `option`) through `akipanel.runMacro` and returns its final status; an unknown macro or option lists the valid ones, and a macro that reloads the page (whose status cannot come back) returns `timedOut` with the next step.
+- **`from=<your chatId>` on `aki__aiobox_write`**: composing into one's own chat is refused (`self_target`).
+- **`chrome_launch` warns while AIObox runs**: the result carries a `warning` that the profile belongs to AIObox and that a chat window opens through `aki__aiobox_write op=new_window` (`scripts/chrome-mcp.js`). It becomes a refusal once AIObox can open a stopped profile itself.
+- **The tool-call log records what an eval does and who a call says it is** (`scripts/tool-call-log.js`): `evalKind` tags (`click`, `submit`, `keydown`, `dispatchEvent`, `fetch`, `innerText`) instead of the script, `from`, `macro`, and once per client the request header names (never their values).
+
+### Changed
+- **AIObox refusals say what to do next**: a missing window, a stale map, a renumbered handle or AIObox not running now ends with `(<code>; next: <one step>; akimcp <version>)`.
+- **`akidevrule_context` tells a session in an AIObox window to call `op=whoami`, then `op=state`** (was `op=windows`).
+
+### Fixed
+- **`aiobox_write op=new_window` could return a window someone else had just opened**: for 1 s after a New window click AIObox's panel ignores `newWindow()`, and the next window to appear was the owner's. It now waits the rest out, counts that window as existing, and asks once more; a panel still resting is refused with `opening`.
+
 ## [3.0.0] - 2026-10-03
 
 Major because `chrome_launch` no longer clones profiles and lost `refresh`: it opens only the clones AIObox keeps in `~/.aki/cdp/profiles/` (see Changed, Removed).

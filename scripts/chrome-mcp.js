@@ -1,6 +1,9 @@
 // Chromium Profile & Remote Automation MCP tools (chrome_*).
 // Discovers profiles, opens or attaches to the shared CDP clones AIObox provisions (stealth Chrome on dynamic port 0),
 // provides interactive typing & scroll-to-center clicking, tab management, and AI session probing.
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { z } from 'zod';
 import { ok, fail } from './mcp-tool.js';
 import cdp from './cdp-engine.js';
@@ -13,6 +16,12 @@ import {
   stopChrome,
   resolvePort,
 } from './chrome-profile.js';
+
+// While AIObox runs it owns these clones: a Chrome opened here has no AIObox panel, guard or handle. Warn only until AIObox can open a stopped profile itself (plan/aiobox-control-ops.md O2), then refuse.
+export function aioboxWarning() {
+  if (!fs.existsSync(path.join(os.homedir(), '.aki', 'aiobox', 'cdp', 'windows.json'))) return null;
+  return 'AIObox is running and owns these profiles: for a chat window use aki__aiobox_write op=new_window from a window of that profile (aki__aiobox op=state lists them); a Chrome opened here has no AIObox panel or handle.';
+}
 
 export const provider = {
   id: 'chrome',
@@ -66,7 +75,8 @@ export function register(server) {
           url,
           headless: headless ?? false,
         });
-        return ok(JSON.stringify(res, null, 2));
+        const warning = aioboxWarning();
+        return ok(JSON.stringify(warning ? { ...res, warning } : res, null, 2));
       } catch (e) {
         return fail(e);
       }

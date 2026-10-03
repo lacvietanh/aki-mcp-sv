@@ -166,7 +166,7 @@ export async function handleStreamableMcp(req, res) {
       if (response.error?.code === -32602 && typeof response.error.message === 'string') response.error.message += STALE_SCHEMA_HINT;
       const first = response.result?.isError ? response.result.content?.[0] : null;
       if (first?.type === 'text' && first.text.includes('-32602')) first.text += STALE_SCHEMA_HINT;
-      if (isLoggedTool(message.params?.name)) logToolCall({ sessionId: externalSessionId, agent: req.headers['user-agent'], params: message.params, response, ms: Date.now() - started });
+      if (isLoggedTool(message.params?.name)) logToolCall({ sessionId: externalSessionId, agent: req.headers['user-agent'], headerNames: Object.keys(req.headers), params: message.params, response, ms: Date.now() - started });
     }
     return jsonResponse(res, 200, response);
   } catch (e) {

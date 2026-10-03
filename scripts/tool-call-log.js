@@ -10,10 +10,16 @@ const LOGGED = /^aki__(aiobox|aiobox_write|chrome_\w+|devtools_\w+)$/;
 
 export const isLoggedTool = (name) => LOGGED.test(String(name));
 
+// What an eval does, as tags, so eval used to send or click shows in the counts without the script itself.
+const EVAL_KINDS = ['click', 'submit', 'keydown', 'dispatchEvent', 'fetch', 'innerText'];
+const evalKindOf = (expression) => (typeof expression === 'string' ? EVAL_KINDS.filter((k) => expression.includes(k)) : undefined);
+// The request header names of each client, once per session: if a provider sends a conversation id, a call could name its own chat without op=whoami.
+const headersLogged = new Set();
+
 // Short scalar fields only, cut to fixed lengths; a non-string window or op is dropped, not stringified.
 const short = (v, n) => (typeof v === 'string' ? v.slice(0, n) : typeof v === 'number' ? v : undefined);
 
-export function logToolCall({ sessionId, agent, params, response, ms }) {
+export function logToolCall({ sessionId, agent, headerNames, params, response, ms }) {
   const args = params?.arguments || {};
   const result = response?.result;
   const failed = Boolean(response?.error) || result?.isError === true;
@@ -26,11 +32,18 @@ export function logToolCall({ sessionId, agent, params, response, ms }) {
     op: short(args.op, 24),
     window: short(args.window, 48),
     port: short(args.port, 6),
+    from: short(args.from, 48),
+    macro: short(args.macro, 48),
+    evalKind: evalKindOf(args.expression),
     ok: !failed,
     error: short(errorText, 200),
     ms,
     version: VERSION,
   };
+  if (sessionId && !headersLogged.has(sessionId)) {
+    headersLogged.add(sessionId);
+    entry.headers = (headerNames || []).slice(0, 40).map((h) => short(h, 40));
+  }
   try {
     if (fs.statSync(TOOL_CALLS_PATH, { throwIfNoEntry: false })?.size > ROTATE_BYTES) fs.renameSync(TOOL_CALLS_PATH, `${TOOL_CALLS_PATH}.1`);
     fs.appendFileSync(TOOL_CALLS_PATH, `${JSON.stringify(entry)}\n`, { mode: 0o600 });

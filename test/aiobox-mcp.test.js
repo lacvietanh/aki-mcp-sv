@@ -58,7 +58,7 @@ const call = async (name, args) => {
 
 const missing = await call('aiobox', { op: 'windows' });
 assert.ok(missing.isError);
-assert.equal(missing.text, 'rejected: AIObox is not running (no ~/.aki/aiobox/cdp/windows.json)');
+assert.match(missing.text, /^rejected: AIObox is not running \(no ~\/\.aki\/aiobox\/cdp\/windows\.json\) \(not_running; next: ask the owner to start AIObox; akimcp \d+\.\d+\.\d+\)$/, 'a refusal carries its code, the next step and the running version');
 
 fs.mkdirSync(path.dirname(mapFile), { recursive: true });
 fs.writeFileSync(mapFile, JSON.stringify({
@@ -106,7 +106,7 @@ assert.ok(fs.existsSync(seenFile), 'the map seen is kept in AkiMCP\'s data dir')
 
 assert.equal((await call('aiobox', { op: 'read' })).text, 'rejected: op=read needs window');
 assert.equal((await call('aiobox', { op: 'text', window: 'P1·W1' })).text, 'rejected: op=text needs selector');
-assert.equal((await call('aiobox', { op: 'read', window: 'P9·W9' })).text, "rejected: no window 'P9·W9'; open: P1·W1, P7·W2");
+assert.match((await call('aiobox', { op: 'read', window: 'P9·W9' })).text, /^rejected: no window 'P9·W9'; open: P1·W1, P7·W2 \(no_window; next: call aki__aiobox op=state/);
 
 // Fake engine: the live targets per port, and what the page would return for each expression.
 const live = {
@@ -169,6 +169,70 @@ const shot = await call('aiobox', { op: 'screenshot', window: 'P7·W2' });
 assert.equal(shot.content[0].type, 'image');
 assert.equal(Buffer.from(shot.content[0].data, 'base64').toString(), 'T-GPT');
 assert.equal(JSON.parse(shot.content[1].text).targetId, 'T-GPT', 'a screenshot also names the tab it took');
+
+// op=state probes every chat tab once (busy, account, macros) and returns the guide and the ops this server has; whoami finds the caller's own chat from a quote of its latest user message.
+const VERSION = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
+const savedPages = { ...pages };
+const macroList = [{ id: 'connect-akimcp', label: 'Connect AkiMCP', icon: 'plug', target: 'individual', options: [{ id: 'fast', label: 'Fast' }, { id: 'full', label: 'Full' }], intro: '', needsAkimcp: true }];
+const runs = {};
+const panelRuns = [];
+let notionBusy = true;
+pages['T-NOTION'] = { body: 'notion body', akipanel: readonlyPanel({
+  online: true,
+  capabilities: { chat: 1 },
+  account,
+  state: { macros: macroList },
+  macroRuns: runs,
+  live: { chat: () => ({ ok: true, data: { messages: [{ role: 'user', text: 'please   compare the last two answers now' }, { role: 'assistant', text: 'working' }], busy: notionBusy } }) },
+  runMacro: (id, option) => {
+    panelRuns.push([id, option]);
+    runs[id] = { status: 'running', message: null, at: Date.now() };
+    setTimeout(() => { runs[id] = { status: 'done', message: 'connected', at: Date.now() + 1 }; }, 50);
+  },
+}) };
+pages['T-GPT'] = { akipanel: readonlyPanel({ capabilities: {} }), body: 'history: please compare the last two answers now, then more' };
+const state = JSON.parse((await call('aiobox', { op: 'state' })).text);
+assert.equal(state.akimcp, VERSION);
+assert.deepEqual(state.ops, { aiobox: ['windows', 'state', 'whoami', 'read', 'wait_idle', 'text', 'screenshot'], aiobox_write: ['new_window', 'compose', 'run_macro', 'eval'] });
+assert.match(state.guide, /^AIObox guide v1\./);
+assert.ok(state.guide.length <= 1200, `guide is ${state.guide.length} chars`);
+const notionRow = state.tabs.find((t) => t.targetId === 'T-NOTION');
+assert.equal(notionRow.busy, true);
+assert.deepEqual(notionRow.account, account);
+assert.equal(state.tabs.find((t) => t.targetId === 'T-GPT').busy, null, 'no reader: busy is unknown, not guessed');
+assert.deepEqual(state.macros, { notion: [{ id: 'connect-akimcp', label: 'Connect AkiMCP', options: ['fast', 'full'] }] });
+
+assert.match((await call('aiobox', { op: 'whoami', quote: 'too short' })).text, /short_quote/);
+const me = JSON.parse((await call('aiobox', { op: 'whoami', quote: 'please compare  the last two answers' })).text);
+assert.deepEqual([me.you.chatId, me.you.handle, me.you.matchedBy, me.you.busy], ['abc', 'P1·W1', 'latest user message', true], "the reader's latest user message outranks page text that also shows the quote");
+assert.equal(JSON.parse((await call('aiobox', { op: 'whoami', quote: 'history: please compare the last two' })).text).you.targetId, 'T-GPT', 'without a reader match, page text decides');
+pages['T-CLAUDE'] = { body: 'history: please compare the last two answers' };
+assert.deepEqual(JSON.parse((await call('aiobox', { op: 'whoami', quote: 'history: please compare the last two' })).text).ambiguous.map((t) => t.targetId), ['T-GPT', 'T-CLAUDE'], 'two chats showing the quote are not guessed between');
+assert.match((await call('aiobox', { op: 'whoami', quote: 'nothing like this anywhere at all' })).text, /no AIObox chat window shows that quote \(not_found/);
+
+// wait_idle reads busy from AIObox's reader only.
+assert.match((await call('aiobox', { op: 'wait_idle', window: 'P7·W2' })).text, /P7·W2 has no AIObox chat reader.*\(no_adapter/);
+const stillBusy = JSON.parse((await call('aiobox', { op: 'wait_idle', window: 'abc', timeout: 1 })).text);
+assert.deepEqual([stillBusy.busy, stillBusy.timedOut], [true, true]);
+notionBusy = false;
+const idle = JSON.parse((await call('aiobox', { op: 'wait_idle', window: 'abc' })).text);
+assert.deepEqual([idle.busy, idle.messages], [false, [{ role: 'assistant', text: 'working' }]]);
+
+// run_macro goes through akipanel.runMacro and waits for its outcome in macroRuns.
+assert.match((await call('aiobox_write', { op: 'run_macro', window: 'abc', macro: 'nope' })).text, /P1·W1 has no macro 'nope'; it has: connect-akimcp \(no_macro/);
+assert.match((await call('aiobox_write', { op: 'run_macro', window: 'abc', macro: 'connect-akimcp', option: 'zzz' })).text, /no option 'zzz'; it has: fast, full \(no_option/);
+const ran = JSON.parse((await call('aiobox_write', { op: 'run_macro', window: 'abc', macro: 'connect-akimcp', option: 'full' })).text);
+assert.deepEqual([ran.window, ran.status, ran.message], ['P1·W1', 'done', 'connected']);
+assert.deepEqual(panelRuns, [['connect-akimcp', 'full']]);
+
+// chrome_launch warns while AIObox runs (O2 warn phase): the profiles are AIObox's.
+const { aioboxWarning } = await import('../scripts/chrome-mcp.js');
+assert.match(aioboxWarning(), /AIObox is running and owns these profiles: .*aki__aiobox_write op=new_window/);
+
+// from: a session never composes into its own chat.
+assert.match((await call('aiobox_write', { op: 'compose', window: 'abc', text: 'x', from: 'abc' })).text, /P1·W1 is your own chat \(abc\) \(self_target/);
+delete pages['T-CLAUDE'];
+Object.assign(pages, savedPages);
 
 // A chat id names the window too, and expect refuses a handle that now names another chat.
 assert.equal(JSON.parse((await call('aiobox', { op: 'read', window: 'abc' })).text).window, 'P1·W1');
@@ -235,8 +299,14 @@ pages['T-GPT'].akipanel = readonlyPanel({
   newWindow: () => {
     asked += 1;
     const map = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
-    map.profiles[1].windows.push({ handle: 'P7·W4', windowId: 4, state: 'normal', tabs: [{ handle: 'P7·W4', targetId: 'T-NEW', url: 'https://chatgpt.com/', title: 'P7·W4 · lac · ChatGPT' }] });
+    map.profiles[1].windows.push({ handle: 'P7·W4', windowId: 4, state: 'normal', tabs: [{ handle: 'P7·W4', targetId: 'T-NEW', url: 'about:blank', title: '' }] });
     fs.writeFileSync(mapFile, JSON.stringify(map));
+    // The new window's tab starts blank and reaches the provider a moment later; new_window waits for that.
+    setTimeout(() => {
+      const later = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
+      later.profiles[1].windows.at(-1).tabs[0] = { handle: 'P7·W4', targetId: 'T-NEW', url: 'https://chatgpt.com/', title: 'P7·W4 · lac · ChatGPT' };
+      fs.writeFileSync(mapFile, JSON.stringify(later));
+    }, 700);
   },
 });
 const opened = JSON.parse((await call('aiobox_write', { op: 'new_window', window: 'p7w2' })).text);
@@ -244,6 +314,24 @@ assert.equal(asked, 1);
 assert.equal(opened.warning !== undefined, true, 'P7·W2 was renumbered in this run, so acting on it warns');
 delete opened.warning;
 assert.deepEqual(opened, { window: 'P7·W4', targetId: 'T-NEW', chatId: null, opener: 'P7·W2', openerTargetId: 'T-GPT', provider: 'gpt', url: 'https://chatgpt.com/', title: 'lac · ChatGPT' });
+// The owner clicked New window a moment ago: the panel rests (newWindow would be a no-op) and their window lands in the map. new_window waits the rest out and returns a window of its own, never theirs.
+let resting = true;
+const addWindow = (handle, targetId) => {
+  const map = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
+  map.profiles[1].windows.push({ handle, windowId: Number(handle.at(-1)), state: 'normal', tabs: [{ handle, targetId, url: 'https://chatgpt.com/', title: `${handle} · lac · ChatGPT` }] });
+  fs.writeFileSync(mapFile, JSON.stringify(map));
+};
+setTimeout(() => { addWindow('P7·W5', 'T-OWNER'); resting = false; }, 300);
+pages['T-GPT'].akipanel = readonlyPanel({
+  online: true,
+  get opening() { return resting; },
+  newWindow: () => { asked += 1; addWindow('P7·W6', 'T-MINE'); },
+});
+const mine = JSON.parse((await call('aiobox_write', { op: 'new_window', window: 'p7w2' })).text);
+assert.deepEqual([asked, mine.window, mine.targetId], [2, 'P7·W6', 'T-MINE'], 'the window someone else opened is not taken for ours');
+resting = true;
+assert.match((await call('aiobox_write', { op: 'new_window', window: 'p7w2' })).text, /still opening another window \(opening;/);
+assert.equal(asked, 2, 'a panel that keeps resting is never asked');
 
 // compose goes through akipanel.live.compose (v2, async), never sends, and names a page or version it cannot use.
 assert.equal((await call('aiobox_write', { op: 'compose', window: 'P7·W2' })).text, 'rejected: op=compose needs text');
