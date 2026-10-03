@@ -24,6 +24,9 @@ const CHATGPT_CALLBACK_PREFIX = 'https://chatgpt.com/connector/oauth/';
 const GEMINI_CALLBACK_PREFIX = 'https://oauth-redirect.googleusercontent.com/r/';
 // Grok self-registers (DCR) with this callback — observed live 2026-08-09 from the register-REJECTED log: redirect_uris=["https://grok.com/connectors-oauth-exchange-code/"]. Note: NOT a /connector/oauth/ path.
 const GROK_CALLBACK_PREFIX = 'https://grok.com/connectors-oauth-exchange-code/';
+// Notion custom MCP self-registers (DCR) as a confidential client on one of these hosts, matched on the parsed hostname so lookalikes fail (PR #7, verified against a real workspace 2026-09-22; Notion already moved one host to app.notion.com).
+const NOTION_CALLBACK_HOSTS = new Set(['notion.so', 'www.notion.so', 'app.notion.so', 'notion.com', 'www.notion.com', 'app.notion.com', 'mcp.notion.com']);
+const CLIENT_AUTH_METHODS = ['none', 'client_secret_post', 'client_secret_basic'];
 const CODE_TTL_MS = 5 * 60 * 1000;
 const PENDING_CLIENT_TTL_MS = 3600_000;
 const IDLE_CLIENT_TTL_MS = 30 * 24 * 3600_000;
@@ -46,7 +49,17 @@ function isAllowedRedirect(uri) {
   if (uri === CLAUDE_CALLBACK || uri === CHATGPT_LEGACY_CALLBACK) return true;
   return uri.startsWith(CHATGPT_CALLBACK_PREFIX)
     || uri.startsWith(GROK_CALLBACK_PREFIX)
-    || uri.startsWith(GEMINI_CALLBACK_PREFIX);
+    || uri.startsWith(GEMINI_CALLBACK_PREFIX)
+    || isNotionCallback(uri);
+}
+
+function isNotionCallback(uri) {
+  try {
+    const url = new URL(uri);
+    return url.protocol === 'https:' && !uri.includes('#') && !url.username && !url.password && NOTION_CALLBACK_HOSTS.has(url.hostname);
+  } catch {
+    return false;
+  }
 }
 
 // Tokens survive restarts: the connector is a long-lived file-access grant, and losing it on every
@@ -229,8 +242,9 @@ function resolveClient(clientId) {
       tokenEndpointAuthMethod: 'client_secret_post',
     };
   }
-  const dcr = loadDcrClients()[clientId];
-  return dcr || null;
+  // Own property only: client_id=constructor or __proto__ must not resolve an Object.prototype member and crash the process.
+  const dcr = loadDcrClients();
+  return Object.hasOwn(dcr, clientId) ? dcr[clientId] : null;
 }
 
 export function loadOrCreatePassphrase() {
@@ -267,8 +281,10 @@ export function metadataHandlers(origin) {
         authorization_endpoint: `${origin}/authorize`,
         token_endpoint: `${origin}/token`,
         registration_endpoint: `${origin}/register`,
+        revocation_endpoint: `${origin}/revoke`,
         code_challenge_methods_supported: ['S256'],
-        token_endpoint_auth_methods_supported: ['none', 'client_secret_post'],
+        token_endpoint_auth_methods_supported: CLIENT_AUTH_METHODS,
+        revocation_endpoint_auth_methods_supported: CLIENT_AUTH_METHODS,
         response_types_supported: ['code'],
         grant_types_supported: ['authorization_code', 'refresh_token'],
         authorization_response_iss_parameter_supported: true,
@@ -285,19 +301,22 @@ export async function handleRegister(req, res) {
   } catch {
     return json(res, 400, { error: 'invalid_client_metadata' });
   }
+  // null, [] and scalars are valid JSON too; reading metadata off them would crash on an unauthenticated request.
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return json(res, 400, { error: 'invalid_client_metadata' });
   const redirectUris = body.redirect_uris;
   if (!Array.isArray(redirectUris) || !redirectUris.length || !redirectUris.every(isAllowedRedirect)) {
-    // Log the rejected value so an unknown client's real redirect_uri (e.g. Grok) can be read off and allowlisted.
-    log(`[oauth] register REJECTED (redirect_uri not allowlisted): ${JSON.stringify(redirectUris)}`);
+    // Log only the origin, enough to allowlist an unknown client's real callback without logging its path or query.
+    const origins = Array.isArray(redirectUris) ? redirectUris.map((uri) => { try { return new URL(uri).origin; } catch { return '(invalid URL)'; } }) : [];
+    log(`[oauth] register REJECTED (redirect_uri not allowlisted): ${JSON.stringify(origins)}`);
     return json(res, 400, { error: 'invalid_redirect_uri' });
   }
   const authMethod = body.token_endpoint_auth_method || 'none';
-  if (authMethod !== 'none' && authMethod !== 'client_secret_post') {
+  if (!CLIENT_AUTH_METHODS.includes(authMethod)) {
     return json(res, 400, { error: 'invalid_client_metadata' });
   }
 
   const clientId = randomBytes(16).toString('hex');
-  const clientSecret = authMethod === 'client_secret_post' ? randomBytes(32).toString('hex') : null;
+  const clientSecret = authMethod === 'none' ? null : randomBytes(32).toString('hex');
   const entry = {
     clientId,
     clientSecret,
@@ -362,12 +381,13 @@ export async function handleAuthorize(req, res, passphrase, origin) {
   const codeChallenge = q.get('code_challenge');
   const codeChallengeMethod = q.get('code_challenge_method');
   const state = q.get('state') || '';
+  const scope = (q.get('scope') || '').trim();
   const client = resolveClient(clientId);
   // DCR clients are pinned to the exact redirect_uri they registered; the shared confidential client (isStatic) accepts any allowlisted callback, since it is pasted into several providers each with its own redirect.
   const redirectOk = !!client && (client.redirectUris.includes(redirectUri) || (client.isStatic && isAllowedRedirect(redirectUri)));
 
   if (!redirectOk || codeChallengeMethod !== 'S256' || !codeChallenge) {
-    log(`[oauth] authorize REJECTED (${req.method}): client_ok=${!!client} redirect_ok=${redirectOk} method=${codeChallengeMethod} hasChallenge=${!!codeChallenge}`);
+    log(`[oauth] authorize REJECTED (${req.method}): client_ok=${!!client} redirect_ok=${redirectOk} method=${codeChallengeMethod === 'S256' ? 'S256' : 'unsupported'} hasChallenge=${!!codeChallenge}`);
     res.writeHead(400, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(errorPage('Connection request invalid', 'This connection request is invalid or has expired.'));
     return;
@@ -387,6 +407,7 @@ export async function handleAuthorize(req, res, passphrase, origin) {
 <input type="hidden" name="code_challenge" value="${esc(codeChallenge)}">
 <input type="hidden" name="code_challenge_method" value="${esc(codeChallengeMethod)}">
 <input type="hidden" name="state" value="${esc(state)}">
+<input type="hidden" name="scope" value="${esc(scope)}">
 <input type="password" name="passphrase" placeholder="Passphrase" autofocus autocomplete="current-password">
 <button type="submit" name="btn">Approve</button>
 </form>
@@ -401,7 +422,7 @@ export async function handleAuthorize(req, res, passphrase, origin) {
     return;
   }
   const code = randomBytes(24).toString('hex');
-  addAuthCode(code, { clientId, redirectUri, codeChallenge, expires: Date.now() + CODE_TTL_MS });
+  addAuthCode(code, { clientId, redirectUri, codeChallenge, scope, expires: Date.now() + CODE_TTL_MS });
   const redirect = new URL(redirectUri);
   const firstApproval = client.isStatic ? !loadOrCreateClient().approvedAt : !client.approvedAt;
   updateClientRecord(client, { approvedAt: Date.now(), ...callerFields(req) });
@@ -419,21 +440,41 @@ function addAuthCode(code, entry) {
   authCodes.set(code, entry);
 }
 
-function authenticateClient(body) {
-  const client = resolveClient(body.get('client_id'));
-  if (!client) return null;
-  if (client.tokenEndpointAuthMethod === 'none') return client;
-  if (!safeEqual(body.get('client_secret'), client.clientSecret || '')) return null;
-  return client;
+// RFC 6749 2.3.1: credentials come from a Basic header when one is sent (each half form-decoded), else from the body. A malformed header never falls back to the body.
+function credentialsFrom(req, body) {
+  const header = req.headers.authorization;
+  if (header === undefined) return { clientId: body.get('client_id'), clientSecret: body.get('client_secret') };
+  const match = typeof header === 'string' && header.match(/^Basic\s+([A-Za-z0-9+/]+={0,2})$/i);
+  if (!match) return null;
+  try {
+    const bytes = Buffer.from(match[1], 'base64');
+    if (bytes.toString('base64').replace(/=+$/, '') !== match[1].replace(/=+$/, '')) return null;
+    const decoded = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    const colon = decoded.indexOf(':');
+    if (colon < 0) return null;
+    const decode = (value) => decodeURIComponent(value.replace(/\+/g, ' '));
+    return { clientId: decode(decoded.slice(0, colon)), clientSecret: decode(decoded.slice(colon + 1)) };
+  } catch {
+    return null;
+  }
+}
+
+function authenticateClient(req, res, body) {
+  const credentials = credentialsFrom(req, body);
+  const client = credentials && resolveClient(credentials.clientId);
+  if (client && (client.tokenEndpointAuthMethod === 'none' || (client.clientSecret && safeEqual(credentials.clientSecret, client.clientSecret)))) return client;
+  if (/^Basic(?:\s|$)/i.test(req.headers.authorization || '')) res.setHeader('WWW-Authenticate', 'Basic realm="aki-mcp-sv"');
+  return null;
 }
 
 export async function handleToken(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   const body = new URLSearchParams(await readBody(req));
   const grantType = body.get('grant_type');
-  log(`[oauth] token request: grant_type=${grantType}`);
+  const loggedGrantType = grantType === 'authorization_code' || grantType === 'refresh_token' ? grantType : 'unsupported';
+  log(`[oauth] token request: grant_type=${loggedGrantType}`);
 
-  const client = authenticateClient(body);
+  const client = authenticateClient(req, res, body);
   if (!client) {
     log('[oauth] token FAILED: invalid_client (unknown client_id or secret mismatch)');
     return json(res, 401, { error: 'invalid_client' });
@@ -460,7 +501,7 @@ export async function handleToken(req, res) {
       log('[oauth] token FAILED: invalid_grant (PKCE code_verifier mismatch)');
       return json(res, 400, { error: 'invalid_grant' });
     }
-    return issueTokens(req, res, client, undefined, 'authorization_code');
+    return issueTokens(req, res, client, undefined, 'authorization_code', entry.scope);
   }
 
   if (grantType === 'refresh_token') {
@@ -469,11 +510,38 @@ export async function handleToken(req, res) {
       log(`[oauth] token FAILED: invalid_grant (${entry ? 'refresh_token belongs to another client' : 'unknown refresh_token — stale after tokens file reset?'})`);
       return json(res, 400, { error: 'invalid_grant' });
     }
-    return issueTokens(req, res, client, body.get('refresh_token'), 'refresh_token');
+    // Scope never widens: a refresh may only ask for parts the grant already holds.
+    const stored = entry.scope || '';
+    const asked = body.has('scope') ? body.get('scope').trim() : stored;
+    const held = new Set(stored.split(' ').filter(Boolean));
+    if (asked.split(' ').some((part) => part && !held.has(part))) return json(res, 400, { error: 'invalid_scope' });
+    return issueTokens(req, res, client, body.get('refresh_token'), 'refresh_token', asked);
   }
 
-  log(`[oauth] token FAILED: unsupported_grant_type (${grantType})`);
+  log(`[oauth] token FAILED: unsupported_grant_type (${loggedGrantType})`);
   return json(res, 400, { error: 'unsupported_grant_type' });
+}
+
+// RFC 7009. Every client shares one access token, so revoking it here would sign every other client out:
+// a revoke only ends the calling client's own refresh grant, and the shared token keeps working until the panel rolls it.
+export async function handleRevoke(req, res) {
+  res.setHeader('Cache-Control', 'no-store');
+  const body = new URLSearchParams(await readBody(req));
+  const client = authenticateClient(req, res, body);
+  if (!client) {
+    log('[oauth] revoke FAILED: invalid_client (unknown client_id or secret mismatch)');
+    return json(res, 401, { error: 'invalid_client' });
+  }
+  const token = body.get('token');
+  if (!token) return json(res, 400, { error: 'invalid_request' });
+  const refresh = refreshTokens.get(token);
+  const signsOut = refresh ? refresh.clientId === client.clientId : accessTokens.has(token);
+  if (signsOut && dropRefreshTokens((entry) => entry.clientId === client.clientId && (!refresh || entry === refresh))) {
+    saveTokens();
+    logSecurity(`client signed out by its own revoke: ${clientDisplayName(client)}`);
+  }
+  // Same answer for every token, owned or not, so a revoke never tells a caller whether a token exists.
+  return json(res, 200, {});
 }
 
 // The one place an access token is created: every grant and the panel share it, so `accessTokens` never holds more than one entry.
@@ -496,17 +564,18 @@ export function rotateAccessToken({ revokeRefresh = false } = {}) {
   return getOrIssueAccessToken(revokeRefresh ? 'hard roll' : 'roll');
 }
 
-function issueTokens(req, res, client, existingRefresh, via) {
+function issueTokens(req, res, client, existingRefresh, via, scope = '') {
   const accessToken = getOrIssueAccessToken(via);
   const refreshToken = existingRefresh || randomBytes(32).toString('hex');
-  if (!existingRefresh) {
-    refreshTokens.set(refreshToken, { clientId: client.clientId });
+  const record = refreshTokens.get(refreshToken);
+  if (!existingRefresh || (record.scope || '') !== scope) {
+    refreshTokens.set(refreshToken, scope ? { clientId: client.clientId, scope } : { clientId: client.clientId });
     saveTokens();
   }
   updateClientRecord(client, { tokenAt: Date.now(), ...callerFields(req) });
   logSecurity(`token granted (${cut(via)}) to ${clientDisplayName(client)}`);
   const expiresIn = Math.floor((accessTokens.get(accessToken).expires - Date.now()) / 1000);
-  json(res, 200, { access_token: accessToken, token_type: 'Bearer', expires_in: expiresIn, refresh_token: refreshToken });
+  json(res, 200, { access_token: accessToken, token_type: 'Bearer', expires_in: expiresIn, refresh_token: refreshToken, ...(scope ? { scope } : {}) });
 }
 
 export function verifyBearer(authHeader) {

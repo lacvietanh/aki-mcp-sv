@@ -23,7 +23,7 @@ AIObox dựng connector AkiMCP trên Claude, Grok và ChatGPT bằng macro, và 
 | `~/.aki/mcpsv/passphrase.txt` | một dòng, trim | chỉ đưa vào trang trên host ingress |
 | `~/.aki/mcpsv/instance.json` | `{ panelPort, token }` | token chỉ dùng trong Rust gọi panel loopback, không bao giờ vào trang |
 | Panel `GET http://127.0.0.1:<panelPort>/api/security`, header `x-panel-token` | `clients[]: { redirectHost, signedIn, tokenAt }`, `callers[]: { agent, lastSeen }` | timeout 2 s; lỗi thì macro chỉ dựa vào URL |
-| Redirect host của client DCR | `claude.ai`, `chatgpt.com`, `grok.com` | phân biệt provider |
+| Redirect host của client DCR | `claude.ai`, `chatgpt.com`, `grok.com`; Notion: `notion.so`, `www.notion.so`, `app.notion.so`, `notion.com`, `www.notion.com`, `app.notion.com`, `mcp.notion.com` | phân biệt provider |
 | User agent gọi `/mcp` | `Claude-User`, `openai-mcp`, `grok-connectors-manager` (tiền tố) | `lastCallAt` |
 | Trang authorize | `input[name=passphrase]` + nút có chữ `Approve` | macro điền passphrase và bấm |
 | DCR | mở, provider tự đăng ký client | Claude `Register automatically`, ChatGPT/Grok tự làm |

@@ -19,6 +19,7 @@ const CONNECTOR_URL = 'https://claude.ai/new?modal=add-custom-connector#settings
 const CHATGPT_CONNECTOR_URL = 'https://chatgpt.com/plugins#settings/Connectors?create-connector=true&redirectAfter=%2Fplugins';
 const GEMINI_CONNECTOR_URL = 'https://support.google.com/g/answer/17106276';
 const GROK_CONNECTOR_URL = 'https://grok.com/connectors';
+const NOTION_CONNECTIONS_URL = 'https://www.notion.so/my-connections';
 const TOKENIZER_URL = 'https://chromewebstore.google.com/detail/claude-token-counter/bioobpobpbeohjoefndgkiaakboimpch';
 const GROK_USAGE_URL = 'https://chromewebstore.google.com/detail/grok-usage-watch-%E2%80%93-rate-l/bmpboaihdkpkjehbceegdmndkonlpdge';
 const RULES_REPO_URL = 'https://github.com/lacvietanh/akidevrule';
@@ -266,6 +267,7 @@ ${secretField('Access token', accessToken)}
   <button class="tab" data-tab="grok"><img src="/img/providers/grok.png" class="provider-icon" alt="">Grok</button>
   <button class="tab" data-tab="chatgpt"><img src="/img/providers/gpt.png" class="provider-icon" alt="">ChatGPT</button>
   <button class="tab" data-tab="gemini"><img src="/img/providers/gemini.png" class="provider-icon" alt="">Gemini</button>
+  <button class="tab" data-tab="notion"><img src="/img/providers/notion.png" class="provider-icon" alt="">Notion</button>
 </nav>
 
 <div class="tabpane" id="tab-claude">
@@ -310,6 +312,17 @@ ${secretField('Access token', accessToken)}
     <li>Ignore Gemini's <strong>Copy redirect URI</strong> button; the redirect is already allowlisted server-side.</li>
     <li>On <strong>Continue</strong>, enter the <strong>Passphrase</strong>.</li>
   </ol>
+</div>
+
+<div class="tabpane" id="tab-notion">
+  <p class="lnk"><a href="${esc(NOTION_CONNECTIONS_URL)}" target="_blank" rel="noopener">↗ Open Notion connections</a></p>
+  <ol class="steps">
+    <li>Enable <strong>custom MCP servers</strong> in the Notion workspace settings (a workspace admin may have to).</li>
+    <li>Add a <strong>Custom MCP server</strong> with the <strong>MCP URL</strong> above.</li>
+    <li>Enter the <strong>Passphrase</strong> when AKIMCP opens the confirmation page.</li>
+    <li>Add the connection inside the <strong>agent</strong>, then <strong>republish the agent</strong>.</li>
+  </ol>
+  <p class="helptext">Notion self-registers, nothing to paste. Connected this way it refreshes on its own after Roll token.</p>
 </div>
 
 <div class="tabpane active" id="tab-postman">

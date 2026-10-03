@@ -24,7 +24,7 @@ Consequences already decided:
 
 | Surface | Who can reach it | Gate | Code |
 |---|---|---|---|
-| OAuth endpoints (`/.well-known/*`, `/register`, `/authorize`, `/token`) | anyone who learns the public hostname (`503` when no ingress) | redirect allowlist, passphrase, PKCE S256, client secret for Claude; connection limits | `scripts/oauth.js`, `scripts/gatekeeper.js` |
+| OAuth endpoints (`/.well-known/*`, `/register`, `/authorize`, `/token`, `/revoke`) | anyone who learns the public hostname (`503` when no ingress) | redirect allowlist, passphrase, PKCE S256, client secret for Claude; connection limits | `scripts/oauth.js`, `scripts/gatekeeper.js` |
 | `/mcp` over the ingress | same | Bearer access token | `scripts/gatekeeper.js` |
 | `/mcp` on `127.0.0.1:9999` | processes on this machine, including browser pages | Bearer access token (never skipped on loopback) | `scripts/gatekeeper.js` |
 | Control panel `127.0.0.1:9998` | processes on this machine | per-start panel token in URL and `x-panel-token` header; never exposed through the ingress | `scripts/panel.js` |
@@ -33,19 +33,22 @@ Consequences already decided:
 ## Remote auth — minimal OAuth 2.1
 
 ```
-claude.ai / ChatGPT / Grok / Gemini
+claude.ai / ChatGPT / Grok / Gemini / Notion
    │  GET /.well-known/oauth-protected-resource, /.well-known/oauth-authorization-server
    │      (/.well-known/openid-configuration is an alias of the latter, so ChatGPT can auto-discover registration_endpoint)
-   │  ChatGPT, Grok, Gemini (and optionally Claude): POST /register  (DCR)
+   │  ChatGPT, Grok, Gemini, Notion (and optionally Claude): POST /register  (DCR)
    ▼
 gatekeeper.js  ── /register  → RFC 7591, redirect URI must be allowlisted
                ── /authorize → confirmation page, requires the passphrase
-               ── /token     → PKCE S256; confidential clients need client_secret, DCR public clients use none
+               ── /token     → PKCE S256; confidential clients need client_secret (form body or Basic header), DCR public clients use none
+               ── /revoke    → RFC 7009; signs out only the calling client, the shared access token stays
                ── /mcp       → Bearer access token required, else 401 + WWW-Authenticate → tools server (in-process)
 ```
 
 - **Claude (pre-registered):** Client ID/Secret from `oauth-client.json`, shown in panel section 1, pasted into claude.ai's advanced settings. Redirect fixed to `https://claude.ai/api/mcp/auth_callback`, auth method `client_secret_post`.
 - **ChatGPT, Grok, Gemini (DCR):** the provider calls `POST /register`; each connector instance becomes one entry in `oauth-dcr-clients.json`. Auth method `none` (PKCE only). Redirect allowlist (`isAllowedRedirect`): the Claude callback, `chatgpt.com/connector/oauth/*` and the legacy ChatGPT callback, `grok.com/connectors-oauth-exchange-code/*`, `oauth-redirect.googleusercontent.com/r/*`. Registration is open by design: a registered client still has to pass the passphrase.
+- **Notion (DCR, confidential):** Notion custom MCP registers with `client_secret_basic` or `client_secret_post` and gets a generated secret. Its callback must be https on exactly one of `notion.so`, `www.notion.so`, `app.notion.so`, `notion.com`, `www.notion.com`, `app.notion.com`, `mcp.notion.com` (parsed hostname; lookalikes, userinfo and `#` rejected). The scope Notion asks for is carried to the token and echoed; a refresh may narrow it, never widen it. It grants nothing extra: tools stay gated by folders and the allowlist. `POST /revoke` from a client drops that client's refresh grant (revoking the shared access token signs only that client out). Ported from PR #7 (TheLucasHenry), except its per-connector access token, which contradicts the single token.
+- **Hardening from the same PR:** a `client_id` such as `constructor` or `__proto__` no longer resolves a prototype member and crashes the process; a `/register` body that is `null`, an array or a scalar returns `400`; a rejected callback logs only its origin, unknown grant types log as `unsupported`, and request logs omit the query string.
 
 The two layers that actually block access:
 1. **Passphrase at `/authorize`** — 10 random characters from `abcdefghjkmnpqrstuvwxyz23456789` (32 symbols, 50 bits). Without it no authorization code is issued. Deliberately not a bare Approve button: `POST /authorize` is public, and a scripted request cannot be told apart from a click without a secret.

@@ -1,7 +1,7 @@
 // Public entry: OAuth AS (Claude pre-registered + ChatGPT DCR) + Streamable HTTP /mcp via streamable-bridge.
 // Runs in-process inside start.js (docs/plan/done/consolidate-mcp-tool-processes.md, Part B): startGatekeeper() returns the http.Server so the orchestrator can close it on shutdown.
 import http from 'node:http';
-import { loadOrCreatePassphrase, metadataHandlers, handleAuthorize, handleToken, handleRegister, verifyBearer } from './oauth.js';
+import { loadOrCreatePassphrase, metadataHandlers, handleAuthorize, handleToken, handleRegister, handleRevoke, verifyBearer } from './oauth.js';
 import { handleStreamableMcp, terminateSession } from './streamable-bridge.js';
 import { log, logErr } from './log.js';
 import { serveStatic } from './http.js';
@@ -12,7 +12,7 @@ import { failures, registrations, clientKey } from './rate-limit.js';
 const STATIC_ALIASES = { '/favicon.ico': '/favicon/favicon.ico' };
 // Only a rejected credential counts: protocol errors and unknown paths happen during normal connects and must never lock the owner out.
 const FAILURE_STATUS = 401;
-const OAUTH_PATHS = /^(\/\.well-known\/|\/authorize$|\/token$)/;
+const OAUTH_PATHS = /^(\/\.well-known\/|\/authorize$|\/token$|\/revoke$)/;
 
 function refuse(res, retryAfterSeconds) {
   res.writeHead(429, { 'Content-Type': 'text/plain', 'Retry-After': String(retryAfterSeconds) });
@@ -38,7 +38,7 @@ export function startGatekeeper(origin = null, onFatal) {
     const path = (req.url || '').split('?')[0];
     const t0 = Date.now();
     const isSecurityAccess = () => OAUTH_PATHS.test(path) || res.statusCode >= 500;
-    res.on('finish', () => { if (isSecurityAccess()) log(`[gatekeeper] ${req.method} ${req.url} -> ${res.statusCode} ${Date.now() - t0}ms`); });
+    res.on('finish', () => { if (isSecurityAccess()) log(`[gatekeeper] ${req.method} ${path} -> ${res.statusCode} ${Date.now() - t0}ms`); });
 
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -63,7 +63,7 @@ export function startGatekeeper(origin = null, onFatal) {
       if (!meta) { res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('Remote ingress not configured — local MCP is active at /mcp'); }
       return meta.protectedResource(req, res);
     }
-    if ((path === '/.well-known/oauth-authorization-server' || path === '/.well-known/oauth-authorization-server/mcp' || path === '/.well-known/openid-configuration') && req.method === 'GET') {
+    if ((path === '/.well-known/oauth-authorization-server' || path === '/.well-known/oauth-authorization-server/mcp' || path === '/.well-known/openid-configuration' || path === '/.well-known/openid-configuration/mcp') && req.method === 'GET') {
       if (!meta) { res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('Remote ingress not configured — local MCP is active at /mcp'); }
       return meta.authorizationServer(req, res);
     }
@@ -81,6 +81,10 @@ export function startGatekeeper(origin = null, onFatal) {
     if (path === '/token' && req.method === 'POST') {
       if (!origin) { res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('Remote ingress not configured — local MCP is active at /mcp'); }
       return handleToken(req, res);
+    }
+    if (path === '/revoke' && req.method === 'POST') {
+      if (!origin) { res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('Remote ingress not configured — local MCP is active at /mcp'); }
+      return handleRevoke(req, res);
     }
 
     if (path === '/mcp') {

@@ -128,6 +128,17 @@ Both ride the same MCP URL and passphrase flow — no separate transport or auth
 
 **Gemini — experimental, connection works but tool use doesn't (yet)** (paid tiers only — Pro / Business / Enterprise; the free tier may not expose custom apps): pastes a **confidential client**, exactly like Claude — set the custom app link to the MCP URL, then under Advanced Settings paste the same Client ID / Client secret. Gemini's redirect goes through Google's OAuth proxy `https://oauth-redirect.googleusercontent.com/r/...` (observed live 2026-08-09), allowlisted by `isAllowedRedirect` in `scripts/oauth.js`. **Caveat:** the OAuth handshake succeeds and Gemini accepts the instruction, but in repeated testing 2026-08-09 it did not reliably discover or drive the MCP tools — connection healthy, tool use unreliable. Claude and Grok are the dependable clients today.
 
+## Connecting from Notion AI
+
+Notion needs a public ingress and workspace permission to use **custom MCP servers**. The panel's Notion tab walks through the setup.
+
+1. Enable **custom MCP servers** in your Notion workspace settings.
+2. Open [Notion connections](https://www.notion.so/my-connections) and add an approved **Custom MCP server** with the **MCP URL** from the panel.
+3. Enter the **Passphrase** when AKIMCP opens its confirmation page.
+4. Add the connection inside an **agent**, then **republish the agent** so the published agent can use it.
+
+Notion self-registers through OAuth, so there is no Client ID or Client secret to paste, and it refreshes on its own after Roll token. It uses the same tool suite and folder and shell allowlists as the other connectors. Protocol details and revocation: [docs/feat/security.md](docs/feat/security.md) § Remote auth.
+
 ## Connecting from Postman
 
 Postman's AI Agent (Flows / Connected Accounts) has no OAuth redirect for third-party MCP servers and no persistent system-prompt field.
