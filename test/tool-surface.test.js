@@ -23,6 +23,7 @@ const RAISES = [
   { date: '2026-10-02', why: 'P6 aiobox provider (aki__aiobox, aki__aiobox_write) and the devtools hint pointing at it', chars: 2687 },
   { date: '2026-10-03', why: 'aiobox_write op=compose (akipanel compose v2) and the account in aiobox op=read', chars: 214 },
   { date: '2026-10-03', why: 'akidevrule_context: a session named by an AIObox handle drives its own window through aki__aiobox', chars: 278 },
+  { date: '2026-10-03', why: 'aiobox: handles are renumbered on AIObox restart, so window takes a chat id, expect guards the target, op=windows names stable ids', chars: 207 },
 ];
 const BUDGET_CHARS = Math.round(BASELINE_CHARS * 1.1) + RAISES.reduce((sum, r) => sum + r.chars, 0);
 
