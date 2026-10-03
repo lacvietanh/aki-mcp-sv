@@ -40,8 +40,7 @@ export function getBrowserInfo(browser = 'chrome') {
     const localAppData = process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
     const pf = process.env.ProgramFiles || 'C:\\Program Files';
     const pf86 = process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)';
-    // 64-bit Chrome/Edge install under ProgramFiles; per-user installs under LocalAppData. Trying
-    // ProgramFiles(x86) first missed the common 64-bit install (fix adopted from PR #9).
+    // 64-bit Chrome/Edge install under ProgramFiles, 32-bit under ProgramFiles(x86), per-user under LocalAppData.
     const firstExisting = (roots, rel) => {
       const candidates = roots.map((r) => path.join(r, ...rel));
       return candidates.find((p) => fs.existsSync(p)) || candidates[0];

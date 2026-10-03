@@ -24,7 +24,7 @@ const CHATGPT_CALLBACK_PREFIX = 'https://chatgpt.com/connector/oauth/';
 const GEMINI_CALLBACK_PREFIX = 'https://oauth-redirect.googleusercontent.com/r/';
 // Grok self-registers (DCR) with this callback — observed live 2026-08-09 from the register-REJECTED log: redirect_uris=["https://grok.com/connectors-oauth-exchange-code/"]. Note: NOT a /connector/oauth/ path.
 const GROK_CALLBACK_PREFIX = 'https://grok.com/connectors-oauth-exchange-code/';
-// Notion custom MCP self-registers (DCR) as a confidential client on one of these hosts, matched on the parsed hostname so lookalikes fail (PR #7, verified against a real workspace 2026-09-22; Notion already moved one host to app.notion.com).
+// Notion custom MCP self-registers (DCR) as a confidential client on one of these hosts, matched on the parsed hostname so lookalikes fail (verified against a real workspace 2026-09-22; Notion already moved one host to app.notion.com).
 const NOTION_CALLBACK_HOSTS = new Set(['notion.so', 'www.notion.so', 'app.notion.so', 'notion.com', 'www.notion.com', 'app.notion.com', 'mcp.notion.com']);
 const CLIENT_AUTH_METHODS = ['none', 'client_secret_post', 'client_secret_basic'];
 const CODE_TTL_MS = 5 * 60 * 1000;

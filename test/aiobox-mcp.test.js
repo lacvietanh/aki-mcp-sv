@@ -8,13 +8,14 @@ import vm from 'node:vm';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import cdp from '../scripts/cdp-engine.js';
-import { register, provider, parseHandle, formatHandle, stripHandle, chatIdOf } from '../scripts/aiobox-mcp.js';
 
 const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'aiobox-mcp-test-')));
 process.env.HOME = home;
 process.env.USERPROFILE = home;
+// userdata.js fixes the data dir at import, so the env goes first and the modules after.
 process.env.AKI_MCP_DATA_DIR = path.join(home, 'mcpsv');
+const { default: cdp } = await import('../scripts/cdp-engine.js');
+const { register, provider, parseHandle, formatHandle, stripHandle, chatIdOf } = await import('../scripts/aiobox-mcp.js');
 const mapFile = path.join(home, '.aki', 'aiobox', 'cdp', 'windows.json');
 const seenFile = path.join(home, 'mcpsv', 'aiobox-seen.json');
 

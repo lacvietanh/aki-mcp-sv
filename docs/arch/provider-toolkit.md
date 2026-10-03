@@ -43,7 +43,7 @@ export const provider = {
 6. A descriptor, a detect and annotations are mandatory. Secrets live under the keys dir of `userdata.js` and never reach output or logs.
 7. Each op still has to earn its place beside `run_cmd` (`feat/tools.md` § When a tool earns its place).
 
-The first provider built on it is `aiobox` (`scripts/aiobox-mcp.js`): `aki__aiobox` (`op` = `windows` | `read` | `text` | `screenshot`, read-only by mechanism because the page code is fixed) and `aki__aiobox_write` (`op` = `new_window` | `eval`). Its file and page contract with AIObox is in [`plan/IMPORTANT-akimcp-aiobox-contract.md`](../plan/IMPORTANT-akimcp-aiobox-contract.md) § Hợp đồng AkiMCP đọc từ AIObox.
+The first provider built on it is `aiobox` (`scripts/aiobox-mcp.js`): `aki__aiobox` (`op` = `windows` | `read` | `text` | `screenshot`, read-only by mechanism because the page code is fixed) and `aki__aiobox_write` (`op` = `new_window` | `compose` | `eval`). Its file and page contract with AIObox is in [`plan/IMPORTANT-akimcp-aiobox-contract.md`](../plan/IMPORTANT-akimcp-aiobox-contract.md) § Hợp đồng AkiMCP đọc từ AIObox.
 
 ## Contract 4 — Tool surface test
 

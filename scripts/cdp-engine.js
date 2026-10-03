@@ -41,7 +41,7 @@ export function readDevToolsPort(app = 'postman') {
 
 // A short-lived CDP client whose socket drops (target closed, app quit mid-call) emits 'error' on
 // the client EventEmitter; with no listener Node treats that as an uncaught exception and the whole
-// MCP server exits. Log it and let the pending call reject on its own (adopted from PR #9).
+// MCP server exits. Log it and let the pending call reject on its own.
 async function openClient(opts) {
   const client = await CDP(opts);
   client.on('error', (e) => console.error(`[cdp-engine] socket error: ${e?.message || e}`));

@@ -2,19 +2,12 @@
 // Orchestrates gatekeeper + panel + the in-process tools server behind 1 `npm start` / `akimcp`; foreground by design, manual stop/start only. Single Node process (docs/plan/done/2.0.0-improve.md #7, Stage 2).
 
 import { readFileSync, existsSync } from 'node:fs';
+import { VERSION } from './version.js';
 
 const argOf = (flag) => { const i = process.argv.indexOf(flag); return i !== -1 ? process.argv[i + 1] : null; };
 
-function readVersion() {
-  try {
-    return JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
-  } catch {
-    return '2.0.1';
-  }
-}
-
 if (process.argv.includes('-v') || process.argv.includes('--version')) {
-  console.log(readVersion());
+  console.log(VERSION);
   process.exit(0);
 }
 
@@ -59,7 +52,7 @@ import { killPostmanDaemon } from './postman/postman-mcp.js';
 import { readLock, isPidAlive, writeLock, clearLock, killAndWait } from './instance-lock.js';
 
 const isDev = IS_DEV;
-const version = readVersion();
+const version = VERSION;
 const customGatePort = argOf('--port');
 const customPanelPort = argOf('--panel-port');
 

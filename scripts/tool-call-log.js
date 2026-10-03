@@ -1,4 +1,4 @@
-// One JSON line per tools/call on the tools that drive browsers and AIObox windows (docs/plan/aiobox-control-ops.md M0), so misuse is measured instead of guessed: which client, which op, ok or not, how long. Written at the bridge, the only layer that sees the external session id and user agent. Never the arguments' text: no prompt, expression or compose text reaches this file.
+// One JSON line per tools/call on the tools that drive browsers and AIObox windows, so misuse is measured instead of guessed: which client, which op, ok or not, how long. Written at the bridge, the only layer that sees the external session id and user agent. Never the arguments' text: no prompt, expression or compose text reaches this file.
 import fs from 'node:fs';
 import path from 'node:path';
 import { USER_DIR } from './userdata.js';

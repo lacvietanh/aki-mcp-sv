@@ -6,12 +6,13 @@ import path from 'node:path';
 import { z } from 'zod';
 import { ok, okImage, fail } from './mcp-tool.js';
 import cdp from './cdp-engine.js';
+import { USER_DIR } from './userdata.js';
 
 // Resolved per call, not at import: HOME is read when the tool runs, so a test (or a changed HOME) is honored.
 const aioboxDir = () => path.join(os.homedir(), '.aki', 'aiobox');
 const windowsFile = () => path.join(aioboxDir(), 'cdp', 'windows.json');
 // What this server last saw of the map, kept on disk so the renumbering check survives an AkiMCP restart too. AkiMCP's own data dir, never AIObox's.
-const seenFile = () => path.join(process.env.AKI_MCP_DATA_DIR || path.join(os.homedir(), '.aki', 'mcpsv'), 'aiobox-seen.json');
+const seenFile = () => path.join(USER_DIR, 'aiobox-seen.json');
 
 const MAP_VERSION = 1;
 const CHAT_VERSION = 1; // akipanel.capabilities.chat: the shape of live.chat() this reader understands
@@ -168,7 +169,7 @@ function observe(map) {
     try {
       fs.mkdirSync(path.dirname(seenFile()), { recursive: true });
       const tmp = `${seenFile()}.${process.pid}.tmp`;
-      fs.writeFileSync(tmp, JSON.stringify({ at: map.run.updatedAt ?? map.run.writtenAt, app, byTarget, chatOf, last }));
+      fs.writeFileSync(tmp, JSON.stringify({ at: map.run.updatedAt ?? map.run.writtenAt, app, byTarget, chatOf, last }), { mode: 0o600 });
       fs.renameSync(tmp, seenFile());
     } catch (e) {
       process.stderr.write(`[aiobox] ${seenFile()} not written: ${e.message}\n`);

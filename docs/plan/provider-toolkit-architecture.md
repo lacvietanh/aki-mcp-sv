@@ -1,6 +1,6 @@
 # Plan: Provider toolkit — gom phần quản lý, giữ bề mặt tool, mở rộng an toàn
 
-> status: P0–P4 và P6 đã triển khai, chưa release (2026-10-02); còn kiểm tay của chủ (§ Amendments) và release `2.3.0` · hợp đồng đã chốt: [`docs/arch/provider-toolkit.md`](../arch/provider-toolkit.md) · nghiên cứu nền: [`docs/research/tool-surface-provider-toolkit.md`](../research/tool-surface-provider-toolkit.md) (số đo, nguồn, 9 khía cạnh suy xét)
+> status: P0–P4 và P6 đã triển khai, chưa release (2026-10-02); còn kiểm tay của chủ (§ Amendments) và release `3.0.0` (thay `2.3.0`: `chrome_launch` đổi phá vỡ nên lên major) · hợp đồng đã chốt: [`docs/arch/provider-toolkit.md`](../arch/provider-toolkit.md) · nghiên cứu nền: [`docs/research/tool-surface-provider-toolkit.md`](../research/tool-surface-provider-toolkit.md) (số đo, nguồn, 9 khía cạnh suy xét)
 
 ## Kết luận
 
