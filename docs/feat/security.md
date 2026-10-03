@@ -1,6 +1,6 @@
 # Security
 
-> updated 2026-10-03 · v2.1.0
+> updated 2026-10-03 · v3.0.0
 
 The one place for akimcp's whole security picture: stance, every surface and its gate, the connection limits, who holds access and who uses it, what each secret on disk unlocks and how to revoke it, and what is logged. README carries a summary and points here. Design record for client activity and the security-only log: `docs/plan/done/client-activity-and-security-log.md`.
 

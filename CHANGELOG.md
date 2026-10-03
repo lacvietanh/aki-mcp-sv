@@ -4,6 +4,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-10-03
+
+Major because `chrome_launch` no longer clones profiles and lost `refresh`: it opens only the clones AIObox keeps in `~/.aki/cdp/profiles/` (see Changed, Removed).
+
 ### Added
 - **Every tool declares MCP annotations** (`readOnlyHint`, `destructiveHint`, `openWorldHint`): 17 of the 38 tools are read-only by mechanism (18 while `agy_run` allows only `plan`), so ChatGPT stops asking to confirm them; every tool that can write still asks. `git` is marked open-world because `op=tags remote=` reaches the remote. Annotations are client UX and replace none of the allowlist, roots or SSRF guard.
 - **Tool providers: tools of an app that is not installed are not served, and panel section 8 switches providers on and off** (`scripts/provider-registry.js`, `scripts/find-on-path.js`, `GET/POST /api/providers`). Detect runs once at boot: `agy` and `kiro-cli` on `PATH` (`PATHEXT` on Windows, nothing spawned), the Postman app (one `which`/`where` only when it is not at its standard path), a Chromium browser, `~/.aki/aiobox/`. A switch is stored as `providers.<id>.enabled` in `setting.json` (written atomically); `rule`, `filesystem`, `search` and `shell` are always on. **Detect again** picks up an install without a restart. A client sees the change on its next tool list, usually a new chat. Contract: `docs/arch/provider-toolkit.md`.

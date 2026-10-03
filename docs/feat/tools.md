@@ -1,6 +1,6 @@
 # Tools — the local capability suite (anchored)
 
-> updated 2026-10-02 · v2.2.0
+> updated 2026-10-03 · v3.0.0
 
 The product's single purpose: give a remote web AI (claude.ai / ChatGPT / Grok / Gemini / Postman) a set of **local capabilities** on the owner's machine — a pair of hands reaching from the browser into the local filesystem, shell, and local agents. Every tool below exists to serve that anchor. This doc records **why each one is here** so a later subtraction audit does not mistake an anchored capability for redundant code and propose removing it.
 
