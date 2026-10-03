@@ -18,6 +18,7 @@ const seenFile = () => path.join(USER_DIR, 'aiobox-seen.json');
 const MAP_VERSION = 1;
 const CHAT_VERSION = 1; // akipanel.capabilities.chat: the shape of live.chat() this reader understands
 const COMPOSE_VERSION = 2; // akipanel.capabilities.compose: live.compose(text) returns a Promise of { ok, error }
+const SEND_VERSION = 1; // akipanel.capabilities.send: live.send(text) resolves { ok: true } once the new user message shows in chat(), else { ok: false, error } and nothing sent (empty text, busy, draft in the composer)
 const RAW_TEXT_CAP = 20_000; // codepoints of page text returned by op=read without a provider reader; the tail is kept, since the latest message is at the end
 const TEXT_ELEMENTS_CAP = 50;
 const TEXT_ELEMENT_CAP = 4_000;
@@ -326,14 +327,14 @@ const tabRow = (t) => ({ handle: t.handle, chatId: chatIdOf(t.url), targetId: t.
 const opsList = () => ({ aiobox: Object.keys(READ_OPS), aiobox_write: Object.keys(WRITE_OPS) });
 
 // The rules for acting in AIObox, returned by op=state: a client gets the running server's copy here, while a tool description stays frozen in its cached schema. Plan: docs/plan/aiobox-control-ops.md § Guide.
-const GUIDE_VERSION = 1;
+const GUIDE_VERSION = 2;
 const GUIDE = [
   `AIObox guide v${GUIDE_VERSION}.`,
   "1. Find yourself: aki__aiobox op=whoami quote=<20+ characters copied verbatim from the user's latest message>. Keep the chatId it returns; a handle (P#·W#) is only a label, renumbered when Chrome or AIObox restarts.",
   '2. op=state lists every window (chatId, provider, account, busy) and each provider\'s macros.',
   '3. Name a window by its chatId, or pass expect=<chatId> with a handle.',
   '4. New chat: aki__aiobox_write op=new_window window=<a window of that profile and provider>.',
-  '5. Hand text to another chat: aki__aiobox_write op=compose window=<its chatId> from=<your chatId>. It never sends; the owner presses Enter. Never compose into your own chat.',
+  '5. Message another chat: aki__aiobox_write op=send window=<its chatId> from=<your chatId> wait=<s> sends it once that chat is idle. op=compose only fills its box for the owner to send. Never target your own chat.',
   '6. Before reading an answer: op=wait_idle, then op=read.',
   '7. Macros: aki__aiobox_write op=run_macro macro=<id from macros>.',
   '8. eval is the last resort and never sends a message. Do not use chrome_launch or devtools_* on an AIObox profile.',
@@ -444,6 +445,17 @@ const COMPOSE_JS = (text) => `(async () => {
   const r = await panel.live.compose(${JSON.stringify(text)});
   return r && r.ok === true ? { ok: true } : { error: String(r?.error ?? 'live.compose() returned no result') };
 })()`;
+// live.send (AIObox's provider adapter) sends one user message and resolves only once it shows in the chat; it refuses (sending nothing) when busy or when the composer holds a draft, and does not wait itself.
+const SEND_JS = (text) => `(async () => {
+  const panel = window.akipanel;
+  if (!panel) return { error: 'this window has no AIObox panel' };
+  let caps = {};
+  try { caps = JSON.parse(JSON.stringify(panel.capabilities ?? {})) || {}; } catch {}
+  if (caps.send === undefined || typeof panel.live?.send !== 'function') return { missing: true };
+  if (caps.send !== ${SEND_VERSION}) return { unsupported: String(caps.send) };
+  const r = await panel.live.send(${JSON.stringify(text)});
+  return r && r.ok === true ? { ok: true } : { error: String(r?.error ?? 'live.send() returned no result') };
+})()`;
 // akipanel.runMacro is AIObox's panel button: the macro runs on the window the call came from, and its outcome lands in akipanel.macroRuns[id] (running, then done, started, skipped or error; aiobox docs/arch/provider-macros.md).
 const MACRO_JS = (id, option) => `(() => {
   const panel = window.akipanel;
@@ -513,6 +525,25 @@ const WRITE_OPS = {
     if (!value?.ok) throw new Error(`${tab.handle}: ${value?.error ?? 'compose returned no result'}`);
     return ok(JSON.stringify({ ...used, composed: true, sent: false }, null, 2));
   },
+  // Sends for real. wait=<s> first waits out an answer in progress (as op=wait_idle); live.send's own refusal comes back verbatim.
+  async send(args) {
+    need('send', args, ['window', 'text']);
+    const { tab, live: target, used } = await openTab(args);
+    if (args.from && args.from === used.chatId) throw new Refusal('self_target', `${tab.handle} is your own chat (${used.chatId})`, "send to the other session's window, found by its chatId in op=state");
+    const started = Date.now();
+    for (const end = started + (args.wait ?? 0) * 1000; ; await sleep(WAIT_IDLE_POLL_MS)) {
+      const { value } = await cdp.evaluate({ port: tab.port, target, expression: READ_JS(1) });
+      if (value?.source !== 'provider' || !value.busy || Date.now() >= end) {
+        if (value?.busy && args.wait) throw new Refusal('busy', `${tab.handle} was still answering after ${args.wait}s`, 'raise wait, or check it later with op=wait_idle');
+        break;
+      }
+    }
+    const { value } = await cdp.evaluate({ port: tab.port, target, expression: SEND_JS(args.text), awaitPromise: true });
+    if (value?.missing) throw new Refusal('no_send', `${tab.handle} has no AIObox send capability (an older AIObox build, or not a chat page)`, 'use op=compose and ask the owner to press Enter, or rebuild AIObox');
+    if (value?.unsupported !== undefined) throw new Error(`AIObox send capability version ${value.unsupported} in ${tab.handle} is not supported (expected ${SEND_VERSION}); update AkiMCP or AIObox`);
+    if (!value?.ok) throw new Error(`${tab.handle}: ${value?.error ?? 'send returned no result'}`);
+    return ok(JSON.stringify({ ...used, sent: true, waitedMs: Date.now() - started }, null, 2));
+  },
   async run_macro(args) {
     need('run_macro', args, ['window', 'macro']);
     const { tab, live: target, used } = await openTab(args);
@@ -577,18 +608,19 @@ export function register(server) {
   server.registerTool(
     'aiobox_write',
     {
-      title: 'AIObox: open a window, fill its chat box or run JS',
+      title: 'AIObox: open a window, send or fill a chat, run JS',
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description:
-        'Act in an AIObox window (chatId, handle or targetId; rules: aki__aiobox op=state). Pass expect to refuse a renumbered handle and from=<your chatId> so your own chat is refused. op=new_window: a new window (new chat) of the same profile and provider, as the panel button does; returns its handle, chatId, targetId. op=compose: text is added to the chat box (Notion AI chat), never sent. op=run_macro: runs one of the window\'s AIObox macros (macro, option) and returns its status. op=eval: expression runs in the page, result returned; awaitPromise (default true). It can click, type and change the page.',
+        'Act in an AIObox window (chatId, handle or targetId; rules: aki__aiobox op=state). Pass expect to refuse a renumbered handle and from=<your chatId> so your own chat is refused. op=new_window: a new chat of the same profile and provider, as the panel button; returns handle, chatId, targetId. op=send: sends text as a message (wait=s first waits for the chat to go idle); op=compose only fills the chat box. op=run_macro: runs one of the window\'s AIObox macros (macro, option) and returns its status. op=eval: expression runs in the page, result returned; awaitPromise (default true). It can click, type and change the page.',
       inputSchema: {
         op: z.enum(Object.keys(WRITE_OPS)).describe(Object.keys(WRITE_OPS).join(' | ')),
         window: windowArg,
         expect: expectArg,
-        from: z.string().optional().describe('your own chatId (aki__aiobox op=whoami); compose refuses it'),
+        from: z.string().optional().describe('your own chatId (aki__aiobox op=whoami); send and compose refuse it'),
         macro: z.string().optional().describe('run_macro: macro id (op=state macros)'),
         option: z.string().optional().describe('run_macro: option id (default: the first)'),
-        text: z.string().optional().describe('compose: text to add'),
+        text: z.string().optional().describe('send, compose: the text'),
+        wait: z.number().int().min(0).max(300).optional().describe('send: seconds to wait for a busy chat (default 0)'),
         expression: z.string().optional().describe('eval: JS evaluated in the page; the last expression is returned'),
         awaitPromise: z.boolean().optional().describe('eval: await a returned Promise (default true)'),
       },

@@ -193,8 +193,8 @@ pages['T-NOTION'] = { body: 'notion body', akipanel: readonlyPanel({
 pages['T-GPT'] = { akipanel: readonlyPanel({ capabilities: {} }), body: 'history: please compare the last two answers now, then more' };
 const state = JSON.parse((await call('aiobox', { op: 'state' })).text);
 assert.equal(state.akimcp, VERSION);
-assert.deepEqual(state.ops, { aiobox: ['windows', 'state', 'whoami', 'read', 'wait_idle', 'text', 'screenshot'], aiobox_write: ['new_window', 'compose', 'run_macro', 'eval'] });
-assert.match(state.guide, /^AIObox guide v1\./);
+assert.deepEqual(state.ops, { aiobox: ['windows', 'state', 'whoami', 'read', 'wait_idle', 'text', 'screenshot'], aiobox_write: ['new_window', 'compose', 'send', 'run_macro', 'eval'] });
+assert.match(state.guide, /^AIObox guide v2\./);
 assert.ok(state.guide.length <= 1200, `guide is ${state.guide.length} chars`);
 const notionRow = state.tabs.find((t) => t.targetId === 'T-NOTION');
 assert.equal(notionRow.busy, true);
@@ -346,6 +346,25 @@ pages['T-GPT'].akipanel = readonlyPanel({ capabilities: { compose: 2 }, live: { 
 assert.equal((await call('aiobox_write', { op: 'compose', window: 'P7·W2', text: 'x' })).text, 'rejected: P7·W2: Notion composer did not take the text');
 pages['T-GPT'].akipanel = readonlyPanel({ capabilities: { compose: 1 }, live: { compose: () => ({ ok: true }) } });
 assert.match((await call('aiobox_write', { op: 'compose', window: 'P7·W2', text: 'x' })).text, /compose capability version 1 in P7·W2 is not supported \(expected 2\)/);
+
+// send goes through akipanel.live.send (v1) and really sends: an older panel is named, wait= waits out an answer, the page's refusal comes back verbatim, the caller's own chat is refused.
+assert.match((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'x' })).text, /P7·W2 has no AIObox send capability.*\(no_send/);
+let gptBusy = true;
+const sent = [];
+pages['T-GPT'].akipanel = readonlyPanel({
+  capabilities: { chat: 1, send: 1 },
+  live: { chat: () => ({ ok: true, data: { messages: [], busy: gptBusy } }), send: async (t) => (gptBusy ? { ok: false, error: 'the chat is answering' } : (sent.push(t), { ok: true, data: null })) },
+});
+assert.equal((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'x' })).text, 'rejected: P7·W2: the chat is answering', 'without wait the page refuses, verbatim');
+assert.match((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'x', wait: 1 })).text, /P7·W2 was still answering after 1s.*\(busy/);
+setTimeout(() => { gptBusy = false; }, 1200);
+const sentOut = JSON.parse((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'go on', wait: 5 })).text);
+assert.deepEqual([sentOut.sent, sentOut.chatId, sent], [true, '123', ['go on']]);
+assert.ok(sentOut.waitedMs >= 1000, 'it waited for the answer to end');
+assert.match((await call('aiobox_write', { op: 'send', window: '123', text: 'x', from: '123' })).text, /is your own chat \(123\) \(self_target/);
+assert.deepEqual(sent, ['go on'], 'refusals send nothing');
+pages['T-GPT'].akipanel = readonlyPanel({ capabilities: { send: 2 }, live: { send: async () => ({ ok: true }) } });
+assert.match((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'x' })).text, /send capability version 2 in P7·W2 is not supported \(expected 1\)/);
 
 assert.equal((await call('aiobox_write', { op: 'eval', window: 'P7·W2' })).text, 'rejected: op=eval needs expression');
 const evaluated = JSON.parse((await call('aiobox_write', { op: 'eval', window: 'T-GPT', expression: '6*7' })).text);
