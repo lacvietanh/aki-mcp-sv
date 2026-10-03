@@ -95,16 +95,20 @@ async function run() {
     );
   } finally {
     console.log = originalConsoleLog;
+    // fetch keeps its keep-alive sockets open; drop them before exit (issue #8: on Windows process.exit with sockets still closing aborts in libuv src/win/async.c).
+    server.closeAllConnections();
     server.close();
     await once(server, 'close');
   }
 }
 
 // The bridge intentionally owns a process-lifetime shared InMemoryTransport, so a standalone test exits explicitly after reporting the result instead of changing that production architecture.
+// Exit on the next turn so handles closed above finish closing first (issue #8).
+const exitSoon = (code) => setImmediate(() => process.exit(code));
 run().then(
-  () => process.exit(0),
+  () => exitSoon(0),
   (error) => {
     console.error(error);
-    process.exit(1);
+    exitSoon(1);
   },
 );

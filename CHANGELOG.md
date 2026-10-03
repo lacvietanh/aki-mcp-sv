@@ -16,6 +16,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 
 ### Fixed
 - **Unauthenticated crashes in OAuth** (found in PR #7): `client_id=constructor` / `__proto__` / `toString` resolved an `Object.prototype` member and killed the process; a `/register` body of `null`, an array or a scalar did the same. Both now return `400`. Rejected callbacks log only their origin, unknown grant types log as `unsupported`, request logs drop the query string.
+- **`test/streamable-bridge.test.js` aborted the Windows test run with a libuv assertion at exit** (issue #8): the test now closes fetch's keep-alive connections and exits on the next turn. Not reproduced on macOS; to confirm on Windows.
 
 ## [2.2.0] - 2026-10-01
 
