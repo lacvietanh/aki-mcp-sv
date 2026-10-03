@@ -91,13 +91,13 @@ const pages = {
 const runInPage = (id, expression) => {
   const page = pages[id] || {};
   const document = { body: { innerText: page.body ?? '' }, querySelector: () => null };
-  return JSON.parse(JSON.stringify(vm.runInNewContext(expression, { window: { akipanel: page.akipanel }, document })));
+  return Promise.resolve(vm.runInNewContext(expression, { window: { akipanel: page.akipanel }, document })).then((v) => JSON.parse(JSON.stringify(v)));
 };
 const seen = [];
 cdp.listTargets = async ({ port }) => live[port] || [];
 cdp.evaluate = async ({ port, target, expression }) => {
   seen.push({ port, target: target.id, expression });
-  if (expression.includes('akipanel')) return { value: runInPage(target.id, expression) };
+  if (expression.includes('akipanel')) return { value: await runInPage(target.id, expression) };
   if (expression.includes('querySelectorAll')) return { value: [{ text: 'hi', ariaLabel: null }] };
   return { value: 42, type: 'number', target: { id: target.id } };
 };
@@ -122,6 +122,10 @@ assert.equal(notOk.text, 'rejected: AIObox chat reader in P1·W1: no conversatio
 // A chat shape this reader does not know is named, not guessed at.
 pages['T-NOTION'].akipanel = readonlyPanel({ capabilities: { chat: 2 }, live: { chat: chatOk(notionMessages) } });
 assert.match((await call('aiobox', { op: 'read', window: 'P1·W1' })).text, /chat capability version 2 in P1·W1 is not supported \(expected 1\)/);
+// The account AIObox saw comes along with the read.
+const account = { label: 'nt@x.com', plan: 'free', login: 'signed_in', observedAt: 1 };
+pages['T-NOTION'].akipanel = readonlyPanel({ capabilities: { chat: 1 }, account, live: { chat: chatOk(notionMessages) } });
+assert.deepEqual(JSON.parse((await call('aiobox', { op: 'read', window: 'P1·W1' })).text).account, account);
 // No akipanel at all (AIObox panel not injected yet): raw body text.
 pages['T-NOTION'].akipanel = undefined;
 assert.deepEqual(JSON.parse((await call('aiobox', { op: 'read', window: 'P1·W1' })).text), { window: 'P1·W1', source: 'raw', text: 'notion body' });
@@ -155,6 +159,18 @@ pages['T-GPT'].akipanel = readonlyPanel({
 const opened = JSON.parse((await call('aiobox_write', { op: 'new_window', window: 'p7w2' })).text);
 assert.equal(asked, 1);
 assert.deepEqual(opened, { window: 'P7·W4', opener: 'P7·W2', provider: 'gpt', url: 'https://chatgpt.com/', title: 'lac · ChatGPT' });
+
+// compose goes through akipanel.live.compose (v2, async), never sends, and names a page or version it cannot use.
+assert.equal((await call('aiobox_write', { op: 'compose', window: 'P7·W2' })).text, 'rejected: op=compose needs text');
+assert.match((await call('aiobox_write', { op: 'compose', window: 'P7·W2', text: 'hi' })).text, /P7·W2: this page has no compose capability/);
+const composed = [];
+pages['T-GPT'].akipanel = readonlyPanel({ capabilities: { compose: 2 }, live: { compose: async (t) => { composed.push(t); return { ok: true, data: null }; } } });
+assert.deepEqual(JSON.parse((await call('aiobox_write', { op: 'compose', window: 'P7·W2', text: 'say "hi"\nthen `stop`' })).text), { window: 'P7·W2', composed: true, sent: false });
+assert.deepEqual(composed, ['say "hi"\nthen `stop`'], 'the text reaches the page unchanged');
+pages['T-GPT'].akipanel = readonlyPanel({ capabilities: { compose: 2 }, live: { compose: async () => ({ ok: false, error: 'Notion composer did not take the text' }) } });
+assert.equal((await call('aiobox_write', { op: 'compose', window: 'P7·W2', text: 'x' })).text, 'rejected: P7·W2: Notion composer did not take the text');
+pages['T-GPT'].akipanel = readonlyPanel({ capabilities: { compose: 1 }, live: { compose: () => ({ ok: true }) } });
+assert.match((await call('aiobox_write', { op: 'compose', window: 'P7·W2', text: 'x' })).text, /compose capability version 1 in P7·W2 is not supported \(expected 2\)/);
 
 assert.equal((await call('aiobox_write', { op: 'eval', window: 'P7·W2' })).text, 'rejected: op=eval needs expression');
 const evaluated = JSON.parse((await call('aiobox_write', { op: 'eval', window: 'T-GPT', expression: '6*7' })).text);

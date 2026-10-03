@@ -238,6 +238,8 @@ Rủi ro theo bước và cách lùi:
 - 2026-10-02 · (1) ĐẠT: ChatGPT lacvietanh (dev-mode app AkiMCP, quyền tạm đặt "Allow read-only tools"): `aki__read_text_file` chạy không hỏi, `aki__write_file` hiện hộp "Allow ChatGPT to use AkiMCP?" → Deny, không ghi. Đã trả quyền về "Allow all tools" như cũ; đóng các tab thử. Lưu ý: ở "Allow all tools" ChatGPT không hỏi gì nên annotation chỉ có tác dụng khi chủ dùng mức read-only/low-risk.
 - 2026-10-02 · (2) ĐẠT: `POST /api/providers {id:'postman', enabled:false}` → chat Notion mới (P4, wepro000) `mcp_list_tools` không còn tool nào chứa `postman`, `aki__aiobox` có; bật lại sau ~64 s. Thử trên Notion thay claude.ai (cùng đường `tools/list`).
 - 2026-10-02 · (3) ĐẠT (process đang chạy, chưa có `op=new_window`): chat Notion mới P4·W4 gọi `aki__aiobox` 4 lần cho 4 bước: `op=windows` 10 tab khớp `windows.json`; `read` P8·W1 ra tin cuối (chat v1); `screenshot` P8·W1 ra PNG (cửa sổ Notion, không phải ChatGPT); `read` P9·W9 → `no window 'P9·W9'; open: …`. Bài mục tiêu "đọc một cửa sổ" = 1 lần gọi (≤ 3). Còn lại sau restart: `aiobox_write op=new_window`.
+- 2026-10-03 · sau restart AkiMCP: `aiobox_write op=new_window window=P1·W4` → `P1·W5` (Notion `/ai`, tiền tố handle đã gắn); đóng bằng `/json/close`. Mục "Còn lại sau restart" đã xong.
+- 2026-10-03 · `aiobox_write op=compose` (akipanel compose v2, không gửi) và `account` trong `op=read`; ngân sách +214 ký tự (`RAISES`), bề mặt 38 tool, 32.828 ký tự. Phần gửi prompt của X4 vẫn không làm: compose chỉ điền, người gửi.
 
 ## Bàn giao (2026-10-02, P2·W1 → P2·W2)
 

@@ -13,6 +13,7 @@ const windowsFile = () => path.join(aioboxDir(), 'cdp', 'windows.json');
 
 const MAP_VERSION = 1;
 const CHAT_VERSION = 1; // akipanel.capabilities.chat: the shape of live.chat() this reader understands
+const COMPOSE_VERSION = 2; // akipanel.capabilities.compose: live.compose(text) returns a Promise of { ok, error }
 const RAW_TEXT_CAP = 20_000; // codepoints of page text returned by op=read without a provider reader; the tail is kept, since the latest message is at the end
 const TEXT_ELEMENTS_CAP = 50;
 const TEXT_ELEMENT_CAP = 4_000;
@@ -105,15 +106,18 @@ const READ_JS = (last) => `(() => {
   const panel = window.akipanel;
   let caps = {};
   try { caps = JSON.parse(JSON.stringify(panel?.capabilities ?? {})) || {}; } catch {}
+  let account = null;
+  try { account = JSON.parse(JSON.stringify(panel?.account ?? null)); } catch {}
+  const acct = account ? { account } : {};
   if (caps.chat === ${CHAT_VERSION} && typeof panel?.live?.chat === 'function') {
     const r = panel.live.chat();
     if (!r || r.ok !== true) return { source: 'provider', error: String(r?.error ?? 'live.chat() returned no result') };
     const data = r.data || {};
-    return { source: 'provider', busy: !!data.busy, messages: (data.messages || []).slice(-${last}).map((m) => ({ role: m.role, text: m.text })) };
+    return { source: 'provider', ...acct, busy: !!data.busy, messages: (data.messages || []).slice(-${last}).map((m) => ({ role: m.role, text: m.text })) };
   }
   if (caps.chat !== undefined) return { source: 'provider', unsupported: String(caps.chat) };
   const root = document.body || document.querySelector('main');
-  return { source: 'raw', text: root ? root.innerText : '' };
+  return { source: 'raw', ...acct, text: root ? root.innerText : '' };
 })()`;
 
 const TEXT_JS = (selector) => `[...document.querySelectorAll(${JSON.stringify(selector)})].slice(0, ${TEXT_ELEMENTS_CAP}).map((el) => ({ text: Array.from(el.innerText || '').slice(0, ${TEXT_ELEMENT_CAP}).join(''), ariaLabel: el.getAttribute('aria-label') }))`;
@@ -162,6 +166,17 @@ const NEW_WINDOW_JS = `(() => {
   panel.newWindow();
   return { ok: true };
 })()`;
+// live.compose (AIObox's provider adapter) appends to the composer and never sends; the person sends.
+const COMPOSE_JS = (text) => `(async () => {
+  const panel = window.akipanel;
+  if (!panel) return { error: 'this window has no AIObox panel' };
+  let caps = {};
+  try { caps = JSON.parse(JSON.stringify(panel.capabilities ?? {})) || {}; } catch {}
+  if (caps.compose === undefined || typeof panel.live?.compose !== 'function') return { error: 'this page has no compose capability (AIObox has it on the Notion AI chat page)' };
+  if (caps.compose !== ${COMPOSE_VERSION}) return { unsupported: String(caps.compose) };
+  const r = await panel.live.compose(${JSON.stringify(text)});
+  return r && r.ok === true ? { ok: true } : { error: String(r?.error ?? 'live.compose() returned no result') };
+})()`;
 const NEW_WINDOW_WAIT_MS = 15_000;
 const NEW_WINDOW_POLL_MS = 500;
 
@@ -189,6 +204,15 @@ const WRITE_OPS = {
     }
     throw new Error(`AIObox did not list a new window for ${tab.handle}'s profile within ${NEW_WINDOW_WAIT_MS / 1000}s`);
   },
+  async compose(args) {
+    need('compose', args, ['window', 'text']);
+    const tab = resolveTab(readMap(), args.window);
+    const target = await liveTarget(tab);
+    const { value } = await cdp.evaluate({ port: tab.port, target, expression: COMPOSE_JS(args.text), awaitPromise: true });
+    if (value?.unsupported !== undefined) throw new Error(`AIObox compose capability version ${value.unsupported} in ${tab.handle} is not supported (expected ${COMPOSE_VERSION}); update AkiMCP or AIObox`);
+    if (!value?.ok) throw new Error(`${tab.handle}: ${value?.error ?? 'compose returned no result'}`);
+    return ok(JSON.stringify({ window: tab.handle, composed: true, sent: false }, null, 2));
+  },
   async eval(args) {
     need('eval', args, ['window', 'expression']);
     const tab = resolveTab(readMap(), args.window);
@@ -215,7 +239,7 @@ export function register(server) {
       title: 'AIObox: read windows by handle',
       annotations: { readOnlyHint: true, openWorldHint: false },
       description:
-        'Read AIObox Chrome windows by handle. A handle is P#·W# (profile, window; a later tab adds ·T#), the same prefix AIObox puts at the start of each page title; typed forms like p7w2 or P7.W2 work. op=windows: every open tab with handle, provider, profile, title, url; a tab URL carries its chat id (Notion ?t=<id>, ChatGPT /c/<id>), so a chat finds its own window there. op=read: last messages of the chat in window (last=N, default 1), from AIObox\'s reader when the page has one, else the page text. op=text: text of elements matching selector. op=screenshot: image of window. No ~/.aki/aiobox/cdp/windows.json means AIObox is not running. Running JS: aki__aiobox_write.',
+        'Read AIObox Chrome windows by handle. A handle is P#·W# (profile, window; a later tab adds ·T#), the same prefix AIObox puts at the start of each page title; typed forms like p7w2 or P7.W2 work. op=windows: every open tab with handle, provider, profile, title, url; a tab URL carries its chat id (Notion ?t=<id>, ChatGPT /c/<id>), so a chat finds its own window there. op=read: last messages of the chat in window (last=N, default 1), from AIObox\'s reader when the page has one, else the page text, plus the account AIObox saw. op=text: text of elements matching selector. op=screenshot: image of window. No ~/.aki/aiobox/cdp/windows.json means AIObox is not running. Running JS: aki__aiobox_write.',
       inputSchema: {
         op: z.enum(Object.keys(READ_OPS)).describe('windows | read | text | screenshot'),
         window: windowArg,
@@ -236,13 +260,14 @@ export function register(server) {
   server.registerTool(
     'aiobox_write',
     {
-      title: 'AIObox: open a window or run JS in one',
+      title: 'AIObox: open a window, fill its chat box or run JS',
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description:
-        'Act in AIObox windows named by handle (P#·W#, see aki__aiobox). op=new_window: AIObox opens a new window of the same profile and provider as window (a new chat), the way its panel button does, and returns the new handle. op=eval: expression runs in window and the serialized result returns; awaitPromise (default true) waits for a returned Promise. It can click, type and change the page.',
+        'Act in AIObox windows named by handle (P#·W#, see aki__aiobox). op=new_window: AIObox opens a new window of the same profile and provider as window (a new chat), the way its panel button does, and returns the new handle. op=compose: text is added to the chat box of window (Notion AI chat), never sent. op=eval: expression runs in window and the serialized result returns; awaitPromise (default true) waits for a returned Promise. It can click, type and change the page.',
       inputSchema: {
-        op: z.enum(Object.keys(WRITE_OPS)).describe('new_window | eval'),
-        window: z.string().optional().describe('new_window, eval: handle P#·W# in any typed form, or a CDP targetId'),
+        op: z.enum(Object.keys(WRITE_OPS)).describe('new_window | compose | eval'),
+        window: z.string().optional().describe('new_window, compose, eval: handle P#·W# in any typed form, or a CDP targetId'),
+        text: z.string().optional().describe('compose: text to add'),
         expression: z.string().optional().describe('eval: JS evaluated in the page; the last expression is returned'),
         awaitPromise: z.boolean().optional().describe('eval: await a returned Promise (default true)'),
       },

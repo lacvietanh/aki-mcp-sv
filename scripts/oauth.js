@@ -96,6 +96,7 @@ function dropRefreshTokens(shouldDrop) {
   return dropped;
 }
 
+// AIObox's Notion macro reads the first unexpired access token here until it moves to the passphrase flow (docs/plan/IMPORTANT-akimcp-aiobox-contract.md).
 function saveTokens() {
   const body = { access: Object.fromEntries(accessTokens), refresh: Object.fromEntries(refreshTokens) };
   writeFileSync(TOKENS_FILE, JSON.stringify(body), { mode: 0o600 });
@@ -160,6 +161,7 @@ function redirectHostOf(uris) {
   }
 }
 
+// AIObox reads redirectHost, signedIn and tokenAt through GET /api/security (docs/plan/IMPORTANT-akimcp-aiobox-contract.md).
 function activityView(record, kind, signedInIds) {
   const isClaude = kind === 'claude';
   return {
@@ -251,6 +253,7 @@ export function loadOrCreatePassphrase() {
   if (existsSync(PASSPHRASE_FILE)) return readFileSync(PASSPHRASE_FILE, 'utf8').trim();
   const bytes = randomBytes(PASSPHRASE_LENGTH);
   const p = Array.from(bytes, (b) => PASSPHRASE_ALPHABET[b % PASSPHRASE_ALPHABET.length]).join('');
+  // AIObox reads this one-line file to fill the authorize page (docs/plan/IMPORTANT-akimcp-aiobox-contract.md).
   writeFileSync(PASSPHRASE_FILE, p, { mode: 0o600 });
   return p;
 }

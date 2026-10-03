@@ -218,7 +218,7 @@ await Promise.all([gateServer, panel].filter(Boolean).map(bound));
 // (panel.js); the gatekeeper port stays fixed since Tailscale/cloudflared ingress is mapped to it.
 const actualPanelPort = panel.actualPort ?? Number(panelPort);
 const panelUrl = `http://127.0.0.1:${actualPanelPort}/?t=${panelToken}`;
-writeLock({ pid: process.pid, panelPort: actualPanelPort, gatePort: Number(gatePort), token: panelToken, version });
+writeLock({ pid: process.pid, panelPort: actualPanelPort, gatePort: Number(gatePort), token: panelToken, version, origin, ingress: origin ? ingressMode : null });
 // Escape hatch for automated runs (bootstrap smoke tests) that must not pop a browser window — off by default, normal `npm start` is unaffected.
 if (process.env.MCP_SKIP_BROWSER_OPEN) {
   console.log(`[start] MCP_SKIP_BROWSER_OPEN set — not opening a browser (panel: ${panelUrl})`);

@@ -1,6 +1,6 @@
 # Security
 
-> updated 2026-10-01 · v2.1.0
+> updated 2026-10-03 · v2.1.0
 
 The one place for akimcp's whole security picture: stance, every surface and its gate, the connection limits, who holds access and who uses it, what each secret on disk unlocks and how to revoke it, and what is logged. README carries a summary and points here. Design record for client activity and the security-only log: `docs/plan/done/client-activity-and-security-log.md`.
 
@@ -56,7 +56,7 @@ The two layers that actually block access:
 
 **Whoever knows the passphrase can get a token.** They can register their own client and read the code off the redirect. The passphrase is therefore the real key, and a leaked passphrase is handled as a leaked token (see When something leaks).
 
-Tokens: there is exactly one access token, shared by every client, TTL 1 year (`getOrIssueAccessToken`, design: `docs/plan/done/single-access-token.md`). Refresh tokens are per authorization, bound to their client, and do not expire. Panel section 1 shows the token and offers *Roll token* (new access token, refresh kept: web AIs refresh silently, pasted local snippets must be re-pasted) and *Roll & sign out all clients* (also clears refresh tokens: every AI reconnects with the passphrase). Both files survive restarts: a connector is long-lived access, not a login session.
+Tokens: there is exactly one access token, shared by every client, TTL 1 year (`getOrIssueAccessToken`, design: `docs/plan/done/single-access-token.md`). Refresh tokens are per authorization, bound to their client, and do not expire. Panel section 1 shows the token and offers *Roll token* (new access token, refresh kept: OAuth clients — Claude, ChatGPT, Grok, Gemini, Notion — refresh silently on their next `401`; a token pasted as a fixed bearer has no refresh and gets `401` until re-pasted, which is why only local snippets take a pasted token and Notion connects with the passphrase like the other web AIs) and *Roll & sign out all clients* (also clears refresh tokens: every AI reconnects with the passphrase). Both files survive restarts: a connector is long-lived access, not a login session.
 
 The ingress (Tailscale Funnel by default, a `PUBLIC_ORIGIN` edge, or a Cloudflare tunnel via `--tunnel`) only terminates TLS and forwards to the same loopback server; it never changes the trust boundary. Without an ingress, discovery, `/register`, `/authorize` and `/token` return `503` while local `/mcp` keeps serving; attaching one takes effect on restart.
 
@@ -123,12 +123,12 @@ All under the data dir (`~/.aki/mcpsv/` by default), mode `0600`, never inside t
 | File | Holds | Leaked alone means | Revoke |
 |---|---|---|---|
 | `passphrase.txt` | consent secret for `/authorize` | anyone can obtain a token | panel section 1: Roll passphrase, then Roll & sign out all clients |
-| `tokens.json` | the shared access token and every refresh token | full tool access | Roll & sign out all clients (or delete the file and restart) |
+| `tokens.json` | the shared access token and every refresh token; AIObox's Notion connect macro still reads the access token to paste as Notion's bearer, until it moves to the passphrase flow | full tool access | Roll & sign out all clients (or delete the file and restart) |
 | `oauth-client.json` | Claude's Client ID/Secret | nothing without the passphrase | delete and restart, paste the new pair into claude.ai |
 | `oauth-dcr-clients.json` | registered public clients (no secret) | nothing | delete and restart; every DCR connector reconnects |
 | `setting.json` | folders, allowlist, trusted zones, limits | not secret, but a write widens access | only the local owner writes it (panel or editor) |
 
-The panel token lives only in memory and changes on every start.
+The panel token lives only in memory and changes on every start; `instance.json` (0600) carries it with the panel port and the running ingress origin so AIObox can call the loopback panel, and is removed on shutdown. Which of these files AIObox reads, and in what shape, is pinned in `docs/plan/IMPORTANT-akimcp-aiobox-contract.md` and `test/aiobox-contract.test.js`.
 
 ## When something leaks
 
@@ -169,6 +169,7 @@ Volume: idle, nothing; a normal day, tens of lines; under attack, at most `failM
 ## Real limitations
 
 - **One shared access token, so removing a client is not instant revocation:** Remove ends its refresh, but it keeps the current access token until Roll token; a leak is a leak for all. It also means `/mcp` traffic cannot be attributed to a client, only to a caller address.
+- **A fixed-bearer client breaks on every roll:** a custom MCP given the access token as a pasted bearer holds no refresh token, so Roll token (soft or hard) cuts it off until the token is pasted again, and so does the 1-year TTL. Notion is therefore connected with the passphrase, never with a pasted token; AIObox's Notion connect macro still pastes one until it moves to the passphrase flow.
 - **No refresh token rotation** for the pre-registered Claude client (the spec's rotation rule targets public clients).
 - **The limiter is in memory and keyed per caller:** a restart clears it, a caller who can forge the forwarding headers picks its own key, and an ingress that forwards no address puts every remote caller in one bucket.
 - **DCR stores one client per connector instance**; a connector deleted on the provider's side keeps its refresh token here, so it stays listed as signed in until removed in section 7.

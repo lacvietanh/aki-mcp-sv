@@ -8,7 +8,8 @@ export const AGY_SERVER_KEY = 'akimcp';
 
 const CLAUDE_DIR = path.join(os.homedir(), '.claude');
 const AKI_DIR = path.join(os.homedir(), '.aki');
-const MCP_NAME = 'Aki MCP Server from local Shell & FileSystem';
+// AIObox's connect macro finds its connector by this exact name (docs/plan/IMPORTANT-akimcp-aiobox-contract.md § Id và tên).
+const MCP_NAME = 'AkiMCP';
 const SETTINGS_URL = 'https://claude.ai/new#settings/general';
 const GROK_SETTINGS_URL = 'https://grok.com/?_s=personality';
 const CHATGPT_SETTINGS_URL = 'https://chatgpt.com/#settings/Personalization';
@@ -252,7 +253,7 @@ ${field('MCP URL', url, true)}
 ${secretField('Passphrase', passphrase)}
 ${secretField('Access token', accessToken)}
 <div class="acts"><button data-act="rollToken">Roll token</button><button data-act="rollTokenHard">Roll &amp; sign out all clients</button><button data-act="rollPassphrase">Roll passphrase</button><span class="msg" id="msgRoll"></span></div>
-<p class="helptext">One access token serves every client. <strong>Roll token</strong> replaces it: web AIs refresh on their own, but any token pasted into a local snippet below must be re-pasted. <strong>Roll &amp; sign out all clients</strong> also revokes refresh, so every AI must reconnect with the passphrase; use it if the token may have leaked. <strong>Roll passphrase</strong> issues a new one: the old passphrase stops authorizing new connections, while already-connected AIs keep working; use it if the passphrase may have leaked.</p>
+<p class="helptext">One access token serves every client. <strong>Roll token</strong> replaces it: AIs connected with the passphrase refresh on their own, but a token pasted as a fixed bearer (a local snippet below) stops working until it is pasted again. Connect Notion with the passphrase like the other web AIs, never with a pasted token. <strong>Roll &amp; sign out all clients</strong> also revokes refresh, so every AI must reconnect with the passphrase; use it if the token may have leaked. <strong>Roll passphrase</strong> issues a new one: the old passphrase stops authorizing new connections, while already-connected AIs keep working; use it if the passphrase may have leaked.</p>
 
 <nav class="tabs" role="tablist">
   <span class="tab-group-label">Local · direct 0ms</span>

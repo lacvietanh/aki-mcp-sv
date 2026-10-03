@@ -120,6 +120,7 @@ function validateIngressOrigin(origin) {
 function saveCloudflaredIngress(credContent, origin) {
   writeFileSync(CLOUDFLARED_CRED_PATH, validateCloudflaredCred(credContent), { mode: 0o600 });
   const saved = { mode: 'cloudflared', credPath: CLOUDFLARED_CRED_PATH, origin: validateIngressOrigin(origin) };
+  // Only the saved pick: Funnel never lands here, so AIObox takes the running origin from instance.json (docs/plan/IMPORTANT-akimcp-aiobox-contract.md).
   writeFileSync(INGRESS_CONFIG_PATH, `${JSON.stringify(saved, null, 2)}\n`);
   return saved;
 }
@@ -274,6 +275,7 @@ export const ROUTES = {
     setEnabled(body.id, body.enabled);
     return listProviders();
   },
+  // AIObox reads clients[] and callers[] here with x-panel-token (docs/plan/IMPORTANT-akimcp-aiobox-contract.md).
   'GET /api/security': async () => ({ limits: readLimits(), defaults: LIMIT_DEFAULTS, blocked: failures.blockedList(), clients: listClients(), callers: listCallers(), log: readSecurityLog() }),
   'POST /api/clients/remove': async (body) => ({ ok: true, message: removeClient(typeof body.clientId === 'string' ? body.clientId : '') }),
   'POST /api/rate-limit': async (body) => {

@@ -21,6 +21,8 @@ const BASELINE_CHARS = 27207;
 // Each new tool is a measured raise on top of the baseline budget, so growth stays visible line by line.
 const RAISES = [
   { date: '2026-10-02', why: 'P6 aiobox provider (aki__aiobox, aki__aiobox_write) and the devtools hint pointing at it', chars: 2687 },
+  { date: '2026-10-03', why: 'aiobox_write op=compose (akipanel compose v2) and the account in aiobox op=read', chars: 214 },
+  { date: '2026-10-03', why: 'akidevrule_context: a session named by an AIObox handle drives its own window through aki__aiobox', chars: 278 },
 ];
 const BUDGET_CHARS = Math.round(BASELINE_CHARS * 1.1) + RAISES.reduce((sum, r) => sum + r.chars, 0);
 

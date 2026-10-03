@@ -7,7 +7,7 @@ OpenAI requires **Developer mode** before you can create custom MCP apps ([docs]
 1. Enable **Developer mode**: ChatGPT → Settings → Security and login ([open ↗](https://chatgpt.com/#settings/Security)).
 2. Open [Create a connector ↗](https://chatgpt.com/plugins#settings/Connectors?create-connector=true&redirectAfter=%2Fplugins) (ChatGPT → Settings → Connectors → New connector).
 3. **Icon** (optional). Use `<repo>/public/favicon/icon-48.png` or any image.
-4. **Name**: your choice (e.g. `Aki MCP Server`).
+4. **Name**: `AkiMCP` (AIObox's connect macro recognizes its connector by this name).
 5. **Description**: your choice (e.g. `Local file and shell access via MCP`).
 6. **Connection → Server URL**: paste the **MCP URL** from the panel (e.g. `https://aki-mba16.tailf23d51.ts.net/mcp`).
 7. Tick **I understand and want to continue**, then **Create**.

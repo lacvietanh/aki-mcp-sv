@@ -10,6 +10,7 @@ export function createCallers({ max = MAX_CALLERS, now = Date.now } = {}) {
     const t = now();
     const prev = byKey.get(key);
     byKey.delete(key);
+    // AIObox reads agent and lastSeen through GET /api/security (docs/plan/IMPORTANT-akimcp-aiobox-contract.md).
     byKey.set(key, {
       key,
       agent: [...String(agent ?? '')].slice(0, AGENT_MAX_CHARS).join(''),
