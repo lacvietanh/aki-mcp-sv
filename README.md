@@ -281,6 +281,8 @@ aki-mcp-sv/
 │   ├── security-log.js           # [security] events to console + security.log (rotated at 1 MB)
 │   ├── streamable-bridge.js      # Streamable HTTP shim <-> the in-process tools server (InMemoryTransport)
 │   ├── tools-server.js           # builds the one shared McpServer mounting every tool arm below
+│   ├── tool-call-log.js          # browser/AIObox tool calls to tool-calls.jsonl, never their arguments (rotated at 1 MB)
+│   ├── version.js                # the running version, read once from package.json
 │   ├── provider-registry.js      # the list of tool providers: detect once, register all, hide unavailable or switched-off ones
 │   ├── find-on-path.js           # PATH lookup without spawning (PATHEXT on Windows), used by provider detect
 │   ├── stdio.js                  # the same tools server over stdin/stdout, for Antigravity CLI and IDE

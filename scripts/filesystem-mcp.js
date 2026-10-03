@@ -93,6 +93,8 @@ async function writeFileAtomic(filePath, content) {
   const tempPath = `${filePath}.${randomBytes(16).toString('hex')}.tmp`;
   try {
     await fs.writeFile(tempPath, content, 'utf-8');
+    // The temp file is born with the umask's mode; carry the replaced file's, or a rewrite drops a script's exec bit and widens a 0600 file.
+    await fs.chmod(tempPath, (await fs.stat(filePath)).mode & 0o7777);
     await fs.rename(tempPath, filePath);
   } catch (e) {
     await fs.unlink(tempPath).catch(() => {});
