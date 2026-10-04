@@ -11,13 +11,16 @@ async function runTests() {
   assert.equal(typeof clipboardRead, 'function');
   assert.equal(typeof clipboardWrite, 'function');
 
-  // Hermetic: mock exec/spawn so this never touches the real OS clipboard/notification
+  // Hermetic: mock execFile/spawn so this never touches the real OS clipboard/notification
   // bridge — a CI runner has no pbcopy/xclip/wl-copy/notify-send, and a real spawn there
   // throws before the module's own error handling can run (real ENOENT crashes the process).
   const execCalls = [];
-  mock.method(cp, 'exec', (cmd, cb) => {
-    execCalls.push(cmd);
+  mock.method(cp, 'execFile', (file, args, options, cb) => {
+    execCalls.push({ file, args, options });
     cb(null, 'aki-test-payload\n', '');
+  });
+  mock.method(cp, 'exec', () => {
+    throw new Error('system-mcp must not run a shell command line');
   });
 
   const spawnCalls = [];
@@ -37,13 +40,21 @@ async function runTests() {
   await clipboardWrite('aki-test-payload');
   assert.ok(spawnCalls.length >= 1, 'clipboardWrite must spawn a clipboard writer');
 
-  // 3. clipboardRead resolves via the mocked exec, not a real system call
+  // 3. clipboardRead resolves via the mocked execFile, not a real system call
   const readBack = await clipboardRead();
   assert.equal(readBack.text.trim(), 'aki-test-payload');
 
-  // 4. notifyUser resolves via the mocked exec
-  await notifyUser({ message: 'hello' });
-  assert.ok(execCalls.length >= 1, 'notifyUser must shell out to the platform notifier');
+  // 4. notifyUser hands the text over as data: no shell, and never spliced into the script
+  execCalls.length = 0;
+  const hostile = `x'; touch /tmp/aki-pwned; echo ' "q" $(id) \`id\``;
+  const sent = await notifyUser({ message: hostile, title: hostile, sound: false });
+  assert.equal(sent.message, hostile, 'the message is returned as given');
+  assert.equal(execCalls.length, 1);
+  const [{ args, options }] = execCalls;
+  const carried = process.platform === 'win32' ? [options.env.AKI_NOTIFY_MESSAGE, options.env.AKI_NOTIFY_TITLE] : args.slice(-2);
+  assert.deepEqual(carried, [hostile, hostile], 'title and message travel as whole values');
+  const script = process.platform === 'win32' ? args : args.slice(0, -2);
+  assert.ok(script.every((a) => !a.includes('aki-pwned')), 'no script or flag contains the text');
 
   // 5. Test McpServer tool registration
   const server = new McpServer({ name: 'test-system', version: '2.0.0' });

@@ -5,65 +5,66 @@ import { z } from 'zod';
 import cp from 'node:child_process';
 import { ok, fail } from './mcp-tool.js';
 
-// Not `promisify(cp.exec)`: `exec` carries a `util.promisify.custom` symbol that routes straight
-// to the real implementation, so a test mocking `cp.exec` never actually intercepts it. This
-// manual wrapper calls `cp.exec` through a plain property lookup, which mocks do intercept.
-const execAsync = (cmd) => new Promise((resolve, reject) => {
-  cp.exec(cmd, (err, stdout, stderr) => (err ? reject(err) : resolve({ stdout, stderr })));
+// Not `promisify(cp.execFile)`: it carries a `util.promisify.custom` symbol that routes straight to the real implementation, so a test mocking `cp.execFile` would never intercept it.
+// execFile, never exec: the notification text comes from the model, and no shell may parse it.
+const run = (file, args = [], options = {}) => new Promise((resolve, reject) => {
+  cp.execFile(file, args, { windowsHide: true, ...options }, (err, stdout, stderr) => (err ? reject(err) : resolve({ stdout, stderr })));
 });
 
+const WINDOWS_TOAST = `
+  [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null;
+  $template = [Windows.UI.Notifications.ToastTemplateType]::ToastText02;
+  $xml = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent($template);
+  $text = $xml.GetElementsByTagName('text');
+  $text[0].AppendChild($xml.CreateTextNode($env:AKI_NOTIFY_TITLE)) > $null;
+  $text[1].AppendChild($xml.CreateTextNode($env:AKI_NOTIFY_MESSAGE)) > $null;
+  $toast = [Windows.UI.Notifications.ToastNotification]::new($xml);
+  [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Aki MCP').Show($toast);
+`.replace(/\n\s+/g, ' ');
+
+// Title and message travel as data on every platform (script arguments, environment, argv), never inside a script or command line.
 export async function notifyUser({ message, title = 'Aki MCP', sound = true } = {}) {
   if (!message) throw new Error('message is required');
-  const safeTitle = String(title).replace(/["\\]/g, '');
-  const safeMsg = String(message).replace(/["\\]/g, '');
+  const text = String(message);
+  const heading = String(title);
+  const result = { notified: true, platform: process.platform === 'darwin' || process.platform === 'win32' ? process.platform : 'linux', title: heading, message: text };
 
   if (process.platform === 'darwin') {
-    const soundClause = sound ? ' sound name "Glass"' : '';
-    const script = `display notification "${safeMsg}" with title "${safeTitle}"${soundClause}`;
-    await execAsync(`osascript -e '${script}'`);
-    return { notified: true, platform: 'darwin', title: safeTitle, message: safeMsg };
+    const display = `display notification (item 1 of argv) with title (item 2 of argv)${sound ? ' sound name "Glass"' : ''}`;
+    await run('osascript', ['-e', 'on run argv', '-e', display, '-e', 'end run', '--', text, heading]);
+    return result;
   }
 
   if (process.platform === 'win32') {
-    const psScript = `
-      [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null;
-      $template = [Windows.UI.Notifications.ToastTemplateType]::ToastText02;
-      $xml = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent($template);
-      $text = $xml.GetElementsByTagName('text');
-      $text[0].AppendChild($xml.CreateTextNode('${safeTitle}')) > $null;
-      $text[1].AppendChild($xml.CreateTextNode('${safeMsg}')) > $null;
-      $toast = [Windows.UI.Notifications.ToastNotification]::new($xml);
-      [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('Aki MCP').Show($toast);
-    `.replace(/\n\s+/g, ' ');
-    await execAsync(`powershell -NoProfile -ExecutionPolicy Bypass -Command "${psScript}"`).catch(() => {
+    const env = { ...process.env, AKI_NOTIFY_TITLE: heading, AKI_NOTIFY_MESSAGE: text };
+    await run('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', WINDOWS_TOAST], { env }).catch(() => {
       // Fallback to simpler balloon/beep if Toast API fails on older Windows
-      return execAsync(`powershell -NoProfile -Command "[console]::beep(800,200)"`);
+      return run('powershell', ['-NoProfile', '-Command', '[console]::beep(800,200)']);
     });
-    return { notified: true, platform: 'win32', title: safeTitle, message: safeMsg };
+    return result;
   }
 
-  // Linux (notify-send)
-  await execAsync(`notify-send "${safeTitle}" "${safeMsg}"`).catch(() => {});
-  return { notified: true, platform: 'linux', title: safeTitle, message: safeMsg };
+  await run('notify-send', ['--', heading, text]).catch(() => {});
+  return result;
 }
 
 export async function clipboardRead() {
   if (process.platform === 'darwin') {
-    const { stdout } = await execAsync('pbpaste');
+    const { stdout } = await run('pbpaste');
     return { text: stdout, length: stdout.length };
   }
 
   if (process.platform === 'win32') {
-    const { stdout } = await execAsync('powershell -NoProfile -Command "Get-Clipboard"');
+    const { stdout } = await run('powershell', ['-NoProfile', '-Command', 'Get-Clipboard']);
     return { text: stdout.trimEnd(), length: stdout.length };
   }
 
   // Linux
   try {
-    const { stdout } = await execAsync('wl-paste');
+    const { stdout } = await run('wl-paste');
     return { text: stdout, length: stdout.length };
   } catch {
-    const { stdout } = await execAsync('xclip -selection clipboard -o');
+    const { stdout } = await run('xclip', ['-selection', 'clipboard', '-o']);
     return { text: stdout, length: stdout.length };
   }
 }
