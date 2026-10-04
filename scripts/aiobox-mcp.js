@@ -595,6 +595,9 @@ const CLOSE_WINDOW_JS = (successor) => `(() => {
   return r && r.ok === true ? { ok: true } : { error: String(r?.error ?? 'closeWindow() returned no result') };
 })()`;
 const NAVIGATED = /context was destroyed|navigated or closed|Cannot find context/i;
+// closeWindow is one-way to AIObox (P8·W1 a81d28d): the app refuses a successor not open, the same window or a loop only in its log, so a close counts once the tab is gone.
+const CLOSE_WAIT_MS = 3_000;
+const CLOSE_POLL_MS = 250;
 const NEW_CHAT_WAIT_MS = 15_000;
 const MACRO_RUN_JS = (id) => `(() => { const r = window.akipanel?.macroRuns?.[${JSON.stringify(id)}]; return r ? { status: r.status, message: r.message ?? null, at: r.at } : null; })()`;
 const MACRO_ENDED = new Set(['done', 'started', 'skipped', 'error']);
@@ -691,6 +694,11 @@ const WRITE_OPS = {
     }
     if (value?.missing) throw new Refusal('no_close_window', `${tab.handle} has no AIObox closeWindow (an older AIObox build)`, 'ask the owner to close it; never close a tab over CDP');
     if (value?.error) throw new Error(`${tab.handle}: ${value.error}`);
+    for (const end = Date.now() + CLOSE_WAIT_MS; ; await new Promise((r) => setTimeout(r, CLOSE_POLL_MS))) {
+      const open = (await cdp.listTargets({ port: tab.port }).catch(() => null))?.some((t) => t.id === tab.targetId);
+      if (open === false) break;
+      if (Date.now() >= end) throw new Error(`${tab.handle} is still open ${CLOSE_WAIT_MS / 1000}s after closeWindow: AIObox refused it${successor ? ` (successor ${successor} closed, the same window, or a loop)` : ''}; nothing was retired. Check op=windows, then try again`);
+    }
     return ok(JSON.stringify({ ...used, closed: true, ...(successor && { successor }) }, null, 2));
   },
   // No window: flags.json is AIObox-wide. Flagging the same account or workspace again replaces its entry.

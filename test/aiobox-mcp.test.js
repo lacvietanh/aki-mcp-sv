@@ -484,18 +484,29 @@ assert.match((await call('aiobox_write', { op: 'close_window', window: 'P7·W2' 
 let closes = 0;
 let closeRefusal = 'the chat holds a draft';
 let closeArgs = [];
-pages['T-GPT'].akipanel = readonlyPanel({ online: true, closeWindow: (...a) => (closes += 1, closeArgs = a, closeRefusal ? { ok: false, error: closeRefusal } : { ok: true, data: null }) });
+// The tab counts as closed once it leaves the target list; AIObox refusing a successor leaves it open with { ok: true } (one-way call).
+let closedTab = null;
+let stayOpen = false;
+const listBeforeClose = cdp.listTargets;
+cdp.listTargets = async (a) => (await listBeforeClose(a)).filter((t) => t.id !== closedTab);
+pages['T-GPT'].akipanel = readonlyPanel({ online: true, closeWindow: (...a) => (closes += 1, closeArgs = a, closeRefusal ? { ok: false, error: closeRefusal } : (stayOpen || (closedTab = 'T-GPT'), { ok: true, data: null })) });
 assert.equal((await call('aiobox_write', { op: 'close_window', window: 'P7·W2' })).text, 'rejected: P7·W2: the chat holds a draft');
 assert.match((await call('aiobox_write', { op: 'close_window', window: '123', from: '123' })).text, /is your own chat \(123\) \(self_target/);
 closeRefusal = null;
 assert.equal(JSON.parse((await call('aiobox_write', { op: 'close_window', window: 'P7·W2' })).text).closed, true);
 assert.equal(closes, 2, 'the self refusal never reached the panel');
 assert.deepEqual(closeArgs, [], 'no successor, no argument');
+closedTab = null;
 const handedOff = JSON.parse((await call('aiobox_write', { op: 'close_window', window: 'P7·W2', successor: 'abc' })).text);
 assert.deepEqual([handedOff.closed, handedOff.successor, closeArgs].map((x) => JSON.stringify(x)), [true, 'P1·W1', [{ successor: 'P1·W1' }]].map((x) => JSON.stringify(x)));
+closedTab = null;
+stayOpen = true;
+assert.match((await call('aiobox_write', { op: 'close_window', window: 'P7·W2', successor: 'abc' })).text, /P7·W2 is still open 3s after closeWindow: AIObox refused it \(successor P1·W1 closed, the same window, or a loop\); nothing was retired/);
+stayOpen = false;
 assert.match((await call('aiobox_write', { op: 'close_window', window: 'P7·W2', successor: '123' })).text, /cannot succeed itself \(same_window/);
 assert.match((await call('aiobox_write', { op: 'close_window', window: 'P7·W2', successor: 'P9·W9' })).text, /no window 'P9·W9'.*\(no_window/);
-assert.equal(closes, 3, 'a bad successor never reached the panel');
+assert.equal(closes, 4, 'a bad successor never reached the panel');
+cdp.listTargets = listBeforeClose;
 
 // compose goes through akipanel.live.compose (v2, async), never sends, and names a page or version it cannot use.
 assert.equal((await call('aiobox_write', { op: 'compose', window: 'P7·W2' })).text, 'rejected: op=compose needs text');
