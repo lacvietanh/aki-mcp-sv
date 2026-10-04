@@ -332,12 +332,12 @@ const GUIDE = [
   "1. Find yourself: aki__aiobox op=whoami quote=<20+ chars verbatim from the user's latest message>. Keep its chatId; a handle (P#·W#) is a label renumbered on restart.",
   '2. op=state lists every window (chatId, provider, account, busy) and provider macros.',
   '3. Name a window by its chatId, or pass expect=<chatId> with a handle.',
-  '4. New chat: aki__aiobox_write op=new_chat window=<chatId> (same tab; refused while busy, drafted or yours); its chatId exists after the first send. Another window: op=new_window.',
-  '5. Message another chat: op=send window=<its chatId> from=<your chatId> wait=<s> sends once it is idle with an empty box (drafts untouched); still busy/draft: write a ~/.aki/handoff/ letter, send a one-line pointer later. op=compose only fills the box. Never target your own chat.',
+  '4. New chat: aki__aiobox_write op=new_chat window=<chatId> (same tab; refused if busy, drafted or yours; chatId after the first send). Other window: op=new_window.',
+  '5. Message another chat: op=send window=<its chatId> from=<your chatId>. Check the target\'s read in op=state: live/queued: send at once, even while busy; blocked: wait until idle (wait=<s>). A draft in its box: never touch it. op=compose only fills the box. Never target your own chat.',
   '6. Before reading an answer: op=wait_idle, then op=read.',
-  '7. Macros: aki__aiobox_write op=run_macro macro=<id from macros>.',
-  '8. eval is a last resort, never for sending. Do not use chrome_launch or devtools_* on an AIObox profile.',
-  '9. Compare ops here with your schema\'s op enum; one missing = cached older AkiMCP: op=run_macro macro=connect-akimcp option=reconnect on your window, then a new chat.',
+  '7. Macros: op=run_macro macro=<id>.',
+  '8. eval is a last resort, never for sending. Never chrome_launch or devtools_* on an AIObox profile.',
+  '9. An op here missing from your schema = cached older AkiMCP: op=run_macro macro=connect-akimcp option=reconnect on your window, then a new chat.',
 ].join('\n');
 
 function need(op, args, fields) {
@@ -489,7 +489,6 @@ const NEW_CHAT_READY_JS = `(() => {
   const r = panel.live.chat();
   return { ready: !!(r && r.ok && r.data.messages.length === 0), url: location.href };
 })()`;
-const LETTER_NEXT = 'write the message to a ~/.aki/handoff/ file, then send that chat a one-line pointer to it once it is free (op=wait_idle), or raise wait';
 const NAVIGATED = /context was destroyed|navigated or closed|Cannot find context/i;
 const NEW_CHAT_WAIT_MS = 15_000;
 const MACRO_RUN_JS = (id) => `(() => { const r = window.akipanel?.macroRuns?.[${JSON.stringify(id)}]; return r ? { status: r.status, message: r.message ?? null, at: r.at } : null; })()`;
@@ -568,7 +567,7 @@ const WRITE_OPS = {
     if (!value?.ok) throw new Error(`${tab.handle}: ${value?.error ?? 'compose returned no result'}`);
     return ok(JSON.stringify({ ...used, composed: true, sent: false }, null, 2));
   },
-  // Sends for real. wait=<s> first waits out an answer in progress and the owner's draft in the box (never touched); live.send's own refusal comes back verbatim.
+  // Sends for real. wait=<s> first waits out an answer in progress (as op=wait_idle); live.send's own refusal comes back verbatim.
   async send(args) {
     need('send', args, ['window', 'text']);
     const { tab, live: target, used } = await openTab(args);
@@ -576,10 +575,8 @@ const WRITE_OPS = {
     const started = Date.now();
     for (const end = started + (args.wait ?? 0) * 1000; ; await sleep(WAIT_IDLE_POLL_MS)) {
       const { value } = await cdp.evaluate({ port: tab.port, target, expression: READ_JS(1) });
-      const held = value?.source === 'provider' && (value.busy || value.draft);
-      if (!held || Date.now() >= end) {
-        if (held && args.wait && value.busy) throw new Refusal('busy', `${tab.handle} was still answering after ${args.wait}s; nothing was sent`, LETTER_NEXT);
-        if (held && args.wait) throw new Refusal('draft', `${tab.handle}'s message box still held a draft after ${args.wait}s; nothing was sent and the draft was left alone`, LETTER_NEXT);
+      if (value?.source !== 'provider' || !value.busy || Date.now() >= end) {
+        if (value?.busy && args.wait) throw new Refusal('busy', `${tab.handle} was still answering after ${args.wait}s`, 'raise wait, or check it later with op=wait_idle');
         break;
       }
     }
