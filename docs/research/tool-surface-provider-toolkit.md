@@ -135,11 +135,11 @@ Bối cảnh: single-process, một `McpServer` dùng chung mọi client qua m�
 
 ## Decision
 
-- **Action:** [`docs/plan/provider-toolkit-architecture.md`](../plan/provider-toolkit-architecture.md) — giữ nguyên tên và shape của 36 tool; thêm annotations cho mọi tool; thêm provider registry với detect + bật/tắt; test bề mặt tool; hợp đồng shape cho provider mới (op phẳng, tách đọc/ghi).
+- **Action:** [`docs/plan/done/provider-toolkit-architecture.md`](../plan/done/provider-toolkit-architecture.md) — giữ nguyên tên và shape của 36 tool; thêm annotations cho mọi tool; thêm provider registry với detect + bật/tắt; test bề mặt tool; hợp đồng shape cho provider mới (op phẳng, tách đọc/ghi).
 - **Rejected/closed:** gom 36 → 17 bằng đổi tên; `{op, args}` lồng; `op=help`; cổng meta `aki__call`; alias tên cũ; auto-scan provider.
 - **No action (kèm lý do):** rút gọn description `akidevrule_context` (lớn nhất, 1.634 ký tự) — load-bearing cho rule delivery, thuộc `docs/plan/rule-context-handshake.md` / `docs/arch/rule-context-delivery.md`; toolset theo client — bridge dùng phiên chung, chưa có nhu cầu đo được.
 - **Reopen nếu:** `tools/list` đo được > ~40.000 ký tự; một client thật báo vượt trần số tool; quan sát được model chọn sai tool lặp lại; bridge có kênh server → client và client nghe `list_changed`.
-- **Cross-references:** `docs/plan/repo-architecture-subtraction-reorg.md` (dời file), `docs/plan/interactive-and-env-tools.md` (tool mới đề xuất phải theo hợp đồng shape ở plan), `docs/feat/tools.md` (cần thêm mục annotations + providers khi ship).
+- **Cross-references:** `docs/plan/repo-architecture-subtraction-reorg.md` (dời file), `docs/plan/done/interactive-and-env-tools.md` (đã bỏ 2026-10-04; tool mới đề xuất phải theo hợp đồng shape ở plan), `docs/feat/tools.md` (cần thêm mục annotations + providers khi ship).
 
 ## Amendments
 

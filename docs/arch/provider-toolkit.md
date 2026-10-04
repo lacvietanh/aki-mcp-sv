@@ -1,6 +1,6 @@
 # Provider toolkit — how tools are hosted, hidden and added
 
-> updated 2026-10-04 · v3.0.0 (plan: [`plan/provider-toolkit-architecture.md`](../plan/provider-toolkit-architecture.md), measurements: [`research/tool-surface-provider-toolkit.md`](../research/tool-surface-provider-toolkit.md))
+> updated 2026-10-04 · v3.0.0 (plan: [`plan/done/provider-toolkit-architecture.md`](../plan/done/provider-toolkit-architecture.md), measurements: [`research/tool-surface-provider-toolkit.md`](../research/tool-surface-provider-toolkit.md))
 
 The tools server is one `McpServer` that hosts every tool module (a provider). This doc is the contract for what each provider declares, how the registry decides what a client sees, the shape a new provider takes, and the test that holds the whole surface in place. Tool names and schemas of the existing 36 tools were not changed by it.
 

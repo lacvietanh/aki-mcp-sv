@@ -1,5 +1,5 @@
 // AIObox windows by handle (P7·W2): aki__aiobox reads, aki__aiobox_write runs JS. Built on cdp-engine.js the way postman-mcp.js is: AIObox knowledge lives here, devtools_* stay app-agnostic.
-// Contract with aiobox (windows.json shape, handle forms, akipanel.live.chat()): docs/plan/IMPORTANT-akimcp-aiobox-contract.md. Plan: docs/plan/provider-toolkit-architecture.md § Provider aiobox.
+// Contract with aiobox (windows.json shape, handle forms, akipanel.live.chat()): docs/plan/IMPORTANT-akimcp-aiobox-contract.md. Plan: docs/plan/done/provider-toolkit-architecture.md § Provider aiobox; next steps: docs/plan/aiobox-control-ops.md.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';

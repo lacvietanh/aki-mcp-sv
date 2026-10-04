@@ -1,6 +1,8 @@
 # Interactive Process Execution & Runtime Environment Tools
 
-> status: open · not started
+> status: dropped 2026-10-04, not started
+>
+> Decided: drop this plan · because long-running commands are already served by `aki__task_start` / `aki__task_manage` (background process, log tail, kill) and environment facts by one `aki__run_cmd` or `aki__git op=status`, so the 5 proposed tools would add surface (each paid on every turn by every client) without a measured flow that needs a stdin-interactive REPL · rejected building `get_env_info` alone (one tool to save 1–2 calls that nobody reported) · reopen if a real task repeatedly needs to keep REPL state across calls; then follow `docs/arch/provider-toolkit.md` Contract 3 (`aki__process` + `aki__process_write`), not 5 flat tools.
 
 ## Mục tiêu & Triết lý thiết kế (Học hỏi Claude Code & DeepSeek Harness)
 Bổ sung khả năng chạy tiến trình tương tác dài hạn (Node.js/Python REPL, long-running processes) và công cụ tự động phát hiện thông tin môi trường (`get_env_info`), nâng cao hiệu suất làm việc của AI qua MCP mà không phá vỡ triết lý bảo mật (allowlist strictly checked, no arbitrary `/bin/sh`, bounded concurrency, output cap).

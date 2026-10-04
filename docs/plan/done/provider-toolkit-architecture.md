@@ -1,6 +1,6 @@
 # Plan: Provider toolkit — gom phần quản lý, giữ bề mặt tool, mở rộng an toàn
 
-> status: P0–P4 và P6 đã triển khai, chưa release (2026-10-02); còn kiểm tay của chủ (§ Amendments) và release `3.0.0` (thay `2.3.0`: `chrome_launch` đổi phá vỡ nên lên major) · hợp đồng đã chốt: [`docs/arch/provider-toolkit.md`](../arch/provider-toolkit.md) · nghiên cứu nền: [`docs/research/tool-surface-provider-toolkit.md`](../research/tool-surface-provider-toolkit.md) (số đo, nguồn, 9 khía cạnh suy xét)
+> status: done · P0–P4 và P6 ship trong `3.0.0` (tag 2026-10-03; thay `2.3.0` vì `chrome_launch` đổi phá vỡ), 3 bài kiểm tay của chủ ĐẠT (§ Amendments); P5 (provider sâu đầu tiên) là plan riêng khi chủ chọn provider, không giữ plan này mở; việc tiếp của provider `aiobox`: [`plan/aiobox-control-ops.md`](../aiobox-control-ops.md) · hợp đồng đã chốt: [`docs/arch/provider-toolkit.md`](../../arch/provider-toolkit.md) · nghiên cứu nền: [`docs/research/tool-surface-provider-toolkit.md`](../../research/tool-surface-provider-toolkit.md) (số đo, nguồn, 9 khía cạnh suy xét)
 
 ## Kết luận
 
@@ -101,7 +101,7 @@ Ghi chú thiết kế:
 
 ## Hợp đồng 3 — Shape cho provider mới
 
-Áp dụng cho mọi provider thêm sau plan này (kể cả các tool trong `interactive-and-env-tools.md`). Ghi thành `docs/arch/provider-toolkit.md` ở P4.
+Áp dụng cho mọi provider thêm sau plan này (kể cả các tool từng đề xuất trong `done/interactive-and-env-tools.md`). Ghi thành `docs/arch/provider-toolkit.md` ở P4.
 
 1. **Tách theo mức rủi ro:** `aki__<p>` chỉ gồm op đọc (`readOnlyHint: true`); `aki__<p>_write` gồm op ghi. Không trộn.
 2. **`op` enum + tham số phẳng**, theo `aki__git`. Mô tả tham số mở đầu bằng op dùng nó (`query: …`, `create: …`). Root schema luôn là object phẳng, không `anyOf/oneOf`, không `args` tự do.
@@ -259,7 +259,7 @@ Lưu ý làm việc: mở tab thử bằng `PUT http://127.0.0.1:<port>/json/new
 ## Liên quan
 
 - `docs/plan/repo-architecture-subtraction-reorg.md` — khi dời file, `provider-registry.js` và các module đi cùng một đợt.
-- `docs/plan/interactive-and-env-tools.md` — 5 tool đề xuất ở đó phải theo Hợp đồng 3 (vd. `aki__process` đọc + `aki__process_write`), không thêm 5 tool phẳng.
+- `docs/plan/done/interactive-and-env-tools.md` (đã bỏ 2026-10-04) — 5 tool đề xuất ở đó phải theo Hợp đồng 3 (vd. `aki__process` đọc + `aki__process_write`), không thêm 5 tool phẳng.
 - `docs/plan/IMPORTANT-shared-cdp-profiles.md` — không đổi; khi patch H1–H6 xong, cập nhật mô tả `chrome_launch` ("purges locks") và annotations nếu semantics đổi.
 - `docs/plan/IMPORTANT-akimcp-aiobox-contract.md` — P1–P5 không chạm (không đổi tên tool nào); P6 thêm dòng hợp đồng (`windows.json`, dạng handle, `akipanel.capabilities`, `akipanel.live.chat()`, `akipanel.account`, đọc Proxy qua CDP) vào cả hai bản (đã ghi 2026-10-02).
 - `aiobox: docs/plan/akipanel.md` (D7, AP11 `live.chat()`), `aiobox: docs/feat/window-handles.md` (handle, `windows.json`), `aiobox: docs/feat/window-panel.md` rule 20–24, `aiobox: docs/arch/provider-capabilities.md`.
