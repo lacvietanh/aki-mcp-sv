@@ -1,21 +1,59 @@
 // Localhost and Intranet HTTP Fetcher MCP tool (local_fetch).
 // Enables AI to test local backend APIs and LAN services safely from remote interfaces (Claude Web, ChatGPT).
 // Strict Defense-in-Depth against SSRF: blocks cloud metadata (169.254.*), link-local IPs, dangerous schemes,
-// enforces max 500KB response truncation, and enforces strict timeout bounds.
+// re-checks every redirect hop, stops reading a response at 512KB, and enforces strict timeout bounds. A DNS name that resolves to a blocked address is not caught.
 import { z } from 'zod';
 import { ok, fail } from './mcp-tool.js';
 
 const BLOCKED_HOST_PATTERNS = [
   /^169\.254\./, // AWS / GCP / Azure IMDS Link-Local
-  /^metadata\.google\.internal$/i,
-  /^fd[0-9a-f]{2}:/i, // IPv6 Unique Local
-  /^fe80:/i, // IPv6 Link-Local
+  /^metadata\.google\.internal$/,
+  /^fe[89ab][0-9a-f]:/, // IPv6 Link-Local fe80::/10
+  /^fd00:ec2::254$/, // AWS IMDS over IPv6; the rest of fc00::/7 stays open, it is where a tailnet and a home LAN live
+  /^::ffff:a9fe:/, // 169.254.0.0/16 written as an IPv4-mapped IPv6 address
 ];
 
 const MAX_RESPONSE_BYTES = 512 * 1024; // 512 KB cap
+const MAX_REDIRECTS = 5;
 
+// URL.hostname keeps the brackets of an IPv6 literal and may carry a trailing dot; both would slip past the patterns.
 export function isBlockedHost(hostname) {
-  return BLOCKED_HOST_PATTERNS.some((re) => re.test(hostname));
+  const host = String(hostname).toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
+  return BLOCKED_HOST_PATTERNS.some((re) => re.test(host));
+}
+
+function checkedUrl(url) {
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`Invalid URL: "${url}"`);
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error(`Forbidden protocol "${parsed.protocol}". Only http: and https: are allowed.`);
+  }
+  if (isBlockedHost(parsed.hostname)) {
+    throw new Error(`Access to link-local/cloud-metadata host "${parsed.hostname}" is blocked for security.`);
+  }
+  return parsed;
+}
+
+// Stops reading at the cap, so a large or endless response costs 512 KB of memory, not its full size.
+async function readCapped(res) {
+  if (!res.body) return { text: '', bytes: 0, truncated: false };
+  const chunks = [];
+  let bytes = 0;
+  const reader = res.body.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return { text: Buffer.concat(chunks).toString('utf8'), bytes, truncated: false };
+    chunks.push(value);
+    bytes += value.length;
+    if (bytes > MAX_RESPONSE_BYTES) {
+      await reader.cancel();
+      return { text: Buffer.concat(chunks).subarray(0, MAX_RESPONSE_BYTES).toString('utf8'), bytes, truncated: true };
+    }
+  }
 }
 
 export async function executeFetch({
@@ -25,20 +63,7 @@ export async function executeFetch({
   body,
   timeoutMs = 5000,
 }) {
-  let parsedUrl;
-  try {
-    parsedUrl = new URL(url);
-  } catch (e) {
-    throw new Error(`Invalid URL: "${url}"`);
-  }
-
-  if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
-    throw new Error(`Forbidden protocol "${parsedUrl.protocol}". Only http: and https: are allowed.`);
-  }
-
-  if (isBlockedHost(parsedUrl.hostname)) {
-    throw new Error(`Access to link-local/cloud-metadata host "${parsedUrl.hostname}" is blocked for security.`);
-  }
+  let target = checkedUrl(url);
 
   const safeTimeout = Math.min(Math.max(timeoutMs || 5000, 500), 15000);
   const controller = new AbortController();
@@ -61,11 +86,24 @@ export async function executeFetch({
       }
     }
 
-    const res = await fetch(parsedUrl.toString(), fetchOptions);
+    // Redirects are followed by hand so every hop passes the same host check as the first URL.
+    let res;
+    for (let hop = 0; ; hop++) {
+      res = await fetch(target, { ...fetchOptions, redirect: 'manual' });
+      const location = res.status >= 300 && res.status < 400 ? res.headers.get('location') : null;
+      if (!location) break;
+      await res.body?.cancel();
+      if (hop === MAX_REDIRECTS) throw new Error(`Too many redirects (more than ${MAX_REDIRECTS}).`);
+      const next = checkedUrl(new URL(location, target).toString());
+      if (next.origin !== target.origin) fetchOptions.headers = { 'User-Agent': fetchOptions.headers['User-Agent'] };
+      if (res.status === 303 || ((res.status === 301 || res.status === 302) && fetchOptions.method === 'POST')) {
+        fetchOptions.method = 'GET';
+        delete fetchOptions.body;
+      }
+      target = next;
+    }
     const contentType = res.headers.get('content-type') || '';
-    const rawText = await res.text();
-    const truncated = rawText.length > MAX_RESPONSE_BYTES;
-    const bodyText = truncated ? rawText.slice(0, MAX_RESPONSE_BYTES) : rawText;
+    const { text: bodyText, bytes, truncated } = await readCapped(res);
 
     let data = bodyText;
     let isJson = false;
@@ -85,12 +123,12 @@ export async function executeFetch({
       status: res.status,
       statusText: res.statusText,
       ok: res.ok,
-      url: res.url,
+      url: target.toString(),
       headers: responseHeaders,
       isJson,
       data,
       truncated,
-      bytesReceived: rawText.length,
+      bytesReceived: bytes,
     };
   } finally {
     clearTimeout(timer);
