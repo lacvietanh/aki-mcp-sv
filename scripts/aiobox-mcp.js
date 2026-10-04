@@ -326,13 +326,13 @@ const tabRow = (t) => ({ handle: t.handle, chatId: chatIdOf(t.url), targetId: t.
 const opsList = () => ({ aiobox: Object.keys(READ_OPS), aiobox_write: Object.keys(WRITE_OPS) });
 
 // The rules for acting in AIObox, returned by op=state: a client gets the running server's copy here, while a tool description stays frozen in its cached schema. Plan: docs/plan/aiobox-control-ops.md § Guide.
-const GUIDE_VERSION = 2;
+const GUIDE_VERSION = 3;
 const GUIDE = [
   `AIObox guide v${GUIDE_VERSION}.`,
   "1. Find yourself: aki__aiobox op=whoami quote=<20+ characters copied verbatim from the user's latest message>. Keep the chatId it returns; a handle (P#·W#) is only a label, renumbered when Chrome or AIObox restarts.",
   '2. op=state lists every window (chatId, provider, account, busy) and each provider\'s macros.',
   '3. Name a window by its chatId, or pass expect=<chatId> with a handle.',
-  '4. New chat: aki__aiobox_write op=new_window window=<a window of that profile and provider>.',
+  '4. New chat: aki__aiobox_write op=new_chat window=<chatId> (same tab; refused while it answers or if it is yours); its chatId exists after the first op=send. Another window: op=new_window.',
   '5. Message another chat: aki__aiobox_write op=send window=<its chatId> from=<your chatId> wait=<s> sends it once that chat is idle. op=compose only fills its box for the owner to send. Never target your own chat.',
   '6. Before reading an answer: op=wait_idle, then op=read.',
   '7. Macros: aki__aiobox_write op=run_macro macro=<id from macros>.',
@@ -471,6 +471,26 @@ const MACRO_JS = (id, option) => `(() => {
   panel.runMacro(macro.id, option);
   return { ok: true, before };
 })()`;
+// akipanel.newChat() navigates this tab to the provider's new-chat URL (aiobox: data per provider, one path for all). A full navigation destroys the page context, so its promise may never come back: the outcome is read from the tab afterwards, not from the call.
+const NEW_CHAT_JS = `(async () => {
+  const panel = window.akipanel;
+  if (!panel) return { error: 'this window has no AIObox panel' };
+  if (typeof panel.newChat !== 'function') return { missing: true };
+  if (!panel.online) return { error: 'the AIObox panel in this window is offline' };
+  const r = await panel.newChat();
+  return r && r.ok === false ? { error: String(r.error ?? 'newChat() failed') } : { ok: true };
+})()`;
+// Ready = the chat reader shows an empty chat; a page without a reader only has its load state.
+const NEW_CHAT_READY_JS = `(() => {
+  const panel = window.akipanel;
+  let caps = {};
+  try { caps = JSON.parse(JSON.stringify(panel?.capabilities ?? {})) || {}; } catch {}
+  if (caps.chat !== ${CHAT_VERSION} || typeof panel?.live?.chat !== 'function') return { ready: document.readyState === 'complete', url: location.href };
+  const r = panel.live.chat();
+  return { ready: !!(r && r.ok && r.data.messages.length === 0), url: location.href };
+})()`;
+const NAVIGATED = /context was destroyed|navigated or closed|Cannot find context/i;
+const NEW_CHAT_WAIT_MS = 15_000;
 const MACRO_RUN_JS = (id) => `(() => { const r = window.akipanel?.macroRuns?.[${JSON.stringify(id)}]; return r ? { status: r.status, message: r.message ?? null, at: r.at } : null; })()`;
 const MACRO_ENDED = new Set(['done', 'started', 'skipped', 'error']);
 const MACRO_WAIT_MS = 60_000;
@@ -514,6 +534,31 @@ const WRITE_OPS = {
     const first = opened.tabs[0];
     const warning = [used.warning, providerOf(first.url) === wanted ? null : `the new window still shows ${first.url}, not a ${wanted} page`].filter(Boolean).join(' ');
     return ok(JSON.stringify({ window: opened.handle, targetId: first.targetId, chatId: chatIdOf(first.url), opener: tab.handle, openerTargetId: tab.targetId, provider: providerOf(first.url), url: first.url, title: stripHandle(first.title), ...(warning ? { warning } : {}) }, null, 2));
+  },
+  // Same tab, fresh chat: the chat id is only in the URL after the first message, so the result has none.
+  async new_chat(args) {
+    need('new_chat', args, ['window']);
+    const { tab, live: target, used } = await openTab(args);
+    if (args.from && args.from === used.chatId) throw new Refusal('self_target', `${tab.handle} is your own chat (${used.chatId})`, 'open another chat with op=new_window instead');
+    const { value: chat } = await cdp.evaluate({ port: tab.port, target, expression: READ_JS(1) });
+    if (chat?.source === 'provider' && chat.busy) throw new Refusal('busy', `${tab.handle} is answering; a new chat would leave that answer`, 'op=wait_idle first, or op=new_window');
+    let value;
+    try {
+      value = (await cdp.evaluate({ port: tab.port, target, expression: NEW_CHAT_JS, awaitPromise: true })).value;
+    } catch (e) {
+      if (!NAVIGATED.test(e.message)) throw e;
+      value = { ok: true };
+    }
+    if (value?.missing) throw new Refusal('no_new_chat', `${tab.handle} has no AIObox newChat (an older AIObox build)`, 'use op=new_window, or rebuild AIObox');
+    if (value?.error) throw new Error(`${tab.handle}: ${value.error}`);
+    let last = null;
+    for (const end = Date.now() + NEW_CHAT_WAIT_MS; Date.now() < end; await sleep(NEW_WINDOW_POLL_MS)) {
+      last = (await cdp.evaluate({ port: tab.port, target, expression: NEW_CHAT_READY_JS }).catch(() => null))?.value ?? last;
+      if (last?.ready && chatIdOf(last.url) === null) {
+        return ok(JSON.stringify({ ...used, previousChatId: used.chatId, chatId: null, url: last.url, next: 'op=send the first message, then op=state shows its chatId' }, null, 2));
+      }
+    }
+    throw new Error(`${tab.handle} did not show an empty chat within ${NEW_CHAT_WAIT_MS / 1000}s (now at ${last?.url ?? 'unknown'})`);
   },
   async compose(args) {
     need('compose', args, ['window', 'text']);
@@ -610,12 +655,12 @@ export function register(server) {
       title: 'AIObox: open a window, send or fill a chat, run JS',
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description:
-        'Act in an AIObox window (chatId, handle or targetId; rules: aki__aiobox op=state). Pass expect to refuse a renumbered handle and from=<your chatId> so your own chat is refused. op=new_window: a new chat of the same profile and provider, as the panel button; returns handle, chatId, targetId. op=send: sends text as a message (wait=s first waits for the chat to go idle); op=compose only fills the chat box. op=run_macro: runs one of the window\'s AIObox macros (macro, option) and returns its status. op=eval: expression runs in the page, result returned; awaitPromise (default true). It can click, type and change the page.',
+        'Act in an AIObox window (chatId, handle or targetId; rules: aki__aiobox op=state). Pass expect to refuse a renumbered handle and from=<your chatId> so your own chat is refused. op=new_window: a new chat of the same profile and provider, as the panel button; returns handle, chatId, targetId. op=new_chat: a fresh chat in that tab, chatId after the first send. op=send: sends text as a message (wait=s first waits for the chat to go idle); op=compose only fills the chat box. op=run_macro: runs one of the window\'s AIObox macros (macro, option) and returns its status. op=eval: expression runs in the page, result returned; awaitPromise (default true). It can click, type and change the page.',
       inputSchema: {
         op: z.enum(Object.keys(WRITE_OPS)).describe(Object.keys(WRITE_OPS).join(' | ')),
         window: windowArg,
         expect: expectArg,
-        from: z.string().optional().describe('your own chatId (aki__aiobox op=whoami); send and compose refuse it'),
+        from: z.string().optional().describe('your own chatId (aki__aiobox op=whoami); send, compose and new_chat refuse it'),
         macro: z.string().optional().describe('run_macro: macro id (op=state macros)'),
         option: z.string().optional().describe('run_macro: option id (default: the first)'),
         text: z.string().optional().describe('send, compose: the text'),

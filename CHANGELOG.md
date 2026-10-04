@@ -4,6 +4,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 
 ## [Unreleased]
 
+### Added
+- **`aki__aiobox_write op=new_chat window=<chatId>`: a fresh chat in the same tab**, through AIObox's `akipanel.newChat()` (the provider's new-chat URL, e.g. Notion `/ai`). Refused while that chat is answering (`busy`), on your own chat (`self_target`) and on an AIObox without `newChat` (`no_new_chat`, use `op=new_window`); it returns once the tab shows an empty chat, with `chatId: null` and `previousChatId`, since the chat id exists only after the first `op=send`. The `op=state` guide (v3) says when to use `new_chat` and when `new_window`.
+
 ## [3.0.0] - 2026-10-03
 
 Major because `chrome_launch` no longer clones profiles and lost `refresh`: it opens only the clones AIObox keeps in `~/.aki/cdp/profiles/` (see Changed, Removed). A chat that cached AkiMCP's earlier tool list does not see the new AIObox ops: reconnect AkiMCP (AIObox macro Connect AkiMCP, option reconnect) or open a new chat.
