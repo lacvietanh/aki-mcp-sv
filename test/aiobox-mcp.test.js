@@ -478,17 +478,24 @@ assert.deepEqual(placedOut, { window: 'P7·W2', targetId: 'T-GPT', chatId: '123'
 assert.equal((await call('aiobox_write', { op: 'place_like', window: 'P7·W2', like: 'P9·W9' })).text, 'rejected: P7·W2: no window P9·W9', 'a like the map does not know goes as given, its rejection verbatim');
 assert.deepEqual(placed, ['T-NOTION', 'P9·W9']);
 
-// close_window goes through akipanel.closeWindow() (sync Result): its refusal verbatim, the caller's own chat refused, never a CDP close.
+// close_window goes through akipanel.closeWindow() (sync Result): its refusal verbatim, the caller's own chat refused, never a CDP close; successor goes to AIObox as the live handle it names (audit P1-2: AIObox writes no inferred edge).
 pages['T-GPT'].akipanel = readonlyPanel({ online: true });
 assert.match((await call('aiobox_write', { op: 'close_window', window: 'P7·W2' })).text, /no AIObox closeWindow.*\(no_close_window/);
 let closes = 0;
 let closeRefusal = 'the chat holds a draft';
-pages['T-GPT'].akipanel = readonlyPanel({ online: true, closeWindow: () => (closes += 1, closeRefusal ? { ok: false, error: closeRefusal } : { ok: true, data: null }) });
+let closeArgs = [];
+pages['T-GPT'].akipanel = readonlyPanel({ online: true, closeWindow: (...a) => (closes += 1, closeArgs = a, closeRefusal ? { ok: false, error: closeRefusal } : { ok: true, data: null }) });
 assert.equal((await call('aiobox_write', { op: 'close_window', window: 'P7·W2' })).text, 'rejected: P7·W2: the chat holds a draft');
 assert.match((await call('aiobox_write', { op: 'close_window', window: '123', from: '123' })).text, /is your own chat \(123\) \(self_target/);
 closeRefusal = null;
 assert.equal(JSON.parse((await call('aiobox_write', { op: 'close_window', window: 'P7·W2' })).text).closed, true);
 assert.equal(closes, 2, 'the self refusal never reached the panel');
+assert.deepEqual(closeArgs, [], 'no successor, no argument');
+const handedOff = JSON.parse((await call('aiobox_write', { op: 'close_window', window: 'P7·W2', successor: 'abc' })).text);
+assert.deepEqual([handedOff.closed, handedOff.successor, closeArgs].map((x) => JSON.stringify(x)), [true, 'P1·W1', [{ successor: 'P1·W1' }]].map((x) => JSON.stringify(x)));
+assert.match((await call('aiobox_write', { op: 'close_window', window: 'P7·W2', successor: '123' })).text, /cannot succeed itself \(same_window/);
+assert.match((await call('aiobox_write', { op: 'close_window', window: 'P7·W2', successor: 'P9·W9' })).text, /no window 'P9·W9'.*\(no_window/);
+assert.equal(closes, 3, 'a bad successor never reached the panel');
 
 // compose goes through akipanel.live.compose (v2, async), never sends, and names a page or version it cannot use.
 assert.equal((await call('aiobox_write', { op: 'compose', window: 'P7·W2' })).text, 'rejected: op=compose needs text');

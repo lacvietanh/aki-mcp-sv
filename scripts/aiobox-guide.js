@@ -16,7 +16,7 @@ export const GUIDE_FALLBACK = [
   `AIObox guide (short fallback: ~/.aki/aiobox/guide.md is missing; start or update AIObox). Full guide: ${GUIDE_URL}`,
   "1. Find yourself: aki__aiobox op=whoami quote=<20+ chars verbatim from the user's latest message>; name windows by handle P#·W# (lasting).",
   '2. op=state lists windows, macros and flags: skip what it flags. Message a chat: aki__aiobox_write op=send window=<handle> from=<your chatId>; read=live/queued has no busy: op=send sends at once, even mid-answer; delivered:true = it shows there; a draft or read=blocked and busy: add wait=<s>. Never touch a draft or target your own chat.',
-  '3. eval is a last resort and never sends. Never chrome_launch or devtools_* on an AIObox profile; close a window only with op=close_window.',
+  '3. eval is a last resort and never sends. Never chrome_launch or devtools_* on an AIObox profile; close a window only with op=close_window (successor=<your handle> after a handoff).',
 ].join('\n');
 
 // One line for a machine without AIObox (D7, owner 2026-10-04): what it would add, and where to read more. Shown in akidevrule_context and the provider's not-installed reason.

@@ -586,12 +586,12 @@ const PLACE_LIKE_JS = (like) => `(async () => {
     return { error: String(e?.message ?? e) };
   }
 })()`;
-// akipanel.closeWindow() closes the calling tab and refuses itself like newChat (offline, busy, draft, unreadable chat); the tab may be gone before the reply arrives.
-const CLOSE_WINDOW_JS = `(() => {
+// akipanel.closeWindow({ successor }) closes the calling tab and refuses itself like newChat (offline, busy, draft, unreadable chat); the tab may be gone before the reply arrives. successor (a live handle, contract row closeWindow) is the one handoff edge AIObox writes to retired[]: it no longer infers one from placeLike (audit P1-2: any page can call placeLike).
+const CLOSE_WINDOW_JS = (successor) => `(() => {
   const panel = window.akipanel;
   if (!panel) return { error: 'this window has no AIObox panel' };
   if (typeof panel.closeWindow !== 'function') return { missing: true };
-  const r = panel.closeWindow();
+  const r = panel.closeWindow(${successor ? JSON.stringify({ successor }) : ''});
   return r && r.ok === true ? { ok: true } : { error: String(r?.error ?? 'closeWindow() returned no result') };
 })()`;
 const NAVIGATED = /context was destroyed|navigated or closed|Cannot find context/i;
@@ -675,21 +675,23 @@ const WRITE_OPS = {
     if (value?.error) throw new Error(`${tab.handle}: ${value.error}`);
     return ok(JSON.stringify({ ...used, like, placed: true, bounds: value.bounds }, null, 2));
   },
-  // Last step of a handoff: the old window closes itself through AIObox. A tool never closes a tab over CDP (owner 2026-10-04).
+  // Last step of a handoff: the old window closes itself through AIObox, naming the window that took over. A tool never closes a tab over CDP (owner 2026-10-04).
   async close_window(args) {
     need('close_window', args, ['window']);
     const { tab, live: target, used } = await openTab(args);
     if (args.from && args.from === used.chatId) throw new Refusal('self_target', `${tab.handle} is your own chat (${used.chatId})`, 'only a successor closes the window it took over');
+    const successor = args.successor ? resolveTab(readMap(), args.successor).handle : undefined;
+    if (successor === tab.handle) throw new Refusal('same_window', `${tab.handle} cannot succeed itself`, 'pass the window that took over as successor, or leave it out');
     let value;
     try {
-      value = (await cdp.evaluate({ port: tab.port, target, expression: CLOSE_WINDOW_JS })).value;
+      value = (await cdp.evaluate({ port: tab.port, target, expression: CLOSE_WINDOW_JS(successor) })).value;
     } catch (e) {
       if (!NAVIGATED.test(e.message)) throw e;
       value = { ok: true };
     }
     if (value?.missing) throw new Refusal('no_close_window', `${tab.handle} has no AIObox closeWindow (an older AIObox build)`, 'ask the owner to close it; never close a tab over CDP');
     if (value?.error) throw new Error(`${tab.handle}: ${value.error}`);
-    return ok(JSON.stringify({ ...used, closed: true }, null, 2));
+    return ok(JSON.stringify({ ...used, closed: true, ...(successor && { successor }) }, null, 2));
   },
   // No window: flags.json is AIObox-wide. Flagging the same account or workspace again replaces its entry.
   async flag(args) {
@@ -813,13 +815,14 @@ export function register(server) {
       title: 'AIObox: open a window, send or fill a chat, run JS',
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description:
-        'Act in an AIObox window (chatId, handle or targetId; rules: aki__aiobox op=state). expect refuses another chat, from=<your chatId> your own chat. op=new_window: same profile and provider. op=new_chat: a fresh chat in that tab. op=send: sends now, even mid-answer; delivered:true = shown, queued:true = AIObox holds it; wait=s retries a draft. op=compose only fills the box. op=run_macro: runs a macro (macro, option), returns its status. op=place_like: takes the bounds of like. op=close_window: closes the tab (refused while busy or with a draft). op=flag / op=unflag: the do-not-use list (account+profile or workspace). op=eval: runs JS in the page and returns the result (it can click and type).',
+        'Act in an AIObox window (chatId, handle or targetId; rules: aki__aiobox op=state). expect refuses another chat, from=<your chatId> your own chat. op=new_window: same profile and provider. op=new_chat: a fresh chat in that tab. op=send: sends now, even mid-answer; delivered:true = shown, queued:true = AIObox holds it; wait=s retries a draft. op=compose only fills the box. op=run_macro: macro, option; returns its status. op=place_like: takes the bounds of like. op=close_window: closes the tab (not while busy or with a draft); successor=<new window> retires its handle. op=flag / op=unflag: the do-not-use list (account+profile or workspace). op=eval: runs JS in the page (it can click and type).',
       inputSchema: {
         op: z.enum(Object.keys(WRITE_OPS)).describe(Object.keys(WRITE_OPS).join(' | ')),
         window: windowArg,
         expect: expectArg,
         from: z.string().optional().describe('your own chatId (aki__aiobox op=whoami); send, compose, new_chat and close_window refuse it'),
         like: z.string().optional().describe('place_like: the window to copy the place of (handle, chatId or targetId)'),
+        successor: z.string().optional().describe('close_window: the window that took over (handle, chatId or targetId); the closed handle then leads to it'),
         macro: z.string().optional().describe('run_macro: macro id (op=state macros)'),
         option: z.string().optional().describe('run_macro: option id (default: the first)'),
         text: z.string().optional().describe('send, compose: the text'),
