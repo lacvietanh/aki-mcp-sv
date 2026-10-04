@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { loadAllowlist, loadAllowlistDirs } from './allowlist.js';
+import { SETTINGS_PATH } from './userdata.js';
 import { resolveUnderRoot, containedIn, refuseCredentialArgs } from './roots.js';
 import { ok, err, fail } from './mcp-tool.js';
 import { shapeForModel } from './output-shape.js';
@@ -14,6 +15,9 @@ const INTERPRETERS = new Set(['node', 'python', 'python3', 'bun', 'deno', 'tsx',
 
 // ls-remote requires zero extra args — a repository/URL argument lets git's own ext:: transport helper spawn an arbitrary process before anything "read-only" happens; bare invocation only queries the configured remote.
 const GIT_NO_ARGS_SUBCOMMANDS = new Set(['ls-remote']);
+
+// Where a refused command can be added. setting.json is read on every call, so an entry added there works on the next one, no restart (owner: an AI adds a missing command itself instead of asking).
+const HOW_TO_ADD = (entry) => `add ${entry} to shell.allowlist.added in ${SETTINGS_PATH} (live on the next call) or in the control panel, section 6`;
 
 const COMMAND_TIMEOUT_MS = 10_000;
 const MAX_CAPTURE_BYTES = 32 * 1024 * 1024; // what the process may print before it is stopped; what the model reads is bounded separately by shapeForModel
@@ -137,7 +141,7 @@ export class Shell {
             throw new Error(`"git ${args[0]}" only allowed with no further arguments — a repository/URL argument can smuggle code execution via git's transport helpers (ext::, --upload-pack=). To list a remote's tags use the git tool: op=tags, remote=<configured remote name>.`);
           }
           if (args.some((a) => a.startsWith('--output')) || (Object.hasOwn(GIT_READ_FORMS, args[0]) && !GIT_READ_FORMS[args[0]](args.slice(1)))) {
-            throw new Error(`"git ${args.join(' ')}" is a write form: only the read forms of "git ${args[0]}" are allowed (e.g. git branch -a, git tag -l 'v*', git remote -v). To allow every git command, add bare "git" in the control panel (section 6).`);
+            throw new Error(`"git ${args.join(' ')}" is a write form: only the read forms of "git ${args[0]}" are allowed (e.g. git branch -a, git tag -l 'v*', git remote -v). To allow every git command, ${HOW_TO_ADD('bare "git"')}.`);
           }
         }
         return;
@@ -145,7 +149,7 @@ export class Shell {
     }
     if (preallowedByDir(bin, args)) return; // not named (or the named subcommand is blocked), but it targets a script under a trusted zone
     const listed = Object.hasOwn(allowlist, bin) ? ` — "${bin}" is limited to: ${allowlist[bin].join(', ')}` : ' is not in the allowlist';
-    throw new Error(`"${bin}${args[0] ? ` ${args[0]}` : ''}"${listed}. The owner can add it in the control panel, section 6 (Allowed shell commands).`);
+    throw new Error(`"${bin}${args[0] ? ` ${args[0]}` : ''}"${listed}. To allow it, ${HOW_TO_ADD(`"${bin}" (any subcommand) or ["${bin}", "<subcommand>", …]`)}.`);
   }
 
   run(bin, args, cwd) {

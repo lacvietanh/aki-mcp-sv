@@ -4,6 +4,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 
 ## [Unreleased]
 
+### Changed
+- **A command the allowlist refuses says how to allow it without asking** (`scripts/shell-mcp.js`): the refusal of `run_cmd` and `task_start` names the entry to add (`"<bin>"`, `["<bin>", "<subcommand>", …]`, or bare `"git"` for a git write form), `shell.allowlist.added` in `~/.aki/mcpsv/setting.json` (read on every call, so it works on the next one) and panel section 6. A test holds that bare `git` in that file allows `git tag -f` and the other write forms at once.
+
 ## [3.0.0] - 2026-10-04
 
 Major because `chrome_launch` no longer clones profiles and lost `refresh`: it opens only the clones AIObox keeps in `~/.aki/cdp/profiles/` (see Changed, Removed). A chat that cached AkiMCP's earlier tool list does not see the new AIObox ops: reconnect AkiMCP (AIObox macro Connect AkiMCP, option reconnect) or open a new chat.

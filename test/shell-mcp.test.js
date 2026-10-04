@@ -48,7 +48,17 @@ async function run() {
     assert.throws(() => allowed(cmd), /write form/, cmd);
   }
   assert.throws(() => allowed('git push'), /"git" is limited to: .*status/, 'a blocked subcommand names what is allowed');
-  assert.throws(() => allowed('docker ps'), /not in the allowlist.*control panel/, 'a blocked binary says where to add it');
+  assert.throws(() => allowed('docker ps'), /not in the allowlist.*shell\.allowlist\.added in .*setting\.json \(live on the next call\).*control panel/, 'a blocked binary says where to add it, the file first');
+  assert.throws(() => allowed('git tag -f 3.0.0 HEAD'), /write form.*bare "git" to shell\.allowlist\.added in .*setting\.json/, 'a git write form says how to allow it');
+
+  // Bare "git" added to setting.json allows every write form on the next call, no restart, even listed twice beside the default git entry.
+  const settingsPath = path.join(process.env.AKI_MCP_DATA_DIR, 'setting.json');
+  fs.writeFileSync(settingsPath, JSON.stringify({ shell: { allowlist: { added: ['git', 'rm', 'git'], revoked: [] } } }));
+  for (const cmd of ['git tag -f 3.0.0 HEAD', 'git tag -d v1', 'git push', 'git branch -D x']) {
+    assert.doesNotThrow(() => allowed(cmd), cmd);
+  }
+  fs.rmSync(settingsPath);
+  assert.throws(() => allowed('git tag -f 3.0.0 HEAD'), /write form/, 'removing the entry restores the read-only default');
 
   // A failing command returns what it printed AND why it failed; a passing one returns stdout only.
   const node = (code) => shell.run(process.execPath, ['-e', code], process.cwd());
