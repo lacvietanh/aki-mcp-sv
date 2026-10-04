@@ -36,7 +36,8 @@ function detectOne(p) {
 const detectAll = () => {
   detected = new Map(PROVIDERS.map((p) => [p.id, detectOne(p)]));
 };
-const switchedOn = (p, settings) => p.required || settings.providers?.[p.id]?.enabled !== false;
+// optIn providers (agy, kiro) hand a whole task to another paid agent, so they stay off until the owner switches them on.
+const switchedOn = (p, settings) => p.required || (settings.providers?.[p.id]?.enabled ?? !p.optIn);
 
 // Held weakly: warmToolsServer's throwaway server and test servers must stay collectable.
 const mounted = new Set(); // WeakRef<McpServer>

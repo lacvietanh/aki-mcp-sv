@@ -93,7 +93,7 @@ Claude discovers OAuth automatically. No Client ID or Client Secret is needed.
 
 Why not token-in-URL: `docs/ref/claude-connector.md`, `docs/research/claude-ai-oauth-connector.md`.
 
-claude.ai connects and calls the in-house `aki__*` tool suite (38 tools). Tools of an app that is not installed (agy, Kiro CLI, Postman, Chrome, AIObox) are not served, and panel section 8 turns any optional provider off; the client sees the change on its next tool list, usually a new chat. Every tool declares MCP annotations, so ChatGPT stops asking to confirm read-only tools:
+claude.ai connects and calls the in-house `aki__*` tool suite (38 tools). Tools of an app that is not installed (agy, Kiro CLI, Postman, Chrome, AIObox) are not served, and panel section 8 turns any optional provider on or off (agy and Kiro CLI start off); the client sees the change on its next tool list, usually a new chat. Every tool declares MCP annotations, so ChatGPT stops asking to confirm read-only tools:
 - **Chromium Remote & Profiles**: `aki__chrome_profiles`, `aki__chrome_launch`, `aki__chrome_tabs`, `aki__chrome_interact`, `aki__chrome_stop` (opens the shared profile clones AIObox keeps in `~/.aki/cdp/profiles/` on a stealth port-0 launch, or attaches when AIObox already runs the profile; stop kills only a Chrome it launched; React/Vue synthetic typing, scroll-to-center click)
 - **DevTools & CDP**: `aki__devtools_targets`, `aki__devtools_eval`, `aki__devtools_screenshot`
 - **OS Native Integration**: `aki__notify_user` (desktop notification banner & chime sound), `aki__clipboard_read`, `aki__clipboard_write` (system clipboard read/write bridge)

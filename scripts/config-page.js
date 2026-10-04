@@ -484,7 +484,7 @@ ${field('Widen command', WIDEN_SNIPPET)}
 </section>
 
 <section id="s8"><h2>8 · Tool providers</h2>
-<p class="helptext">Each provider is a group of tools the AI sees. One that is not installed on this machine (Chrome, Postman, agy, kiro-cli) is hidden automatically; switch off one you do not use to keep the AI's tool list short. Rule context, files, search and shell are always on.</p>
+<p class="helptext">Each provider is a group of tools the AI sees. One that is not installed on this machine (Chrome, Postman, agy, kiro-cli) is hidden automatically; switch off one you do not use to keep the AI's tool list short. The agy and Kiro CLI tools start off, because each hands a whole task to another paid agent: switch them on here when you want them. Rule context, files, search and shell are always on.</p>
 <p class="helptext">A switch applies on this server at once. An AI client sees it the next time it lists tools, which for most clients means a new chat or reconnecting the connector. After installing or removing an app, press Detect again.</p>
 <div id="providersList"></div>
 <div class="acts">

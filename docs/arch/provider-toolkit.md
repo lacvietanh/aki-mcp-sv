@@ -1,6 +1,6 @@
 # Provider toolkit — how tools are hosted, hidden and added
 
-> updated 2026-10-03 · v3.0.0 (plan: [`plan/provider-toolkit-architecture.md`](../plan/provider-toolkit-architecture.md), measurements: [`research/tool-surface-provider-toolkit.md`](../research/tool-surface-provider-toolkit.md))
+> updated 2026-10-04 · v3.0.0 (plan: [`plan/provider-toolkit-architecture.md`](../plan/provider-toolkit-architecture.md), measurements: [`research/tool-surface-provider-toolkit.md`](../research/tool-surface-provider-toolkit.md))
 
 The tools server is one `McpServer` that hosts every tool module (a provider). This doc is the contract for what each provider declares, how the registry decides what a client sees, the shape a new provider takes, and the test that holds the whole surface in place. Tool names and schemas of the existing 36 tools were not changed by it.
 
@@ -29,7 +29,7 @@ export const provider = {
 
 1. Detect runs once, at the first mount (boot), and again only on `redetect()`. It answers "is the app installed", never "is it running", and spawns nothing: binaries are found by `scripts/find-on-path.js` (`PATHEXT` suffixes on win32 are a data table). Postman is the one exception that may run `which`/`where` once, and only when Postman is not at its standard path (`postman-paths.cjs`).
 2. Every provider is always registered, so `warmToolsServer` still catches a schema error in any of them. A provider that is not available or is switched off has its tool handles disabled: it is absent from `tools/list`, and a call fails with the SDK's disabled-tool error.
-3. The switch is `providers.<id>.enabled` in `setting.json` (default on). `required: true` providers cannot be switched off: `rule` (the rule prompt and AIObox call it by name), `filesystem`, `search`, `shell` (core primitives). `cdp` has no detect because it also serves Postman, VS Code and AIObox's Chrome; hiding it by "no session running" would hide it exactly when an attach needs it.
+3. The switch is `providers.<id>.enabled` in `setting.json`. With no saved value a provider is on, except the two that declare `optIn: true` (`agy`, `kiro`): they hand a whole task to another paid agent, so they stay off until the owner switches them on in panel section 8. `required: true` providers cannot be switched off: `rule` (the rule prompt and AIObox call it by name), `filesystem`, `search`, `shell` (core primitives). `cdp` has no detect because it also serves Postman, VS Code and AIObox's Chrome; hiding it by "no session running" would hide it exactly when an attach needs it.
 4. API: `listProviders()` → `[{ id, title, required, available, reason, enabled, tools }]`; `setEnabled(id, bool)` writes `setting.json` atomically and applies to every mounted server; `redetect()` reruns detect without a restart.
 5. Panel section 8 "Tool providers" reads `GET /api/providers` and posts `{ id, enabled }` or `{ redetect: true }` to `POST /api/providers` (same `x-panel-token` as every panel route). A client sees a change on its next `tools/list`, which for web clients usually means a new chat; the bridge has no server → client channel for `list_changed`.
 

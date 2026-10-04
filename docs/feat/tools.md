@@ -1,6 +1,6 @@
 # Tools — the local capability suite (anchored)
 
-> updated 2026-10-03 · v3.0.0
+> updated 2026-10-04 · v3.0.0
 
 The product's single purpose: give a remote web AI (claude.ai / ChatGPT / Grok / Gemini / Postman) a set of **local capabilities** on the owner's machine — a pair of hands reaching from the browser into the local filesystem, shell, and local agents. Every tool below exists to serve that anchor. This doc records **why each one is here** so a later subtraction audit does not mistake an anchored capability for redundant code and propose removing it.
 
@@ -19,7 +19,7 @@ The product's single purpose: give a remote web AI (claude.ai / ChatGPT / Grok /
 
 ## Providers and annotations
 
-Each tool module is a provider (`scripts/provider-registry.js`; contract: [`arch/provider-toolkit.md`](../arch/provider-toolkit.md)). A provider whose app is not installed is not served (agy and Kiro CLI not on `PATH`, no Postman app, no Chromium browser, no `~/.aki/aiobox/`), and panel section 8 switches any optional provider off (`providers.<id>.enabled` in `setting.json`); `rule`, `filesystem`, `search` and `shell` are always on. Every tool declares MCP annotations: `readOnlyHint: true` only when it cannot write by mechanism, so ChatGPT stops asking to confirm reads while every write tool still asks. `test/tool-surface.test.js` holds the size budget of `tools/list`, the annotations, the 700-character description cap and the cross-references between descriptions.
+Each tool module is a provider (`scripts/provider-registry.js`; contract: [`arch/provider-toolkit.md`](../arch/provider-toolkit.md)). A provider whose app is not installed is not served (agy and Kiro CLI not on `PATH`, no Postman app, no Chromium browser, no `~/.aki/aiobox/`), and panel section 8 switches any optional provider on or off (`providers.<id>.enabled` in `setting.json`). `agy` and `kiro` start off, because each hands a whole task to another paid agent; the owner switches them on there. `rule`, `filesystem`, `search` and `shell` are always on. Every tool declares MCP annotations: `readOnlyHint: true` only when it cannot write by mechanism, so ChatGPT stops asking to confirm reads while every write tool still asks. `test/tool-surface.test.js` holds the size budget of `tools/list`, the annotations, the 700-character description cap and the cross-references between descriptions.
 
 ## Layout of `scripts/postman/` (Postman only)
 

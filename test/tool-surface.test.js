@@ -89,6 +89,16 @@ for (const id of ['git', 'postman']) {
   const on = await servedNames();
   if (available) assert.ok(own.every((n) => on.includes(n)), `${id} tools missing after setEnabled(true)`);
 }
+// agy and kiro are opt-in: off until the owner switches them on, whether or not the CLI is installed.
+for (const id of ['agy', 'kiro']) {
+  const { tools: own, available, enabled } = providers.find((p) => p.id === id);
+  assert.equal(enabled, false, `${id} is off by default`);
+  assert.ok(own.every((n) => !tools.some((t) => t.name === n)), `${id} tools are not served by default`);
+  assert.equal(setEnabled(id, true).enabled, true);
+  const on = await servedNames();
+  if (available) assert.ok(own.every((n) => on.includes(n)), `${id} tools served once switched on`);
+  setEnabled(id, false);
+}
 for (const id of ['rule', 'filesystem', 'search', 'shell']) assert.throws(() => setEnabled(id, false), /always on/, `${id} must refuse to switch off`);
 assert.throws(() => setEnabled('nope', false), /unknown provider/);
 

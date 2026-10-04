@@ -36,6 +36,7 @@ const effortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max']).optional(
 export const provider = {
   id: 'kiro',
   title: 'Kiro CLI (read-only)',
+  optIn: true,
   detect: () => (findOnPath('kiro-cli') ? { available: true } : { available: false, reason: 'kiro-cli is not on PATH' }),
   register,
 };

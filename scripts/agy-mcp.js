@@ -35,6 +35,7 @@ function run(args, cwd) {
 export const provider = {
   id: 'agy',
   title: 'Antigravity CLI (agy)',
+  optIn: true,
   detect: () => (findOnPath('agy') ? { available: true } : { available: false, reason: 'agy is not on PATH' }),
   register,
 };
