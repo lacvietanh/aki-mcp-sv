@@ -75,6 +75,10 @@ if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
   const args = process.argv.slice(2);
   const daysAt = args.indexOf('--days');
   const days = daysAt === -1 ? null : Number(args[daysAt + 1]);
+  if (days !== null && !(days > 0)) {
+    console.error('--days takes a number of days, e.g. npm run tool-calls -- --days 7');
+    process.exit(2);
+  }
   const file = args.find((a, i) => !a.startsWith('--') && (daysAt === -1 || i !== daysAt + 1)) || TOOL_CALLS_PATH;
   if (!fs.existsSync(file)) {
     console.error(`no call log at ${file} yet: it is written once an AI calls aki__aiobox, aki__aiobox_write, aki__chrome_* or aki__devtools_* on AkiMCP ${VERSION}+`);

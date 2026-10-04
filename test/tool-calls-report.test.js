@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { report, readEntries } from '../scripts/tool-calls-report.js';
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tool-calls-report-'));
@@ -35,6 +37,26 @@ assert.equal(r.C5_olderVersion, 1);
 assert.deepEqual(r.C6_refusals, { no_window: 1 });
 assert.equal(r.typedOpSuccess, '50%', 'compose, state ok; read, bogus failed');
 assert.equal(readEntries(file, { sinceMs: now - 7 * 86_400_000 }).length, 6, '--days drops older lines');
+
+// The CLI (npm run tool-calls): a file and --days in either order, a clear message and a non-zero exit for no log or a bad --days. HOME points at the temp dir so the owner's AIObox map is never read.
+const cli = (...args) => spawnSync(process.execPath, [fileURLToPath(new URL('../scripts/tool-calls-report.js', import.meta.url)), ...args], { encoding: 'utf8', env: { ...process.env, HOME: dir, USERPROFILE: dir, AKI_MCP_DATA_DIR: dir } });
+const whole = cli(file);
+assert.equal(whole.status, 0, whole.stderr);
+assert.deepEqual([JSON.parse(whole.stdout).file, JSON.parse(whole.stdout).days, JSON.parse(whole.stdout).aioboxCalls], [file, null, 6]);
+for (const args of [[file, '--days', '7'], ['--days', '7', file]]) {
+  const week = JSON.parse(cli(...args).stdout);
+  assert.deepEqual([week.days, week.C5_olderVersion], [7, 0], `--days 7 leaves the 9-day-old 2.2.0 call out (${args.join(' ')})`);
+}
+const defaultLog = JSON.parse(cli().stdout);
+assert.equal(defaultLog.file, path.join(dir, 'tool-calls.jsonl'), 'no file argument reads the log in the data dir');
+const none = cli(path.join(dir, 'absent.jsonl'));
+assert.equal(none.status, 1);
+assert.match(none.stderr, /no call log at .*absent\.jsonl yet/);
+for (const bad of [['--days', 'week'], ['--days'], ['--days', '0']]) {
+  const refused = cli(file, ...bad);
+  assert.equal(refused.status, 2, `--days ${bad[1] ?? ''} is refused`);
+  assert.match(refused.stderr, /--days takes a number of days/);
+}
 
 fs.rmSync(dir, { recursive: true, force: true });
 console.log('tool-calls-report.test.js: ok');

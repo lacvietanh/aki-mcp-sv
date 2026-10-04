@@ -365,6 +365,12 @@ assert.match((await call('aiobox_write', { op: 'send', window: '123', text: 'x',
 assert.deepEqual(sent, ['go on'], 'refusals send nothing');
 pages['T-GPT'].akipanel = readonlyPanel({ capabilities: { send: 2 }, live: { send: async () => ({ ok: true }) } });
 assert.match((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'x' })).text, /send capability version 2 in P7·W2 is not supported \(expected 1\)/);
+// A page that can send but has no chat reader has no busy state to wait for: wait= is skipped, and a send that reports nothing is an error, never "sent".
+pages['T-GPT'].akipanel = readonlyPanel({ capabilities: { send: 1 }, live: { send: async () => undefined } });
+const noReaderStarted = Date.now();
+assert.equal((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'x', wait: 30 })).text, 'rejected: P7·W2: live.send() returned no result');
+assert.ok(Date.now() - noReaderStarted < 2000, 'no wait without a reader');
+assert.equal((await call('aiobox_write', { op: 'send', window: 'P7·W2' })).text, 'rejected: op=send needs text');
 
 assert.equal((await call('aiobox_write', { op: 'eval', window: 'P7·W2' })).text, 'rejected: op=eval needs expression');
 const evaluated = JSON.parse((await call('aiobox_write', { op: 'eval', window: 'T-GPT', expression: '6*7' })).text);
