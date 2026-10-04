@@ -63,6 +63,10 @@ async function run() {
   const flood = await node('for (let i=0;i<20000;i++) console.log("line "+i+" "+"z".repeat(30))');
   assert.match(flood.content[0].text.split('\n')[0], /^\[output cut: /, 'a flood is cut and announced on line 1');
 
+  const missing = await shell.run('aki-no-such-binary-xyz', [], process.cwd());
+  assert.equal(missing.isError, true);
+  assert.match(missing.content[0].text, /^\["aki-no-such-binary-xyz" is not an executable on PATH \(on Windows a \.cmd shim/, 'a binary that is not there says so, with the Windows cause');
+
   console.log('shell-mcp.test.js: ok');
 }
 

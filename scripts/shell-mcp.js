@@ -152,7 +152,7 @@ export class Shell {
       execFile(bin, args, { cwd, timeout: COMMAND_TIMEOUT_MS, maxBuffer: MAX_CAPTURE_BYTES, windowsHide: true }, (error, stdout, stderr) => {
         if (!error) return resolve(ok(shapeForModel(stdout) || '(no output)'));
         // A failing command's stdout is often the useful part (test failures, grep's partial hits), so it is returned with stderr and the reason.
-        const reason = error.killed ? `timed out after ${COMMAND_TIMEOUT_MS / 1000}s` : typeof error.code === 'number' ? `exit code ${error.code}` : error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' ? 'output exceeded the capture limit, the rest was dropped' : error.message;
+        const reason = error.killed ? `timed out after ${COMMAND_TIMEOUT_MS / 1000}s` : typeof error.code === 'number' ? `exit code ${error.code}` : error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' ? 'output exceeded the capture limit, the rest was dropped' : error.code === 'ENOENT' ? `"${bin}" is not an executable on PATH (on Windows a .cmd shim such as npm, or a PowerShell cmdlet, cannot be run by this tool)` : error.message;
         resolve(err(`[${reason}]\n${shapeForModel([stdout, stderr].filter(Boolean).map((s) => s.replace(/\n+$/, '')).join('\n'))}`.trimEnd()));
       });
     });

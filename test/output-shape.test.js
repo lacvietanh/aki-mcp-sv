@@ -37,7 +37,8 @@ assert.match(shaped, /\[\.\.\. \d+ lines omitted \.\.\.\]/);
 assert.ok(rest.every((l) => l.startsWith('row ') || l.startsWith('[...')), 'no line is cut in half');
 const saved = /saved to (.+?) — read_text_file/.exec(marker)[1];
 assert.equal(fs.readFileSync(saved, 'utf8'), raw, 'the saved file is the raw output, unmodified');
-assert.equal(fs.statSync(saved).mode & 0o777, 0o600, 'the saved file is owner-only');
+// Windows has no POSIX mode bits: stat reports 0o666 whatever was asked.
+if (process.platform !== 'win32') assert.equal(fs.statSync(saved).mode & 0o777, 0o600, 'the saved file is owner-only');
 
 // Cleaning happens before the cut, but the saved file is the RAW text (colour codes included).
 const coloured = Array.from({ length: 3000 }, (_, i) => `\x1b[32mok ${i}\x1b[0m ${'y'.repeat(20)}`).join('\n');
