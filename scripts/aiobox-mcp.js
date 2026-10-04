@@ -855,7 +855,7 @@ const WRITE_OPS = {
     const request = await sendRequest('handoff_open', { ...target, like, text: args.text });
     const out = requestOutcome('handoff_open', request, await awaitRequestRun(request, waitLimitS(args.wait, CALL_WAIT_MAX_S) * 1000));
     const opened = out.result?.handle ? { window: out.result.handle, targetId: out.result.targetId ?? null, chatId: out.result.chatId ?? null } : {};
-    const next = out.outcome === 'ok' ? { next: `op=read last=2 on ${opened.window ?? 'the new window'} to see it took the text, then op=close_window window=${like} successor=${opened.window ?? '<new window>'}` } : {};
+    const next = out.outcome === 'ok' ? { next: `op=read last=2 on ${opened.window ?? 'the new window'} to see it took the text; only if ${like} is the window handing off, then op=close_window window=${like} successor=${opened.window ?? '<new window>'}` } : {};
     return ok(JSON.stringify({ ...opened, ...target, like, ...out, ...next }, null, 2));
   },
   // Same tab, fresh chat: the chat id is only in the URL after the first message, so the result has none.
