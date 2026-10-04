@@ -1,5 +1,7 @@
 # Chrome remote debugging blocked on the default profile
 
+Status: amended 2026-10-04 · the finding still holds (Chrome 136+ ignores the debugging switches on the default user-data dir), and `scripts/chrome.js` was removed as decided here; Chrome control came back in 3.0.0 on non-default directories only: `aki__chrome_launch` opens or attaches to AIObox's cloned profiles (`docs/plan/IMPORTANT-shared-cdp-profiles.md`), never the default profile.
+
 **Start time:** 2026-08-08
 
 **Initial purpose:** During the Windows/Linux unification plan for this repo, the claim "Chrome stopped allowing CDP after version 131" needed verification before deciding whether `scripts/chrome.js` (the panel's "Connect Chrome" / tab-eval feature, driven via `--remote-debugging-port` against the user's real, default Chrome profile) could simply be ported to Windows, or had to be removed outright. Context at the time: `chrome.js` launches Chrome with `open -a "Google Chrome" --args --remote-debugging-port=9222 --restore-last-session` — no `--user-data-dir` — specifically so it attaches to the user's already-logged-in profile rather than a throwaway one.

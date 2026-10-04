@@ -1,5 +1,7 @@
 # Instruction prompt — first-principles analysis of mandatory roots
 
+Status: superseded 2026-10-04 · the paste-in prompt became static and two lines in 2.2.0 (CHANGELOG `[2.2.0]`), and the roots it kept now live in the `aki__akidevrule_context` description and server `instructions` (`docs/arch/rule-context-delivery.md`, the canonical target); kept as historical reasoning.
+
 **Start time:** 2026-08-10
 
 **Initial purpose:** Decide what *must* live in the pasteable MCP instruction prompt (`buildPrompt()` in `scripts/config-page.js`) versus what is already guaranteed by the force-loaded akidevrule core (`index.md`, `RULE-agent-behavior.md`, `RULE-coding.md`, `RULE-design-core.md` + router `akirule/SKILL.md`). Context: prior work (`docs/plan/done/instruction-prompt-improve.md`, shipped 1.2.0) fixed prefix-repetition and added the working.md workflow under ChatGPT's 1500-char cap, but left open the deeper question of residual failure modes (YAPPING, wrong tool selection, sandbox/real-FS confusion) that persist even when core rules are present. Constraints at the time: one prompt serves all clients (Claude, ChatGPT, Gemini, Grok); ChatGPT hard-caps at 1500 chars; workers/subagents inherit neither router nor conversation context.
