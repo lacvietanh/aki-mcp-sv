@@ -2,7 +2,7 @@
 // Minimal OAuth 2.1 authorization server.
 // Claude: pre-registered confidential client (paste Client ID/Secret), or DCR if it self-registers.
 // ChatGPT: RFC 7591 DCR + public client (token_endpoint_auth_method: none) + chatgpt.com redirect URIs.
-import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
+import { randomBytes, randomInt, createHash, timingSafeEqual } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync, renameSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import {
@@ -34,11 +34,12 @@ const STATIC_CLIENT_NAME = 'Claude (pre-registered)';
 // OAuth bodies are a few hundred bytes; the cap keeps an unauthenticated caller from making the server buffer an arbitrary upload.
 const MAX_BODY_BYTES = 64 * 1024;
 const MAX_LOGGED_TEXT = 64;
-const cut = (text) => String(text ?? '').slice(0, MAX_LOGGED_TEXT);
+// Caller-supplied text (client_name, grant labels) reaches the log and the panel: control characters go, so a newline cannot forge a log line.
+const cut = (text) => String(text ?? '').replace(/[\x00-\x1f\x7f]/g, ' ').slice(0, MAX_LOGGED_TEXT);
 const ACCESS_TTL_S = 365 * 24 * 3600;
-// no 0/o/1/l/i — avoid visual ambiguity when typing; 32 chars = power of 2, unbiased byte%32
+// no 0/o/1/l/i — avoid visual ambiguity when typing; 31 symbols, drawn with randomInt so none is favoured
 const PASSPHRASE_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
-const PASSPHRASE_LENGTH = 10; // 32^10 = 2^50 — brute-force still infeasible over network
+const PASSPHRASE_LENGTH = 10; // 31^10 ≈ 2^49.5 — brute-force still infeasible over network
 // Display-only, to avoid leaking the OS username on a page reachable pre-passphrase; the file read below still uses PASSPHRASE_FILE.
 const PASSPHRASE_DISPLAY_PATH = PASSPHRASE_FILE.replace(os.homedir(), '~');
 
@@ -253,8 +254,7 @@ function resolveClient(clientId) {
 
 export function loadOrCreatePassphrase() {
   if (existsSync(PASSPHRASE_FILE)) return readFileSync(PASSPHRASE_FILE, 'utf8').trim();
-  const bytes = randomBytes(PASSPHRASE_LENGTH);
-  const p = Array.from(bytes, (b) => PASSPHRASE_ALPHABET[b % PASSPHRASE_ALPHABET.length]).join('');
+  const p = Array.from({ length: PASSPHRASE_LENGTH }, () => PASSPHRASE_ALPHABET[randomInt(PASSPHRASE_ALPHABET.length)]).join('');
   // AIObox reads this one-line file to fill the authorize page (docs/plan/IMPORTANT-akimcp-aiobox-contract.md).
   writeFileSync(PASSPHRASE_FILE, p, { mode: 0o600 });
   return p;
@@ -327,7 +327,7 @@ export async function handleRegister(req, res) {
     clientSecret,
     redirectUris,
     tokenEndpointAuthMethod: authMethod,
-    clientName: typeof body.client_name === 'string' ? body.client_name : 'MCP client',
+    clientName: typeof body.client_name === 'string' && body.client_name.trim() ? cut(body.client_name) : 'MCP client',
     firstSeenAt: Date.now(),
   };
   const map = loadDcrClients();

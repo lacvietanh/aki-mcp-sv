@@ -47,6 +47,15 @@ for (const body of ['null', '[]', '7']) {
   assert.equal(res.status, 400, `/mcp answers 400 to the JSON body ${body}`);
   assert.equal((await res.json()).error.code, -32600);
 }
+const named = await fetch(`${base}/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ redirect_uris: ['https://claude.ai/api/mcp/auth_callback'], client_name: `Evil\n[security] token granted ${'x'.repeat(500)}` }) });
+assert.equal(named.status, 201);
+const storedName = (await named.json()).client_name;
+assert.equal(storedName.length, 64, 'a client name is cut to 64 characters');
+assert.ok(!/[\x00-\x1f]/.test(storedName), 'and carries no control character into the log or the panel');
+
+const { loadOrCreatePassphrase } = await import('../scripts/oauth.js');
+assert.match(loadOrCreatePassphrase(), /^[abcdefghjkmnpqrstuvwxyz23456789]{10}$/);
+
 assert.deepEqual(unhandled, []);
 
 server.close();

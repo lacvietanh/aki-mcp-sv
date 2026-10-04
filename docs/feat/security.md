@@ -51,7 +51,7 @@ gatekeeper.js  ── /register  → RFC 7591, redirect URI must be allowlisted
 - **Hardening from the same PR:** a `client_id` such as `constructor` or `__proto__` no longer resolves a prototype member and crashes the process; a `/register` body that is `null`, an array or a scalar returns `400`; a rejected callback logs only its origin, unknown grant types log as `unsupported`, and request logs omit the query string.
 
 The two layers that actually block access:
-1. **Passphrase at `/authorize`** — 10 random characters from `abcdefghjkmnpqrstuvwxyz23456789` (32 symbols, 50 bits). Without it no authorization code is issued. Deliberately not a bare Approve button: `POST /authorize` is public, and a scripted request cannot be told apart from a click without a secret.
+1. **Passphrase at `/authorize`** — 10 random characters from `abcdefghjkmnpqrstuvwxyz23456789` (31 symbols, about 49.5 bits). Without it no authorization code is issued. Deliberately not a bare Approve button: `POST /authorize` is public, and a scripted request cannot be told apart from a click without a secret.
 2. **PKCE S256** — a token is issued only to the client whose `code_verifier` matches the `code_challenge` of that authorization.
 
 **Whoever knows the passphrase can get a token.** They can register their own client and read the code off the redirect. The passphrase is therefore the real key, and a leaked passphrase is handled as a leaked token (see When something leaks).
@@ -95,7 +95,7 @@ Verdict record (`proportion.C1`):
 | Reach | anyone who learns the public hostname (estimated: Funnel hostnames appear in certificate transparency logs, so scanners find them) |
 | Capability | plain HTTP requests (estimated: lowest rung) |
 | Motive | shell and file access on the owner's machine (estimated: high) |
-| Blast radius | brute force cannot succeed (50-bit passphrase, 256-bit token; at 1,000 guesses per second the passphrase takes about 35,000 years, calculated; at the default 5 per minute per address, far longer); the reachable harm is a disk and CPU flood through unauthenticated `/register` and log noise, recoverable |
+| Blast radius | brute force cannot succeed (49.5-bit passphrase, 256-bit token; at 1,000 guesses per second trying every passphrase takes about 26,000 years, calculated; at the default 5 per minute per address, far longer); the reachable harm is a disk and CPU flood through unauthenticated `/register` and log noise, recoverable |
 | Rung | 2: enforced once at the gatekeeper, the trust boundary that already exists |
 
 **Reopen when** the ingress is confirmed to forward no client address (then per-caller keys need another source or a global cap), a second user or a shared host is added, or the passphrase becomes user-chosen.
