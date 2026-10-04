@@ -338,22 +338,21 @@ const WAIT_IDLE_DEFAULT_S = CALL_WAIT_MAX_S;
 const WAIT_IDLE_POLL_MS = 1_000;
 const WAIT_AGAIN = 'still answering: call op=wait_idle again (one call waits at most 50 s)';
 
-// Coordination files AIObox's agent tools write (contract: claims.json, flags.json, blocked-workspaces.json); AkiMCP only reads them. A missing or unreadable file is no entry, and an entry past its until is gone.
-function readList(name, key) {
+// Coordination files AIObox's agent tools write (contract rows claims.json, flags.json); AkiMCP only reads them. A missing or unreadable file is no entry.
+// flags.json is the one "do not use X" list (guide v10): { list: [...] } or a bare array, scope account (the default) or workspace, no until = until `agent.mjs unflag`. A claim always has an until.
+function readList(name) {
   try {
     const raw = JSON.parse(fs.readFileSync(path.join(aioboxDir(), name), 'utf8'));
-    const list = key ? raw?.[key] : raw;
-    return Array.isArray(list) ? list : [];
+    const list = Array.isArray(raw) ? raw : raw?.list;
+    return Array.isArray(list) ? list.filter((e) => e && typeof e === 'object') : [];
   } catch {
     return [];
   }
 }
-const unexpired = (e, now) => Date.parse(e?.until) > now;
+const inForce = (e, now) => e.until === undefined || e.until === null || Date.parse(e.until) > now;
 const coordination = (now = Date.now()) => ({
-  claims: readList('claims.json').filter((e) => unexpired(e, now)),
-  flags: readList('flags.json').filter((e) => unexpired(e, now)),
-  // until null = blocked until the owner lifts it
-  blocked: readList('blocked-workspaces.json', 'list').filter((e) => e && (e.until === null || unexpired(e, now))),
+  claims: readList('claims.json').filter((e) => Date.parse(e.until) > now),
+  flags: readList('flags.json').filter((e) => inForce(e, now)).map((e) => ({ scope: 'account', ...e })),
 });
 const DRAFT_WARNING = 'the message box holds a draft, so busy may read false while it still answers (Notion); read it again later with op=read, and never touch the draft';
 const renumberedOf = (map) => (map.renumbered ? { ...map.renumbered, warning: renumberWarning(map.renumbered) } : null);
@@ -685,7 +684,7 @@ export function register(server) {
       title: 'AIObox: read windows by handle',
       annotations: { readOnlyHint: true, openWorldHint: false },
       description:
-        'Read AIObox Chrome windows. Start with op=state: every window (chatId, provider, account, busy), macros, current claims, flags and blocked workspaces, and the guide for acting in AIObox. op=whoami quote=<20+ chars verbatim from the latest user message> finds your own window. Name a window by chatId (stable) or handle P#·W# (a label, renumbered on restart) or targetId; expect refuses a handle that now names another tab. op=windows: tabs only. op=read: last messages (last=N), else page text. op=wait_idle: waits until the chat stops answering (timeout s), returns its last messages. op=text: elements by selector. op=screenshot. Results name the tab used. Acting: aki__aiobox_write.',
+        'Read AIObox Chrome windows. Start with op=state: every window (chatId, provider, account, busy), macros, current claims and flags, and the guide for acting in AIObox. op=whoami quote=<20+ chars verbatim from the latest user message> finds your own window. Name a window by chatId (stable) or handle P#·W# (a label, renumbered on restart) or targetId; expect refuses a handle that now names another tab. op=windows: tabs only. op=read: last messages (last=N), else page text. op=wait_idle: waits until the chat stops answering (timeout s), returns its last messages. op=text: elements by selector. op=screenshot. Results name the tab used. Acting: aki__aiobox_write.',
       inputSchema: {
         op: z.enum(Object.keys(READ_OPS)).describe(Object.keys(READ_OPS).join(' | ')),
         window: windowArg,

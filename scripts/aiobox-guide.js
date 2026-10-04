@@ -13,10 +13,10 @@ export const GUIDE_URL = 'https://aiobox.app/guide/aiobox.md';
 // Only while the file is missing or malformed (AIObox older than the guide, or not started since an update): the few rules that stop the worst mistakes, and where the full guide is.
 // Step 2's eval send is temporary (P3·W6, 2026-10-04): it goes once op=send takes a busy live/queued chat (aiobox docs/plan/aio-loop-automation.md L0).
 export const GUIDE_FALLBACK = [
-  `AIObox guide (short fallback: ~/.aki/aiobox/guide.md is missing or malformed; start or update AIObox). Full guide: ${GUIDE_URL}`,
+  `AIObox guide (short fallback: ~/.aki/aiobox/guide.md is missing; start or update AIObox). Full guide: ${GUIDE_URL}`,
   "1. Find yourself: aki__aiobox op=whoami quote=<20+ chars verbatim from the user's latest message>; name every window by its chatId.",
-  '2. op=state lists windows (busy, read) and macros. Message another chat: aki__aiobox_write op=send window=<chatId> from=<your chatId>; busy with read=blocked: add wait=<s>. Busy with read=live/queued: op=send refuses, so one op=eval there, only if its box is empty: await akipanel.live.compose(text), then click [aria-label="Submit AI message"]; confirm akipanel.live.chat() user turns grew by one before sending again. Never touch a draft or target your own chat.',
-  '3. eval is a last resort; it sends only as in step 2. Never chrome_launch or devtools_* on an AIObox profile.',
+  '2. op=state lists windows, macros and flags: skip what it flags. Message a chat: aki__aiobox_write op=send window=<chatId> from=<your chatId>; busy with read=blocked: add wait=<s>. Busy with read=live/queued: op=send refuses, so one op=eval there, only if its box is empty: await akipanel.live.compose(text), then click [aria-label="Submit AI message"]; check live.chat() shows one more user turn before sending again. Never touch a draft or target your own chat.',
+  '3. eval is a last resort; it sends only as in step 2. Never chrome_launch or devtools_* on an AIObox profile; close a window only with op=close_window.',
 ].join('\n');
 
 // One line for a machine without AIObox (D7, owner 2026-10-04): what it would add, and where to read more. Shown in akidevrule_context and the provider's not-installed reason.

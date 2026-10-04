@@ -197,7 +197,7 @@ pages['T-GPT'] = { akipanel: readonlyPanel({ capabilities: {} }), body: 'history
 const state = JSON.parse((await call('aiobox', { op: 'state' })).text);
 assert.equal(state.akimcp, VERSION);
 assert.deepEqual(state.ops, { aiobox: ['windows', 'state', 'whoami', 'read', 'wait_idle', 'text', 'screenshot'], aiobox_write: ['new_window', 'new_chat', 'place_like', 'close_window', 'compose', 'send', 'run_macro', 'eval'] });
-assert.deepEqual([state.claims, state.flags, state.blocked], [[], [], []], 'no coordination files yet: empty lists');
+assert.deepEqual([state.claims, state.flags], [[], []], 'no coordination files yet: empty lists');
 // No ~/.aki/aiobox/guide.md yet: the short fallback, pointing at the web guide.
 assert.match(state.guide, /^AIObox guide \(short fallback.*https:\/\/aiobox\.app\/guide\/aiobox\.md/);
 assert.equal(state.guideVersion, null);
@@ -211,20 +211,24 @@ assert.deepEqual([withFile.guide, withFile.guideVersion], [guideText, 5]);
 fs.writeFileSync(guidePath, '# AIObox guide\nno frontmatter\n');
 assert.equal(JSON.parse((await call('aiobox', { op: 'state' })).text).guideVersion, null, 'a malformed head falls back');
 fs.rmSync(guidePath);
-// Claims, flags and blocked workspaces come from AIObox's agent files, only the ones still in force.
+// Claims and flags come from AIObox's agent files, only the ones still in force; flags.json (guide v10) is { list } or a bare array, scope account or workspace, no until = until unflag.
 const soon = new Date(Date.now() + 3_600_000).toISOString();
 const gone = new Date(Date.now() - 1_000).toISOString();
 const aioboxHome = path.join(home, '.aki', 'aiobox');
 fs.writeFileSync(path.join(aioboxHome, 'claims.json'), JSON.stringify([{ chatId: 'abc', repo: '/r', paths: ['a.js'], task: 't', since: gone, until: soon }, { chatId: 'old', repo: '/r', paths: ['b.js'], task: 't', since: gone, until: gone }]));
-fs.writeFileSync(path.join(aioboxHome, 'flags.json'), JSON.stringify([{ account: 'x@y', profileId: 'p', reason: 'interrupted', flaggedAt: gone, until: gone }]));
-fs.writeFileSync(path.join(aioboxHome, 'blocked-workspaces.json'), JSON.stringify({ list: [{ workspace: 'dldn.1', provider: 'notion', reason: 'owner', blockedAt: gone, until: null }] }));
+fs.writeFileSync(path.join(aioboxHome, 'flags.json'), JSON.stringify({ list: [
+  { scope: 'account', account: 'x@y', profileId: 'p', provider: 'notion', reason: 'interrupted', flaggedAt: gone, until: gone },
+  { scope: 'workspace', workspace: 'dldn.1', provider: 'notion', reason: 'usage policy', flaggedAt: gone },
+  { scope: 'account', account: 'z@y', profileId: 'q', provider: 'notion', reason: 'interrupted', flaggedAt: gone, until: soon },
+] }));
 const coordinated = JSON.parse((await call('aiobox', { op: 'state' })).text);
 assert.deepEqual(coordinated.claims.map((c) => c.chatId), ['abc'], 'an expired claim is gone');
-assert.deepEqual(coordinated.flags, [], 'an expired flag is gone');
-assert.deepEqual(coordinated.blocked.map((b) => b.workspace), ['dldn.1'], 'until null stays blocked');
+assert.deepEqual(coordinated.flags.map((f) => f.workspace ?? f.account), ['dldn.1', 'z@y'], 'an expired flag is gone, one without until stays');
+fs.writeFileSync(path.join(aioboxHome, 'flags.json'), JSON.stringify([{ account: 'old@v9', profileId: 'p', reason: 'interrupted', flaggedAt: gone, until: soon }]));
+assert.deepEqual(JSON.parse((await call('aiobox', { op: 'state' })).text).flags.map((f) => [f.scope, f.account]), [['account', 'old@v9']], 'a v9 bare array still reads, without scope = account');
 fs.writeFileSync(path.join(aioboxHome, 'claims.json'), 'not json');
 assert.deepEqual(JSON.parse((await call('aiobox', { op: 'state' })).text).claims, [], 'an unreadable file is no claim');
-for (const name of ['claims.json', 'flags.json', 'blocked-workspaces.json']) fs.rmSync(path.join(aioboxHome, name));
+for (const name of ['claims.json', 'flags.json']) fs.rmSync(path.join(aioboxHome, name));
 const notionRow = state.tabs.find((t) => t.targetId === 'T-NOTION');
 assert.equal(notionRow.busy, true);
 assert.deepEqual(notionRow.account, account);

@@ -5,7 +5,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 ## [Unreleased]
 
 ### Added
-- **`aki__aiobox_write op=place_like` and `op=close_window`** (`scripts/aiobox-mcp.js`, AIObox guide v9 handoff): the new window takes the old one's place through `akipanel.placeLike(like)`, and the old window closes through `akipanel.closeWindow()`, never a CDP close; AIObox's refusal (busy, draft, offline) comes back verbatim. `op=state` also returns the `claims`, `flags` and `blocked` workspaces still in force from AIObox's agent files.
+- **`aki__aiobox_write op=place_like` and `op=close_window`** (`scripts/aiobox-mcp.js`, AIObox guide v9 handoff): the new window takes the old one's place through `akipanel.placeLike(like)`, and the old window closes through `akipanel.closeWindow()`, never a CDP close; AIObox's refusal (busy, draft, offline) comes back verbatim. `op=state` also returns the `claims` and `flags` still in force from AIObox's agent files (guide v10: a flag names an account or a workspace, and one without `until` holds until unflagged).
 
 ### Changed
 - **One `aiobox` call waits at most 50 s** (`wait_idle` `timeout`, `send` `wait`, `run_macro`): a client gives up on a tool call after about a minute and then gets nothing back, so `timeout=240` used to end in `-32001 Request timed out`. A longer wait is clamped, and a timed-out `wait_idle` says to call again (`next`). `wait_idle` defaults to 50 s instead of 120 s.
