@@ -18,6 +18,8 @@ const passphrase = 'Kq7-mW2x-Rt9v';
 fs.writeFileSync(path.join(dataDir, 'tokens.json'), JSON.stringify({ access: { [token]: { exp: 1 } } }));
 fs.writeFileSync(path.join(dataDir, 'passphrase.txt'), `${passphrase}\n`);
 fs.writeFileSync(path.join(tmp, 'copy.log'), `token=${token} pass=${passphrase}\n`);
+const panelToken = 'a1b2c3d4'.repeat(4);
+fs.writeFileSync(path.join(dataDir, 'instance.json'), JSON.stringify({ pid: 1, panelPort: 2, token: panelToken, version: '3.0.0', origin: 'https://x.example' }));
 
 const { createToolsServer } = await import('../scripts/tools-server.js');
 const server = createToolsServer();
@@ -33,6 +35,10 @@ assert.ok(!grep.includes(token), 'but the token itself comes back as [redacted]'
 
 const copy = await text('aki__read_text_file', { path: path.join(tmp, 'copy.log') });
 assert.equal(copy, 'token=[redacted] pass=[redacted]\n', 'a copy in an ordinary file is redacted too, passphrase included');
+
+// instance.json stays readable for its ports and origin, but the panel token (it opens the panel) is redacted.
+const instance = JSON.parse(await text('aki__read_text_file', { path: path.join(dataDir, 'instance.json') }));
+assert.deepEqual([instance.token, instance.panelPort, instance.origin], ['[redacted]', 2, 'https://x.example']);
 
 const plain = await text('aki__read_text_file', { path: path.join(dataDir, 'setting.json') });
 assert.ok(plain.includes(tmp), 'text with no credential in it passes unchanged');

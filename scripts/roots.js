@@ -4,7 +4,7 @@ import { realpath } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { loadFolders, loadAllowlistDirs } from './allowlist.js';
-import { TOKENS_PATH, PASSPHRASE_PATH, CLIENT_PATH, DCR_CLIENTS_PATH, CLOUDFLARED_CRED_PATH } from './userdata.js';
+import { USER_DIR, TOKENS_PATH, PASSPHRASE_PATH, CLIENT_PATH, DCR_CLIENTS_PATH, CLOUDFLARED_CRED_PATH } from './userdata.js';
 
 // Fallback when setting.json carries no `folders` key yet (fresh install, or a folder edit was never saved via the panel): reconstructs the same default the old boot-time MCP_DATA_DIR env var used to expand to (dataDir + ~/.aki + ~/.claude), so behavior is unchanged until the first save — including the rule/config dirs the panel's own prompt-builder tells the AI to read.
 function envDefaultRoots() {
@@ -132,6 +132,11 @@ function credentialSecrets() {
       collect(JSON.parse(text));
     } catch {}
   }
+  // instance.json stays readable (AIObox and AIs read its ports and origin), but its token opens the panel (/?t=, x-panel-token), which shows the passphrase and rolls credentials (instance-lock.js).
+  try {
+    const { token } = JSON.parse(fs.readFileSync(path.join(USER_DIR, 'instance.json'), 'utf8'));
+    if (typeof token === 'string' && token.length >= 16) found.add(token);
+  } catch {}
   return [...found];
 }
 const redactWith = (secrets, text) => secrets.reduce((t, secret) => t.split(secret).join('[redacted]'), text);
