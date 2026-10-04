@@ -332,7 +332,7 @@ const GUIDE = [
   "1. Find yourself: aki__aiobox op=whoami quote=<20+ characters copied verbatim from the user's latest message>. Keep the chatId it returns; a handle (P#·W#) is only a label, renumbered when Chrome or AIObox restarts.",
   '2. op=state lists every window (chatId, provider, account, busy) and each provider\'s macros.',
   '3. Name a window by its chatId, or pass expect=<chatId> with a handle.',
-  '4. New chat: aki__aiobox_write op=new_chat window=<chatId> (same tab; refused while it answers or if it is yours); its chatId exists after the first op=send. Another window: op=new_window.',
+  '4. New chat: aki__aiobox_write op=new_chat window=<chatId> (same tab; refused while it answers, holds a draft, or is yours); its chatId exists after the first op=send. Another window: op=new_window.',
   '5. Message another chat: aki__aiobox_write op=send window=<its chatId> from=<your chatId> wait=<s> sends it once that chat is idle. op=compose only fills its box for the owner to send. Never target your own chat.',
   '6. Before reading an answer: op=wait_idle, then op=read.',
   '7. Macros: aki__aiobox_write op=run_macro macro=<id from macros>.',
@@ -471,21 +471,21 @@ const MACRO_JS = (id, option) => `(() => {
   panel.runMacro(macro.id, option);
   return { ok: true, before };
 })()`;
-// akipanel.newChat() navigates this tab to the provider's new-chat URL (aiobox: data per provider, one path for all). A full navigation destroys the page context, so its promise may never come back: the outcome is read from the tab afterwards, not from the call.
-const NEW_CHAT_JS = `(async () => {
+// akipanel.newChat() refuses itself (offline, busy, draft) and only asks AIObox to navigate this tab to the provider's home, so the old page is still there when it returns, and the navigation may even destroy the context of this very call.
+const NEW_CHAT_JS = `(() => {
   const panel = window.akipanel;
   if (!panel) return { error: 'this window has no AIObox panel' };
   if (typeof panel.newChat !== 'function') return { missing: true };
-  if (!panel.online) return { error: 'the AIObox panel in this window is offline' };
-  const r = await panel.newChat();
-  return r && r.ok === false ? { error: String(r.error ?? 'newChat() failed') } : { ok: true };
+  const r = panel.newChat();
+  return r && r.ok === true ? { ok: true } : { error: String(r?.error ?? 'newChat() returned no result') };
 })()`;
-// Ready = the chat reader shows an empty chat; a page without a reader only has its load state.
+// Ready = the new page's panel is online and its chat reader shows an empty chat; a page without a reader only has its load state.
 const NEW_CHAT_READY_JS = `(() => {
   const panel = window.akipanel;
+  if (!panel?.online) return { ready: false, url: location.href };
   let caps = {};
-  try { caps = JSON.parse(JSON.stringify(panel?.capabilities ?? {})) || {}; } catch {}
-  if (caps.chat !== ${CHAT_VERSION} || typeof panel?.live?.chat !== 'function') return { ready: document.readyState === 'complete', url: location.href };
+  try { caps = JSON.parse(JSON.stringify(panel.capabilities ?? {})) || {}; } catch {}
+  if (caps.chat !== ${CHAT_VERSION} || typeof panel.live?.chat !== 'function') return { ready: document.readyState === 'complete', url: location.href };
   const r = panel.live.chat();
   return { ready: !!(r && r.ok && r.data.messages.length === 0), url: location.href };
 })()`;
@@ -540,11 +540,9 @@ const WRITE_OPS = {
     need('new_chat', args, ['window']);
     const { tab, live: target, used } = await openTab(args);
     if (args.from && args.from === used.chatId) throw new Refusal('self_target', `${tab.handle} is your own chat (${used.chatId})`, 'open another chat with op=new_window instead');
-    const { value: chat } = await cdp.evaluate({ port: tab.port, target, expression: READ_JS(1) });
-    if (chat?.source === 'provider' && chat.busy) throw new Refusal('busy', `${tab.handle} is answering; a new chat would leave that answer`, 'op=wait_idle first, or op=new_window');
     let value;
     try {
-      value = (await cdp.evaluate({ port: tab.port, target, expression: NEW_CHAT_JS, awaitPromise: true })).value;
+      value = (await cdp.evaluate({ port: tab.port, target, expression: NEW_CHAT_JS })).value;
     } catch (e) {
       if (!NAVIGATED.test(e.message)) throw e;
       value = { ok: true };

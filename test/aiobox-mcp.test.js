@@ -333,35 +333,41 @@ resting = true;
 assert.match((await call('aiobox_write', { op: 'new_window', window: 'p7w2' })).text, /still opening another window \(opening;/);
 assert.equal(asked, 2, 'a panel that keeps resting is never asked');
 
-// new_chat calls akipanel.newChat() in the same tab and returns once the reader shows an empty chat with no chat id in the URL; a navigation that destroys the page context is the normal outcome, not an error.
+// new_chat calls akipanel.newChat() (sync: it refuses itself, else asks AIObox to navigate) and returns once the tab shows the new page: panel online, reader ok with no messages, no chat id in the URL. The old page is still there right after the call, and the navigation may destroy the call's own context.
 assert.equal((await call('aiobox_write', { op: 'new_chat' })).text, 'rejected: op=new_chat needs window');
 pages['T-GPT'].akipanel = readonlyPanel({ online: true, capabilities: {} });
 assert.match((await call('aiobox_write', { op: 'new_chat', window: 'P7·W2' })).text, /P7·W2 has no AIObox newChat.*\(no_new_chat/);
-let gptMessages = [{ role: 'user', text: 'old' }];
-let gptAnswering = true;
+pages['T-GPT'].akipanel = readonlyPanel({ online: true, capabilities: {}, newChat: () => ({ ok: false, error: 'the provider is still answering' }) });
+assert.equal((await call('aiobox_write', { op: 'new_chat', window: 'P7·W2' })).text, 'rejected: P7·W2: the provider is still answering', "the panel's own refusal comes back verbatim");
 const newChats = [];
-pages['T-GPT'].url = 'https://chatgpt.com/c/123';
-pages['T-GPT'].akipanel = readonlyPanel({
-  online: true,
-  capabilities: { chat: 1 },
-  live: { chat: () => ({ ok: true, data: { messages: gptMessages, busy: gptAnswering } }) },
-  newChat: async () => {
-    newChats.push(pages['T-GPT'].url);
-    pages['T-GPT'].url = 'https://chatgpt.com/';
-    setTimeout(() => { gptMessages = []; }, 600);
-    throw new Error('Execution context was destroyed.');
-  },
-});
-assert.match((await call('aiobox_write', { op: 'new_chat', window: '123' })).text, /P7·W2 is answering; a new chat would leave that answer \(busy/);
-gptAnswering = false;
+const gptPage = (destroyContext) => {
+  pages['T-GPT'].url = 'https://chatgpt.com/c/123';
+  pages['T-GPT'].akipanel = readonlyPanel({
+    online: true,
+    capabilities: { chat: 1 },
+    live: { chat: () => ({ ok: true, data: { messages: [{ role: 'user', text: 'old' }], busy: false, draft: false } }) },
+    newChat: () => {
+      newChats.push(pages['T-GPT'].url);
+      setTimeout(() => {
+        pages['T-GPT'].url = 'https://chatgpt.com/';
+        pages['T-GPT'].akipanel = readonlyPanel({ online: true, capabilities: { chat: 1 }, live: { chat: chatOk([]) } });
+      }, 700);
+      if (destroyContext) throw new Error('Execution context was destroyed.');
+      return { ok: true, data: null };
+    },
+  });
+};
+gptPage(false);
 assert.match((await call('aiobox_write', { op: 'new_chat', window: '123', from: '123' })).text, /is your own chat \(123\) \(self_target/);
-assert.deepEqual(newChats, [], 'refusals navigate nothing');
-const fresh = JSON.parse((await call('aiobox_write', { op: 'new_chat', window: '123' })).text);
-delete fresh.warning;
-assert.deepEqual(fresh, { window: 'P7·W2', targetId: 'T-GPT', chatId: null, previousChatId: '123', url: 'https://chatgpt.com/', next: 'op=send the first message, then op=state shows its chatId' });
-assert.deepEqual(newChats, ['https://chatgpt.com/c/123']);
-pages['T-GPT'].akipanel = readonlyPanel({ online: true, capabilities: {}, newChat: async () => ({ ok: false, error: 'no new-chat URL for this provider' }) });
-assert.equal((await call('aiobox_write', { op: 'new_chat', window: 'P7·W2' })).text, 'rejected: P7·W2: no new-chat URL for this provider', "the panel's own refusal comes back verbatim");
+assert.deepEqual(newChats, [], 'a refusal navigates nothing');
+const expected = { window: 'P7·W2', targetId: 'T-GPT', chatId: null, previousChatId: '123', url: 'https://chatgpt.com/', next: 'op=send the first message, then op=state shows its chatId' };
+for (const destroyContext of [false, true]) {
+  gptPage(destroyContext);
+  const fresh = JSON.parse((await call('aiobox_write', { op: 'new_chat', window: '123' })).text);
+  delete fresh.warning;
+  assert.deepEqual(fresh, expected, destroyContext ? 'a destroyed context is the navigation, not an error' : 'the old page is not taken for the new chat');
+}
+assert.deepEqual(newChats, ['https://chatgpt.com/c/123', 'https://chatgpt.com/c/123']);
 delete pages['T-GPT'].url;
 
 // compose goes through akipanel.live.compose (v2, async), never sends, and names a page or version it cannot use.
