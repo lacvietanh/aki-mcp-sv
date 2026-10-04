@@ -3,6 +3,7 @@ import { realpath } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { loadFolders, loadAllowlistDirs } from './allowlist.js';
+import { TOKENS_PATH, PASSPHRASE_PATH, CLIENT_PATH, DCR_CLIENTS_PATH, CLOUDFLARED_CRED_PATH } from './userdata.js';
 
 // Fallback when setting.json carries no `folders` key yet (fresh install, or a folder edit was never saved via the panel): reconstructs the same default the old boot-time MCP_DATA_DIR env var used to expand to (dataDir + ~/.aki + ~/.claude), so behavior is unchanged until the first save — including the rule/config dirs the panel's own prompt-builder tells the AI to read.
 function envDefaultRoots() {
@@ -82,10 +83,18 @@ async function refuseTrustedZone(real) {
   if (zone) throw new Error(`read-only for file tools: ${zone} is a trusted script directory`);
 }
 
+// The server's own credential files stay readable like any file under an allowed folder, but a file tool never writes them: the panel does (Roll passphrase, Roll token). setting.json is left writable on purpose (owner decision), so an AI can adjust folders and the allowlist when asked.
+const CREDENTIAL_FILES = [TOKENS_PATH, PASSPHRASE_PATH, CLIENT_PATH, DCR_CLIENTS_PATH, CLOUDFLARED_CRED_PATH];
+async function refuseCredentialFile(real) {
+  const files = await Promise.all(CREDENTIAL_FILES.map(async (file) => path.join(await realpath(path.dirname(file)).catch(() => path.dirname(file)), path.basename(file))));
+  if (files.some((file) => containedIn(real, file))) throw new Error(`read-only for file tools: ${path.basename(real)} holds akimcp's credentials; change it from the control panel (section 1)`);
+}
+
 // Write variant for a single file/dir whose immediate parent already exists.
 export async function resolveRealWritable(target) {
   const real = await resolveRealUnderRoot(target);
   await refuseTrustedZone(real);
+  await refuseCredentialFile(real);
   return real;
 }
 
