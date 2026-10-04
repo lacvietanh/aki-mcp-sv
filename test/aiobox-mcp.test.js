@@ -239,7 +239,9 @@ const drafted = JSON.parse((await call('aiobox', { op: 'wait_idle', window: 'abc
 assert.deepEqual([drafted.busy, drafted.draft], [false, true]);
 assert.match(drafted.warning, /holds a draft, so busy may read false while it still answers/);
 assert.ok(drafted.waitedMs < 1000, `a draft is not waited on (${drafted.waitedMs} ms)`);
+assert.equal(JSON.parse((await call('aiobox', { op: 'read', window: 'abc' })).text).draft, true, 'op=read carries the reader\'s draft');
 notionDraft = undefined;
+assert.equal(JSON.parse((await call('aiobox', { op: 'read', window: 'abc' })).text).draft, undefined, 'a reader that reports no draft adds no field');
 
 // run_macro goes through akipanel.runMacro and waits for its outcome in macroRuns.
 assert.match((await call('aiobox_write', { op: 'run_macro', window: 'abc', macro: 'nope' })).text, /P1·W1 has no macro 'nope'; it has: connect-akimcp \(no_macro/);
