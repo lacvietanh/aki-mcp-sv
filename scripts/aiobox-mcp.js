@@ -448,6 +448,8 @@ export function readRuns(file, { automation, since, last = RUNS_DEFAULT, id, req
   if (!fs.existsSync(file)) throw new Refusal('no_runs', 'AIObox has no automation store yet', 'start an AIObox build with the automation scheduler');
   const db = new DatabaseSync(file, { readOnly: true });
   try {
+    // AIObox writes a request's steps while it runs; wait out its lock instead of failing with "database is locked" (seen live 2026-10-04, G5).
+    db.exec('PRAGMA busy_timeout = 2000');
     const columns = new Set(db.prepare('PRAGMA table_info(runs)').all().map((c) => c.name));
     const extra = RUN_EXTRA_COLUMNS.filter((c) => columns.has(c));
     const where = [];
@@ -553,7 +555,7 @@ async function awaitRequestRun(request, waitMs) {
     try {
       run = readRuns(runsFile(), { request, last: 1 })[0] ?? null;
     } catch (e) {
-      if (e.code !== 'no_runs') throw e;
+      if (e.code !== 'no_runs' && !/database is (locked|busy)/i.test(String(e.message))) throw e;
     }
     if ((run && !run.running) || Date.now() >= end) return run;
   }
@@ -566,7 +568,8 @@ function requestOutcome(op, request, run) {
     const detail = String(run.detail ?? '');
     const at = detail.indexOf(': ');
     const [code, why] = at === -1 ? ['refused', detail] : [detail.slice(0, at), detail.slice(at + 2)];
-    throw new Refusal(code, `AIObox refused ${op} (run ${run.id}): ${why}`, 'read aki__aiobox op=profiles and pick an eligible profile, or report it');
+    const next = code === 'budget' ? 'AIObox opens few windows an hour for AIs: do not ask again now; report "not opened: budget" or wait an hour' : code === 'invalid' || code === 'unknown_op' ? 'update AkiMCP or AIObox so they speak the same request version, or report it' : 'read aki__aiobox op=profiles and pick an eligible profile, or report it';
+    throw new Refusal(code, `AIObox refused ${op} (run ${run.id}): ${why}`, next);
   }
   const base = { request, runId: run.id, done: !run.running, steps: run.steps ?? [] };
   if (run.running) return { ...base, next: `still running: aki__aiobox op=runs id=${run.id} reads each step; do not ask again` };

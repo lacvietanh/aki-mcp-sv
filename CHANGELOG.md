@@ -28,6 +28,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 - **A command the allowlist refuses says how to allow it without asking** (`scripts/shell-mcp.js`): the refusal of `run_cmd` and `task_start` names the entry to add (`"<bin>"`, `["<bin>", "<subcommand>", …]`, or bare `"git"` for a git write form), `shell.allowlist.added` in `~/.aki/mcpsv/setting.json` (read on every call, so it works on the next one) and panel section 6. A test holds that bare `git` in that file allows `git tag -f` and the other write forms at once.
 
 ### Fixed
+- **`op=handoff_open` and `op=runs` no longer fail with `database is locked`** (`scripts/aiobox-mcp.js`): reading `automation.sqlite` while AIObox writes a request's steps now waits up to 2 s (`busy_timeout`) and the wait for a request's run keeps polling, so the AI gets the run instead of an error while it still runs (seen live 2026-10-04 on two handoffs). A `budget` or `invalid` refusal now says what to do next instead of "pick an eligible profile".
 - **`akimcp --version` prints only the version** (`scripts/cli-flags.js`, imported first by `scripts/start.js`): the flag was checked after every import had run, so `oauth.js` pruned stale connectors at import and its `[oauth] removed N unused clients` line came out on stdout before the version, and AIObox's status bar showed it as the version. `--version` and `--help` now answer before any other module loads, and no longer touch the client store. Covered by `test/cli-flags.test.js`.
 
 ## [3.0.0] - 2026-10-04
