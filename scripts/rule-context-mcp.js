@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { assembleRuleContext, RuleContextError } from './rule-context.js';
 import { aioboxInstalled, AIOBOX_PITCH } from './aiobox-guide.js';
+import { recordIssued } from './rule-gate.js';
 
 export const RULE_CONTEXT_TOOL = 'akidevrule_context';
 export const RULE_CONTEXT_TITLE = 'Load Effective Aki/Claude Context';
@@ -22,9 +23,11 @@ export const SHARED_WORK = [
   '- Long or risky work on paths others touch too: `git worktree add <repo>/.claude/worktrees/<role> -b wt-<role>`, merged into main locally when done.',
   "- Handing work over: a letter in `~/.aki/handoff/` named for the successor's role. The successor reads it, the working.md and the old chat, takes over the working.md file list and tells the related sessions.",
 ].join('\n');
+// The gate (scripts/rule-gate.js): every tool that acts refuses a call without the current receipt.
+const RECEIPT_STEP = 'Every tool that acts (not read-only) takes receipt=<the sha256:… receipt this returns> and refuses without it, with an unknown one, or once the rules change; then call this again and pass the new receipt.';
 const AIOBOX_STEP = 'If you are named by a handle like P2·W1 (AIObox puts it at the start of your page title), you run in an AIObox window: aki__aiobox op=whoami finds your own window, then op=state lists every window and returns the rules for acting in AIObox.';
-export const RULE_CONTEXT_DESCRIPTION = `Call once before the first substantive action in every chat to load the effective default guidance. The server resolves global imports and applicable project CLAUDE.local/AGENTS context itself; do not search for or individually read bootstrap files. Pass an absolute workingPath when known. Read-only. ${AKIRULE_STEP} ${CONDUCT_STEP} ${RESUME_STEP} ${AIOBOX_STEP}`;
-export const RULE_CONTEXT_INSTRUCTIONS = `Before the first substantive action, call aki__akidevrule_context once; pass an absolute workingPath when known. Do not discover or read bootstrap files individually. A returned receipt is the only success signal. ${AKIRULE_STEP} ${CONDUCT_STEP} ${RESUME_STEP} ${AIOBOX_STEP}`;
+export const RULE_CONTEXT_DESCRIPTION = `Call once before the first substantive action in every chat to load the effective default guidance. The server resolves global imports and applicable project CLAUDE.local/AGENTS context itself; do not search for or individually read bootstrap files. Pass an absolute workingPath when known. Read-only. ${RECEIPT_STEP} ${AKIRULE_STEP} ${CONDUCT_STEP} ${RESUME_STEP} ${AIOBOX_STEP}`;
+export const RULE_CONTEXT_INSTRUCTIONS = `Before the first substantive action, call aki__akidevrule_context once; pass an absolute workingPath when known. Do not discover or read bootstrap files individually. A returned receipt is the only success signal. ${RECEIPT_STEP} ${AKIRULE_STEP} ${CONDUCT_STEP} ${RESUME_STEP} ${AIOBOX_STEP}`;
 
 // Required: the aiobox prompt and WEB_PROMPT call aki__akidevrule_context by name.
 export const provider = { id: 'rule', title: 'Rule context', required: true, register };
@@ -44,9 +47,10 @@ export function register(server, options = {}) {
   }, async (input) => {
     try {
       const result = await assemble(input);
+      recordIssued(result.receipt, input);
       // Without AIObox one line says what it would add (D7); once installed the line is gone and op=state carries the guide.
       // The receipt line is labelled context, not [RULES], so it cannot be mistaken for the reply's own [RULES] line.
-      const header = `${NO_YAPPING}\n${MANDATORY_BLOCK}\n\ncontext loaded: ${result.parity} · ${result.receipt} · ${result.sources.length} sources${installed() ? '' : `\n${AIOBOX_PITCH}`}`;
+      const header = `${NO_YAPPING}\n${MANDATORY_BLOCK}\n\ncontext loaded: ${result.parity} · ${result.receipt} · ${result.sources.length} sources\nEvery tool that acts needs receipt=${result.receipt}${installed() ? '' : `\n${AIOBOX_PITCH}`}`;
       // The assembled corpus ships once, in `content`. Keep it out of `structuredContent` so the ~90KB blob is not serialized twice on the wire (docs/plan/done/rule-context-payload-dedup.md).
       const { context, ...meta } = result;
       const text = `${header}\n\n${SHARED_WORK}`;

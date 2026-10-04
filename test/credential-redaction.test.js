@@ -28,8 +28,10 @@ await server.connect(serverSide);
 const client = new Client({ name: 'credential-redaction-test', version: '1' });
 await client.connect(clientSide);
 const text = async (name, args) => (await client.callTool({ name, arguments: args })).content.map((c) => c.text).join('\n');
+// run_cmd acts, so it needs the rule receipt (scripts/rule-gate.js).
+const { receipt } = (await client.callTool({ name: 'aki__akidevrule_context', arguments: {} })).structuredContent;
 
-const grep = await text('aki__run_cmd', { command: `grep -r ${token.slice(0, 16)} .`, cwd: dataDir });
+const grep = await text('aki__run_cmd', { command: `grep -r ${token.slice(0, 16)} .`, cwd: dataDir, receipt });
 assert.ok(grep.includes('tokens.json') && grep.includes('[redacted]'), `grep -r over the data dir still finds the file: ${grep}`);
 assert.ok(!grep.includes(token), 'but the token itself comes back as [redacted]');
 

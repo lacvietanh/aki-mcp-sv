@@ -21,6 +21,10 @@ The product's single purpose: give a remote web AI (claude.ai / ChatGPT / Grok /
 
 Each tool module is a provider (`scripts/provider-registry.js`; contract: [`arch/provider-toolkit.md`](../arch/provider-toolkit.md)). A provider whose app is not installed is not served (agy and Kiro CLI not on `PATH`, no Postman app, no Chromium browser, no `~/.aki/aiobox/`), and panel section 8 switches any optional provider on or off (`providers.<id>.enabled` in `setting.json`). `agy` and `kiro` start off, because each hands a whole task to another paid agent; the owner switches them on there. `rule`, `filesystem`, `search` and `shell` are always on. Every tool declares MCP annotations: `readOnlyHint: true` only when it cannot write by mechanism, so ChatGPT stops asking to confirm reads while every write tool still asks. `test/tool-surface.test.js` holds the size budget of `tools/list`, the annotations, the 700-character description cap and the cross-references between descriptions.
 
+## Rule receipt gate
+
+Every tool whose `readOnlyHint` is not `true` takes `receipt` and refuses a call without the receipt of the rules in force (`scripts/rule-gate.js`, wired once in `mountProviders`; plan [`plan/rule-receipt-gate.md`](../plan/rule-receipt-gate.md)). The receipt is the `sha256:…` that `aki__akidevrule_context` returns; it counts only when this server issued it since it started and the same call (same `mode` and `workingPath`) still returns it, so a changed rule file refuses the old one. The refusal is a tool error `RULE_RECEIPT_MISSING | INVALID | UNKNOWN | STALE | UNCHECKED: … call aki__akidevrule_context, then call this tool again with receipt=<…>`; the tool never runs. `receipt` is stripped before the tool sees its input. Read-only tools and `akidevrule_context` take none.
+
 ## Layout of `scripts/postman/` (Postman only)
 
 Everything that exists for Postman alone sits under `scripts/postman/` and every file name starts with `postman-`, because `scripts/` is shared by many providers. App-agnostic CDP code stays outside, in `scripts/cdp-engine.js`.

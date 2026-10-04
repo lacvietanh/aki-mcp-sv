@@ -88,7 +88,7 @@ assert.deepEqual(Object.keys(definition.inputSchema), ['workingPath', 'mode', 'k
 const output = await handler({ workingPath: '/tmp/project' });
 assert.equal(output.structuredContent.status, 'ok');
 assert.ok(output.content[0].text.startsWith(`NO YAPPING AT ALL\n${MANDATORY_BLOCK}\n\ncontext loaded: practical-effective · sha256:`), 'the mandatory block comes first, then the receipt');
-assert.ok(output.content[0].text.endsWith(` · 1 sources\n\n${SHARED_WORK}\n\nrules`), 'the shared-work convention follows the receipt, then the corpus');
+assert.ok(output.content[0].text.endsWith(` · 1 sources\nEvery tool that acts needs receipt=sha256:${'a'.repeat(64)}\n\n${SHARED_WORK}\n\nrules`), 'the receipt to pass on every acting tool, then the shared-work convention, then the corpus');
 // G2–G4 of aiobox audit-content-context (owner 2026-10-04): the AIObox guide drops them, so they must ship here.
 for (const must of ['git status', 'someone else', '$HOME/.aki/mcpsv/task/<slug>/working.md', '-- <your paths>', 'git add -A', '.claude/worktrees/<role>', '~/.aki/handoff/', '~/.aki/aiobox/']) assert.ok(SHARED_WORK.includes(must), must);
 assert.equal(/push|release|deploy/.test(SHARED_WORK), false, 'commit and push rules stay in AkiDevRule');
@@ -106,7 +106,7 @@ register({ registerTool(_n, _d, h) { bareHandler = h; } }, {
   assemble: async () => ({ status: 'ok', parity: 'practical-effective', receipt: `sha256:${'a'.repeat(64)}`, rulesVersion: '1', workingRoot: null, sources: [], warnings: [], context: 'rules' }),
   aioboxInstalled: () => false,
 });
-assert.match((await bareHandler({})).content[0].text, /\ncontext loaded: [^\n]+\nAIObox \(not installed here\)[^\n]+https:\/\/aiobox\.app\/guide\/aiobox\.md\n\nWorking beside other sessions[^]*\n\nrules$/);
+assert.match((await bareHandler({})).content[0].text, /\ncontext loaded: [^\n]+\nEvery tool that acts needs receipt=sha256:[a-f0-9]{64}\nAIObox \(not installed here\)[^\n]+https:\/\/aiobox\.app\/guide\/aiobox\.md\n\nWorking beside other sessions[^]*\n\nrules$/);
 
 let errorHandler;
 register({ registerTool(_n, _d, h) { errorHandler = h; } }, { assemble: async () => { throw new Error('boom'); } });

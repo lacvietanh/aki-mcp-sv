@@ -2,6 +2,7 @@
 // Every provider is always registered, so warmToolsServer still catches a schema error in any of them at boot; one that is not installed or is switched off is only disabled, which hides it from tools/list and makes a call fail.
 import { readSettings, writeSettings } from './allowlist.js';
 import { redactResult, redactError } from './roots.js';
+import { isGated, withReceipt, gate } from './rule-gate.js';
 import { provider as rule } from './rule-context-mcp.js';
 import { provider as shell } from './shell-mcp.js';
 import { provider as agy } from './agy-mcp.js';
@@ -64,6 +65,7 @@ function applyAll() {
 }
 
 // Registers every provider on the server under `prefix` (aki__run_cmd, aki__find_path, …, one naming across all clients) and keeps each tool's handle so setEnabled/redetect can reach it later.
+// Every tool that is not read-only takes `receipt` and refuses a call without the current rule receipt (scripts/rule-gate.js, docs/plan/rule-receipt-gate.md): one place, so a new provider is gated without knowing it.
 export function mountProviders(server, prefix) {
   if (!detected) detectAll();
   const handles = new Map();
@@ -73,9 +75,12 @@ export function mountProviders(server, prefix) {
       get(target, prop, receiver) {
         if (prop !== 'registerTool') return Reflect.get(target, prop, receiver);
         return (name, config, handler) => {
-          const handle = target.registerTool(`${prefix}${name}`, config, async (...args) => {
+          const gated = isGated(config);
+          const call = gated ? gate(handler, config.inputSchema !== undefined) : handler;
+          const served = gated ? { ...config, inputSchema: withReceipt(config.inputSchema) } : config;
+          const handle = target.registerTool(`${prefix}${name}`, served, async (...args) => {
             try {
-              return redactResult(await handler(...args));
+              return redactResult(await call(...args));
             } catch (e) {
               throw redactError(e);
             }

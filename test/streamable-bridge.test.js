@@ -131,8 +131,10 @@ async function run() {
     assert.doesNotMatch(misnamedText, /schema is stale/);
     // A cancel reaches only the caller's own request: the same request id sent by another client changes nothing, the caller's own cancel ends the wait at once.
     const post = (sessionId, body) => fetch(baseUrl, { method: 'POST', headers: { 'Content-Type': 'application/json', 'MCP-Session-Id': sessionId }, body: JSON.stringify(body) });
+    // run_cmd acts, so it carries the rule receipt (scripts/rule-gate.js); without one it would be refused at once instead of running.
+    const { receipt } = (await post(secondSessionId, { jsonrpc: '2.0', id: 76, method: 'tools/call', params: { name: 'aki__akidevrule_context', arguments: {} } }).then((r) => r.json())).result.structuredContent;
     const slowStarted = Date.now();
-    const slow = post(secondSessionId, { jsonrpc: '2.0', id: 77, method: 'tools/call', params: { name: 'aki__run_cmd', arguments: { command: `node -e "setTimeout(() => {}, 8000)"` } } }).then((r) => r.json());
+    const slow = post(secondSessionId, { jsonrpc: '2.0', id: 77, method: 'tools/call', params: { name: 'aki__run_cmd', arguments: { command: `node -e "setTimeout(() => {}, 8000)"`, receipt } } }).then((r) => r.json());
     await new Promise((r) => setTimeout(r, 400));
     assert.equal((await post(firstSessionId, { jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 77 } })).status, 202);
     assert.equal(await Promise.race([slow.then(() => 'answered'), new Promise((r) => setTimeout(() => r('waiting'), 400))]), 'waiting', "another client's cancel must not end this request");
