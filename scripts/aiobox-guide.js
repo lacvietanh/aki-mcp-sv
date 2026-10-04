@@ -15,7 +15,7 @@ export const GUIDE_URL = 'https://aiobox.app/guide/aiobox.md';
 export const GUIDE_FALLBACK = [
   `AIObox guide (short fallback: ~/.aki/aiobox/guide.md is missing or malformed; start or update AIObox). Full guide: ${GUIDE_URL}`,
   "1. Find yourself: aki__aiobox op=whoami quote=<20+ chars verbatim from the user's latest message>; name every window by its chatId.",
-  '2. op=state lists windows (busy, read) and macros. Message another chat: aki__aiobox_write op=send window=<chatId> from=<your chatId>; busy with read=blocked: add wait=<s>. Busy with read=live/queued: op=send refuses, so op=eval there, only if its box is empty: akipanel.live.compose(text), Enter in the textbox, confirm akipanel.live.chat() user turns grew by one. Never touch a draft or target your own chat.',
+  '2. op=state lists windows (busy, read) and macros. Message another chat: aki__aiobox_write op=send window=<chatId> from=<your chatId>; busy with read=blocked: add wait=<s>. Busy with read=live/queued: op=send refuses, so one op=eval there, only if its box is empty: await akipanel.live.compose(text), then click [aria-label="Submit AI message"]; confirm akipanel.live.chat() user turns grew by one before sending again. Never touch a draft or target your own chat.',
   '3. eval is a last resort; it sends only as in step 2. Never chrome_launch or devtools_* on an AIObox profile.',
 ].join('\n');
 
