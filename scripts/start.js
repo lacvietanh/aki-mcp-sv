@@ -1,34 +1,11 @@
 #!/usr/bin/env node
 // Orchestrates gatekeeper + panel + the in-process tools server behind 1 `npm start` / `akimcp`; foreground by design, manual stop/start only. Single Node process (docs/plan/done/2.0.0-improve.md #7, Stage 2).
 
+import './cli-flags.js';
 import { readFileSync, existsSync } from 'node:fs';
 import { VERSION } from './version.js';
 
 const argOf = (flag) => { const i = process.argv.indexOf(flag); return i !== -1 ? process.argv[i + 1] : null; };
-
-if (process.argv.includes('-v') || process.argv.includes('--version')) {
-  console.log(VERSION);
-  process.exit(0);
-}
-
-if (process.argv.includes('-h') || process.argv.includes('--help')) {
-  console.log(`@akinet/akimcp - Self-hosted remote MCP server for local filesystem & shell
-
-Usage:
-  akimcp [options]
-
-Options:
-  -v, --version            Show version number
-  -h, --help               Show help
-  --dev                    Run in development mode (isolated data dir & dev ports)
-  --port <port>            Gatekeeper port (default: 9999, dev: 9997)
-  --panel-port <port>      Control panel port (default: 9998, dev: 9996)
-  --tunnel <cred.json>     Path to Cloudflare Tunnel credentials JSON
-  --origin <url>           Public origin URL (required with --tunnel, e.g. https://mcp.yourdomain.com)
-  --no-browser             Do not automatically open the web panel in browser
-`);
-  process.exit(0);
-}
 
 // process.loadEnvFile throws ENOENT when the file is missing — swallow it so a .env is optional.
 try { process.loadEnvFile?.(); } catch {}
