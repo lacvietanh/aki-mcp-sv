@@ -31,6 +31,18 @@ LLMs misused the `aiobox` tools because the surface had three write ops (`new_wi
 - Decided (mailbox): a message between sessions is a file in `~/.aki/handoff/` with front matter `from`/`to` (chatIds) and `reply`; the pointer line is composed into the target chat with a source tag `[P#·W# → P#·W#]`; a tagged message never carries the owner's authority for one-way actions (push, delete, release) · rejected auto-submit between all sessions · reopen on an AI–AI loop or a session acting one-way on a tagged message. Until AIObox A4, delivery is the coordinating session's own act, not an AkiMCP op.
 - Decided: provider comes from `windows.json` `tab.provider` (AIObox A1); `PROVIDER_BY_HOST` stays one release as fallback, then goes · because AIObox already classifies tabs and has custom providers.
 
+## Session rotation when a chat runs out of quota (owner procedure, not an op)
+
+A coordinating session hands its role to a fresh chat before its workspace quota runs out; the old chat cannot be asked anything afterwards.
+
+1. Watch the quota: `~/.aki/aiobox/usage/<profileId>/notion.json` → `usage.scopes[]` gives per workspace (`label`) `session` and `weekly` `utilizationPct`. Rotate before `weekly` or `session` reaches 100%.
+2. Open the new chat in the workspace of that profile with the most usage left (lowest of the two `utilizationPct`). Notion's new chat is the `/ai` URL (owner); never find a "New chat" control in the DOM.
+3. Hand off by telling the new chat to read the old one: its first message names the old chatId and says `aki__aiobox op=read window=<old chatId> last=30`, the working file and the `~/.aki/handoff/` letters with the old handle in their name. Read, do not ask; the old chat may already be unable to answer.
+4. The new chat tells every live window it now holds the role, with its own chatId (`op=send`; a busy target gets a `~/.aki/handoff/` letter instead).
+5. Close the original window once the new chat has confirmed (until M4 `close`: CDP `/json/close/<targetId>` on the profile's port).
+
+Symptom of a chat already out of quota: the composer is gone, so `live.send` (and `op=send`) to it fails with `composer not found`; treat that as "rotate now", not as a send bug.
+
 ## Steps
 
 | ID | Step | Depends | Test | Status |
