@@ -697,7 +697,7 @@ const WRITE_OPS = {
     for (const end = started + waitS * 1000; ; await sleep(WAIT_IDLE_POLL_MS)) {
       const { value } = await cdp.evaluate({ port: tab.port, target, expression: READ_JS(1) });
       if (value?.source !== 'provider' || !value.busy || Date.now() >= end) {
-        if (value?.busy && waitS) throw new Refusal('busy', `${tab.handle} was still answering after ${waitS}s`, waitS < CALL_WAIT_MAX_S ? 'raise wait (at most 50), or check it later with op=wait_idle' : 'op=send wait=50 again, or aki__task_start the agent send-when-ready of the guide');
+        if (value?.busy && waitS) throw new Refusal('busy', `${tab.handle} was still answering after ${waitS}s`, waitS < CALL_WAIT_MAX_S ? 'raise wait (at most 50), or check it later with op=wait_idle' : 'op=send wait=50 again in this turn; still busy: report "not sent: <window> busy", never promise a later send');
         break;
       }
     }
