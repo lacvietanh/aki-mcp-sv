@@ -215,7 +215,7 @@ export async function handleStreamableMcp(req, res) {
         if (asError) response.error.message += hint;
         else first.text += hint;
       }
-      if (isLoggedTool(message.params?.name)) logToolCall({ sessionId: externalSessionId, agent: req.headers['user-agent'], headerNames: Object.keys(req.headers), params: message.params, response, ms: Date.now() - started });
+      if (isLoggedTool(message.params?.name)) logToolCall({ sessionId: externalSessionId, agent: req.headers['user-agent'], headerNames: Object.keys(req.headers), trace: { baggage: req.headers.baggage, traceparent: req.headers.traceparent }, params: message.params, response, ms: Date.now() - started });
     }
     return jsonResponse(res, 200, response);
   } catch (e) {

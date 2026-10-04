@@ -1,4 +1,5 @@
 // One JSON line per tools/call on the tools that drive browsers and AIObox windows, so misuse is measured instead of guessed: which client, which op, ok or not, how long. Written at the bridge, the only layer that sees the external session id and user agent. Never the arguments' text: no prompt, expression or compose text reaches this file.
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { USER_DIR } from './userdata.js';
@@ -16,10 +17,20 @@ const evalKindOf = (expression) => (typeof expression === 'string' ? EVAL_KINDS.
 // The request header names of each client, once per session: if a provider sends a conversation id, a call could name its own chat without op=whoami.
 const headersLogged = new Set();
 
+// Whether a client's tracing headers name its chat: `baggage` as a 12-hex SHA-256 (never its text: it may carry ids or user data) and the trace id of a W3C `traceparent`. The same value on every call of one chat, and another on the next chat, would let a call name its own chat without op=whoami.
+const TRACEPARENT = /^[\da-f]{2}-([\da-f]{32})-[\da-f]{16}-[\da-f]{2}$/;
+export function traceFields({ baggage, traceparent } = {}) {
+  const out = {};
+  if (typeof baggage === 'string' && baggage) out.baggage = crypto.createHash('sha256').update(baggage).digest('hex').slice(0, 12);
+  const trace = typeof traceparent === 'string' && TRACEPARENT.exec(traceparent.trim().toLowerCase());
+  if (trace && !/^0+$/.test(trace[1])) out.trace = trace[1];
+  return out;
+}
+
 // Short scalar fields only, cut to fixed lengths; a non-string window or op is dropped, not stringified.
 const short = (v, n) => (typeof v === 'string' ? v.slice(0, n) : typeof v === 'number' ? v : undefined);
 
-export function logToolCall({ sessionId, agent, headerNames, params, response, ms }) {
+export function logToolCall({ sessionId, agent, headerNames, trace, params, response, ms }) {
   const args = params?.arguments || {};
   const result = response?.result;
   const failed = Boolean(response?.error) || result?.isError === true;
@@ -39,6 +50,7 @@ export function logToolCall({ sessionId, agent, headerNames, params, response, m
     error: short(errorText, 200),
     ms,
     version: VERSION,
+    ...traceFields(trace),
   };
   if (sessionId && !headersLogged.has(sessionId)) {
     headersLogged.add(sessionId);
