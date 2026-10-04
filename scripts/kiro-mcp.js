@@ -12,6 +12,8 @@ const MODEL = 'claude-sonnet-4.5';
 function run(trustTools, { prompt, effort, cwd }) {
   const r = resolveOrFail(cwd);
   if (!r.ok) return Promise.resolve(fail(r.error));
+  // The prompt is kiro-cli's positional argument: one starting with a dash would be parsed as a flag (--trust-all-tools).
+  if (String(prompt).trimStart().startsWith('-')) return Promise.resolve(err('rejected: start the prompt with a word, not "-" (kiro-cli would read it as a flag)'));
   const dir = r.dir;
   const args = ['chat', '--no-interactive', '--model', MODEL, `--trust-tools=${trustTools}`];
   if (effort) args.push('--effort', effort);

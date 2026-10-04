@@ -72,6 +72,8 @@ function killProcessGroup(pid, signal = 'SIGTERM') {
   }
 }
 
+const MAX_TAIL_BYTES = 1024 * 1024; // the tail goes to the model; a larger ask is cut here rather than buffered whole
+
 export function readLogTail(logPath, maxBytes = 10240, maxLines = null) {
   if (!fs.existsSync(logPath)) return '(no logs yet)';
   let stat;
@@ -83,7 +85,7 @@ export function readLogTail(logPath, maxBytes = 10240, maxLines = null) {
   const size = stat.size;
   if (size === 0) return '(log empty)';
 
-  const readLen = Math.min(size, Math.max(1, maxBytes));
+  const readLen = Math.min(size, MAX_TAIL_BYTES, Math.max(1, maxBytes));
   const buffer = Buffer.alloc(readLen);
   const fd = fs.openSync(logPath, 'r');
   try {
