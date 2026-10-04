@@ -230,6 +230,9 @@ fs.writeFileSync(flagsPath, JSON.stringify({ list: [
 ] }));
 const coordinated = JSON.parse((await call('aiobox', { op: 'state' })).text);
 assert.deepEqual(coordinated.flags.map((f) => f.workspace ?? f.account), ['dldn.1', 'z@y'], 'an expired flag is gone, one without until stays');
+// An until that cannot be read holds, as AIObox reads it; a number is epoch ms (P9·W6 review of 14ea2a0, L1).
+fs.writeFileSync(flagsPath, JSON.stringify({ list: [{ account: 'a', profileId: 'p', reason: 'r', until: 'soon' }, { account: 'b', profileId: 'p', reason: 'r', until: Date.now() - 1 }, { account: 'c', profileId: 'p', reason: 'r', until: Date.now() + 60_000 }] }));
+assert.deepEqual(JSON.parse((await call('aiobox', { op: 'state' })).text).flags.map((f) => f.account), ['a', 'c']);
 fs.writeFileSync(path.join(aioboxHome, 'flags.json'), JSON.stringify([{ account: 'old@v9', profileId: 'p', reason: 'interrupted', flaggedAt: gone, until: soon }]));
 assert.deepEqual(JSON.parse((await call('aiobox', { op: 'state' })).text).flags.map((f) => [f.scope, f.account]), [['account', 'old@v9']], 'a v9 bare array still reads, without scope = account');
 // op=flag / op=unflag are the one way to write it: whole file as { list }, entries no longer in force dropped, the same target replaced, no window needed.
@@ -246,6 +249,12 @@ assert.deepEqual(JSON.parse((await call('aiobox', { op: 'state' })).text).flags.
 const un = JSON.parse((await call('aiobox_write', { op: 'unflag', workspace: 'dldn.1' })).text);
 assert.deepEqual([un.removed, un.flags.map((f) => f.account)], [1, ['old@v9', 'x@y']]);
 assert.equal(JSON.parse((await call('aiobox_write', { op: 'unflag', account: 'x@y', profile: 'other' })).text).removed, 0, 'an account is matched with its profile');
+// An account flag names one provider of the profile (default notion), so the same profile's Claude can be flagged apart (P9·W6 review of 14ea2a0, M1).
+const claudeFlag = JSON.parse((await call('aiobox_write', { op: 'flag', account: 'x@y', profile: 'p', provider: 'claude', reason: 'interrupted x2' })).text);
+assert.equal(claudeFlag.flagged.provider, 'claude');
+assert.deepEqual(claudeFlag.flags.filter((f) => f.account === 'x@y').map((f) => f.provider), ['notion', 'claude'], 'the notion flag of that profile stays');
+assert.equal(JSON.parse((await call('aiobox_write', { op: 'unflag', account: 'x@y', profile: 'p', provider: 'claude' })).text).removed, 1, 'unflag takes the provider too');
+assert.deepEqual(JSON.parse(fs.readFileSync(flagsPath, 'utf8')).list.filter((f) => f.account === 'x@y').map((f) => f.provider), ['notion']);
 assert.match((await call('aiobox_write', { op: 'flag', account: 'x@y', reason: 'r' })).text, /op=flag needs workspace, or account and profile/);
 assert.match((await call('aiobox_write', { op: 'flag', workspace: 'w' })).text, /op=flag needs reason/);
 assert.ok(!fs.readdirSync(aioboxHome).some((n) => n.endsWith('.tmp')), 'no temp file left behind');

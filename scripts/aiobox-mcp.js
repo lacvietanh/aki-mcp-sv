@@ -398,7 +398,12 @@ function readFlags() {
     return [];
   }
 }
-const inForce = (e, now) => e.until === undefined || e.until === null || Date.parse(e.until) > now;
+// An until that cannot be read holds, as AIObox reads it (fail closed); a number is epoch ms.
+const inForce = (e, now) => {
+  if (e.until === undefined || e.until === null) return true;
+  const until = typeof e.until === 'number' ? e.until : Date.parse(e.until);
+  return Number.isNaN(until) || until > now;
+};
 const scopeOf = (f) => f.scope ?? 'account';
 const coordination = (now = Date.now()) => ({ flags: readFlags().filter((e) => inForce(e, now)).map((e) => ({ ...e, scope: scopeOf(e) })) });
 
@@ -406,9 +411,10 @@ const HOUR_MS = 3_600_000;
 function flagTarget(op, args) {
   if (args.workspace) return { scope: 'workspace', workspace: args.workspace };
   if (!args.account || !args.profile) throw new Error(`op=${op} needs workspace, or account and profile`);
-  return { scope: 'account', account: args.account, profileId: args.profile };
+  // An account flag holds for one provider of that profile (no provider = notion, as AIObox and accountFlag read it), so a Claude or ChatGPT account can be kept off a handoff too.
+  return { scope: 'account', account: args.account, profileId: args.profile, provider: args.provider ?? 'notion' };
 }
-const sameTarget = (f, t) => scopeOf(f) === t.scope && (t.scope === 'workspace' ? f.workspace === t.workspace : f.account === t.account && f.profileId === t.profileId);
+const sameTarget = (f, t) => scopeOf(f) === t.scope && (t.scope === 'workspace' ? f.workspace === t.workspace : f.account === t.account && f.profileId === t.profileId && (f.provider ?? 'notion') === t.provider);
 // Read, change and write back in one synchronous step (no await in between), whole file, tmp + rename, as { list }; entries no longer in force are dropped. A file that is there but not JSON is refused rather than overwritten.
 function changeFlags(change) {
   let raw;
@@ -913,7 +919,7 @@ const WRITE_OPS = {
     need('flag', args, ['reason']);
     let entry;
     const flags = changeFlags((list, now) => {
-      entry = { ...target, provider: 'notion', reason: args.reason, flaggedAt: new Date(now).toISOString() };
+      entry = { provider: 'notion', ...target, reason: args.reason, flaggedAt: new Date(now).toISOString() };
       if (args.hours !== undefined) entry.until = new Date(now + args.hours * HOUR_MS).toISOString();
       return [...list.filter((f) => !sameTarget(f, target)), entry];
     });
@@ -1040,7 +1046,7 @@ export function register(server) {
         expect: expectArg,
         from: z.string().optional().describe('your own chatId (aki__aiobox op=whoami); send, compose, new_chat and close_window refuse it'),
         like: z.string().optional().describe('place_like, handoff_open: the window to copy the place of (handle, chatId or targetId)'),
-        provider: z.string().optional().describe('new_window, handoff_open: notion, claude, gpt or grok'),
+        provider: z.string().optional().describe('new_window, handoff_open, flag, unflag: notion, claude, gpt or grok (flag default notion)'),
         successor: z.string().optional().describe('close_window: the window that took over (handle, chatId or targetId); the closed handle then leads to it'),
         macro: z.string().optional().describe('run_macro: macro id (op=state macros)'),
         option: z.string().optional().describe('run_macro: option id (default: the first)'),
