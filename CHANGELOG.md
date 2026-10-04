@@ -51,6 +51,7 @@ Major because `chrome_launch` no longer clones profiles and lost `refresh`: it o
 
 ### Security
 - **A request cut off mid-body no longer stops the server** (`scripts/gatekeeper.js`, `scripts/http.js`): an unauthenticated `POST` to `/token`, `/revoke` or `/authorize` whose connection dropped before the body arrived raised an unhandled rejection, which ends the Node process and disconnects every client. The gatekeeper now catches any failure of a request and answers that request alone (`500`, logged). OAuth bodies are capped at 64 KB (`413` beyond), and `/mcp` answers `400` to a JSON body that is not one object (`null`, an array, a scalar) instead of throwing. Covered by `test/gatekeeper.test.js`.
+- **A trusted script zone no longer lets an interpreter flag carry code** (`scripts/shell-mcp.js`): `run_cmd` took the first argument without a dash as the script, so `node --eval=<code> <zone script>`, `node --require <any file> <zone script>` and `python3 -c <code> <zone script>` ran code the zone never held. The zone script must now be the interpreter's first argument; a call that needs an interpreter flag (`python3 -u script.py`) needs an allowlist row. Allowlist lookups also ignore inherited object keys (`constructor`, `toString`). Covered by `test/trusted-zone.test.js`.
 
 ## [2.2.0] - 2026-10-01
 

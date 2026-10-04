@@ -58,8 +58,8 @@ function preallowedByDir(bin, args) {
     }
   }
   if (INTERPRETERS.has(path.basename(bin))) {
-    const script = args.find((a) => !a.startsWith('-')); // first non-flag arg is the script; `node -e '<code>'` has none under a zone, so it stays blocked
-    return script ? underTrusted(script, dirs) : false;
+    // The script must be the first argument: a flag before it (`node --eval=<code> zone/x.js`, `node --require ./evil.js zone/x.js`, `python3 -c <code> zone/x.py`) is code the zone never vouched for.
+    return Boolean(args[0]) && !args[0].startsWith('-') && underTrusted(args[0], dirs);
   }
   return false;
 }
@@ -128,14 +128,14 @@ export class Shell {
 
   checkPermission(bin, args) {
     const allowlist = loadAllowlist();
-    if (bin in allowlist) {
+    if (Object.hasOwn(allowlist, bin)) {
       const allowedSubcommands = allowlist[bin];
       if (!Array.isArray(allowedSubcommands) || allowedSubcommands.includes(args[0])) {
         if (bin === 'git' && Array.isArray(allowedSubcommands)) {
           if (GIT_NO_ARGS_SUBCOMMANDS.has(args[0]) && args.length > 1) {
             throw new Error(`"git ${args[0]}" only allowed with no further arguments — a repository/URL argument can smuggle code execution via git's transport helpers (ext::, --upload-pack=). To list a remote's tags use the git tool: op=tags, remote=<configured remote name>.`);
           }
-          if (args.some((a) => a.startsWith('--output')) || (args[0] in GIT_READ_FORMS && !GIT_READ_FORMS[args[0]](args.slice(1)))) {
+          if (args.some((a) => a.startsWith('--output')) || (Object.hasOwn(GIT_READ_FORMS, args[0]) && !GIT_READ_FORMS[args[0]](args.slice(1)))) {
             throw new Error(`"git ${args.join(' ')}" is a write form: only the read forms of "git ${args[0]}" are allowed (e.g. git branch -a, git tag -l 'v*', git remote -v). To allow every git command, add bare "git" in the control panel (section 6).`);
           }
         }
@@ -143,7 +143,7 @@ export class Shell {
       }
     }
     if (preallowedByDir(bin, args)) return; // not named (or the named subcommand is blocked), but it targets a script under a trusted zone
-    const listed = Array.isArray(allowlist[bin]) ? ` — "${bin}" is limited to: ${allowlist[bin].join(', ')}` : ' is not in the allowlist';
+    const listed = Object.hasOwn(allowlist, bin) ? ` — "${bin}" is limited to: ${allowlist[bin].join(', ')}` : ' is not in the allowlist';
     throw new Error(`"${bin}${args[0] ? ` ${args[0]}` : ''}"${listed}. The owner can add it in the control panel, section 6 (Allowed shell commands).`);
   }
 

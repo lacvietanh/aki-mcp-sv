@@ -1,6 +1,6 @@
 # Security
 
-> updated 2026-10-03 · v3.0.0
+> updated 2026-10-04 · v3.0.0
 
 The one place for akimcp's whole security picture: stance, every surface and its gate, the connection limits, who holds access and who uses it, what each secret on disk unlocks and how to revoke it, and what is logged. README carries a summary and points here. Design record for client activity and the security-only log: `docs/plan/done/client-activity-and-security-log.md`.
 
@@ -104,7 +104,7 @@ Verdict record (`proportion.C1`):
 
 - **Folders:** every file, search and git tool, and every shell `cwd`, is confined to the folders in `setting.json` → `folders` (default `$MCP_DATA_DIR`, i.e. `$HOME`, plus `~/.aki` and `~/.claude`), read fresh on every call. `~/.claude` is reachable at folder level, so session tokens and chat history inside it are in reach; the panel row is locked, edit `setting.json` to remove it.
 - **Shell allowlist:** `run_cmd` uses `execFile`, never a shell, and refuses `; & | \``. A binary runs only if it is on the allowlist (inspection-first by default: reads plus a few dev and media helpers; flag-rich binaries that escape read-only, such as `find` and `sort`, are kept out; `git branch`/`tag`/`remote` pass in their read forms only). Bare `git` on the list means every git command. Edited in panel section 6; any command the owner adds is the owner's responsibility.
-- **Trusted script zones:** a script under `shell.allowlistDirs` (default `~/.claude/skills`, `~/.aki/akidevrule`, the folders the akidevrule installer writes) runs without an allowlist row. The check resolves symlinks on both sides, lets `node`/`python3`/… through only with a script path (so `node -e` stays blocked), and excludes shells. Write and run cannot chain: the file tools refuse any path inside a zone (`scripts/roots.js:resolveRealWritable`). Shell commands the owner opts into that write files (`cp`, `git checkout`, …) are outside that guarantee.
+- **Trusted script zones:** a script under `shell.allowlistDirs` (default `~/.claude/skills`, `~/.aki/akidevrule`, the folders the akidevrule installer writes) runs without an allowlist row. The check resolves symlinks on both sides, lets `node`/`python3`/… through only when the zone script is the first argument (so `node -e`, `node --eval=… script` and `node --require other.js script` stay blocked; an interpreter flag such as `python3 -u` needs an allowlist row), and excludes shells. Write and run cannot chain: the file tools refuse any path inside a zone (`scripts/roots.js:resolveRealWritable`). Shell commands the owner opts into that write files (`cp`, `git checkout`, …) are outside that guarantee.
 
 ## Who holds access, who uses it
 

@@ -31,6 +31,13 @@ assert.doesNotThrow(() => shell.checkPermission(script, []), 'executable under a
 assert.doesNotThrow(() => shell.checkPermission('python3', [py]), 'interpreter + script under a zone runs');
 assert.throws(() => shell.checkPermission('python3', [outside]), /not in the allowlist/, 'script outside every zone stays blocked');
 assert.throws(() => shell.checkPermission('python3', ['-c', 'print(1)']), /not in the allowlist/, 'inline code has no script under a zone');
+for (const smuggled of [['--eval=process.exit(7)', py], ['-c', 'print(1)', py], ['--require', outside, py], ['-u', py]]) {
+  assert.throws(() => shell.checkPermission('python3', smuggled), /not in the allowlist/, `a flag before the zone script is refused: ${smuggled[0]}`);
+}
+assert.doesNotThrow(() => shell.checkPermission('python3', [py, '--verbose', outside]), 'arguments after the zone script are the script\'s own');
+for (const inherited of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+  assert.throws(() => shell.checkPermission(inherited, []), /not in the allowlist/, `${inherited} is not an allowlist entry`);
+}
 assert.throws(() => shell.checkPermission('bash', [script]), /not in the allowlist/, 'shells stay excluded');
 
 await assert.rejects(() => resolveRealWritable(path.join(zone, 'new.py')), /trusted script directory/, 'file tools cannot plant a file in a zone');
