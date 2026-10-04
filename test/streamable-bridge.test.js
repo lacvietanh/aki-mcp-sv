@@ -9,6 +9,8 @@ import path from 'node:path';
 // A temp data dir, so the call log written below never lands in the owner's ~/.aki/mcpsv.
 const dataDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'bridge-test-')));
 process.env.AKI_MCP_DATA_DIR = dataDir;
+// `node` allowed whole, so the cancel test below has a command that runs long on every OS.
+fs.writeFileSync(path.join(dataDir, 'setting.json'), JSON.stringify({ folders: [dataDir], shell: { allowlist: { node: true } } }));
 const { handleStreamableMcp } = await import('../scripts/streamable-bridge.js');
 const { VERSION } = await import('../scripts/version.js');
 const pkgVersion = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
@@ -119,6 +121,19 @@ async function run() {
     ]);
     assert.equal(logged[1].port, 1);
     assert.ok(!JSON.stringify(logged).includes('SECRET_EXPRESSION_TEXT'), 'argument text is never logged');
+    // A cancel reaches only the caller's own request: the same request id sent by another client changes nothing, the caller's own cancel ends the wait at once.
+    const post = (sessionId, body) => fetch(baseUrl, { method: 'POST', headers: { 'Content-Type': 'application/json', 'MCP-Session-Id': sessionId }, body: JSON.stringify(body) });
+    const slowStarted = Date.now();
+    const slow = post(secondSessionId, { jsonrpc: '2.0', id: 77, method: 'tools/call', params: { name: 'aki__run_cmd', arguments: { command: `node -e "setTimeout(() => {}, 8000)"` } } }).then((r) => r.json());
+    await new Promise((r) => setTimeout(r, 400));
+    assert.equal((await post(firstSessionId, { jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 77 } })).status, 202);
+    assert.equal(await Promise.race([slow.then(() => 'answered'), new Promise((r) => setTimeout(() => r('waiting'), 400))]), 'waiting', "another client's cancel must not end this request");
+    assert.equal((await post(secondSessionId, { jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 77 } })).status, 202);
+    const cancelled = await slow;
+    assert.equal(cancelled.id, 77);
+    assert.match(cancelled.error.message, /cancelled by the client/);
+    assert.ok(Date.now() - slowStarted < 5000, 'the cancelled request returns without waiting for the command');
+
     originalConsoleLog(
       `PASS: repeated initialize reused one internal session and tools/list accepted MCP-Session-Id (${response.result.tools.length} tools)`,
     );

@@ -22,7 +22,18 @@ const STALE_SCHEMA_HINT = ` (akimcp ${VERSION}: if the tool description lists wh
 let shared = null;
 let sharedBoot = null; // in-flight boot promise — collapses concurrent first-initializes onto one session
 let nextUpstreamId = 1; // globally-unique id per forwarded request; the remap that lets clients share one session
-const externalIds = new Set(); // minted external session ids, for protocol-correct 404-on-stale (re-init is now cheap)
+// Minted external session ids, for protocol-correct 404-on-stale. claude.ai mints a new one every ~10 s per conversation and never returns the old ones, so the set keeps the most recently used and drops the rest; a dropped id gets a 404 and its client re-initializes, which is cheap.
+const externalIds = new Set();
+const MAX_EXTERNAL_IDS = 2000;
+// A client's request id → the upstream id it was remapped to, while the request is in flight: what a client's cancel notice has to name.
+const inFlight = new Map();
+const inFlightKey = (externalSessionId, id) => `${externalSessionId}:${JSON.stringify(id)}`;
+
+function rememberExternalId(id) {
+  externalIds.delete(id);
+  externalIds.add(id);
+  if (externalIds.size > MAX_EXTERNAL_IDS) externalIds.delete(externalIds.values().next().value);
+}
 
 function routeResponse(session, message) {
   const pending = session.pending.get(message.id);
@@ -124,7 +135,7 @@ export async function handleStreamableMcp(req, res) {
       return jsonResponse(res, 502, { jsonrpc: '2.0', error: { code: -32000, message: `tools server unreachable: ${e.message}` }, id: message.id ?? null });
     }
     const extId = randomBytes(16).toString('hex');
-    externalIds.add(extId);
+    rememberExternalId(extId);
     return jsonResponse(
       res,
       200,
@@ -143,8 +154,26 @@ export async function handleStreamableMcp(req, res) {
     return jsonResponse(res, 404, { jsonrpc: '2.0', error: { code: -32001, message: 'Session not found' }, id: null });
   }
 
+  rememberExternalId(externalSessionId);
+
   // The client's own `notifications/initialized` is redundant — the shared session was initialized once at boot.
   if (method === 'notifications/initialized') {
+    res.writeHead(202);
+    return res.end();
+  }
+
+  // A cancel names the client's own request id, which means nothing upstream (ids are remapped) or, worse, names another client's request. Translate it, end the waiting request here, and drop a cancel that matches nothing of this client's.
+  if (method === 'notifications/cancelled') {
+    const upstreamId = inFlight.get(inFlightKey(externalSessionId, message.params?.requestId));
+    if (upstreamId !== undefined) {
+      postMessage(shared.session, { ...message, params: { ...message.params, requestId: upstreamId } }).catch((e) => log(`[bridge] cancel forward failed: ${e.message}`));
+      const pending = shared.session.pending.get(upstreamId);
+      if (pending) {
+        clearTimeout(pending.timer);
+        shared.session.pending.delete(upstreamId);
+        pending.reject(new Error('request cancelled by the client'));
+      }
+    }
     res.writeHead(202);
     return res.end();
   }
@@ -158,9 +187,12 @@ export async function handleStreamableMcp(req, res) {
 
   // Real request: remap id so concurrent clients never collide on one session, forward, restore the original id.
   const origId = message.id;
+  const upstreamId = nextUpstreamId++;
+  const flightKey = inFlightKey(externalSessionId, origId);
+  inFlight.set(flightKey, upstreamId);
   const started = Date.now();
   try {
-    const response = await requestUpstream(shared.session, { ...message, id: nextUpstreamId++ });
+    const response = await requestUpstream(shared.session, { ...message, id: upstreamId });
     response.id = origId;
     if (method === 'tools/call') {
       // The SDK reports invalid arguments either as a JSON-RPC error or as an isError result whose text starts with the code, depending on its version.
@@ -172,6 +204,8 @@ export async function handleStreamableMcp(req, res) {
     return jsonResponse(res, 200, response);
   } catch (e) {
     return jsonResponse(res, 504, { jsonrpc: '2.0', error: { code: -32000, message: e.message }, id: origId });
+  } finally {
+    if (inFlight.get(flightKey) === upstreamId) inFlight.delete(flightKey);
   }
 }
 
