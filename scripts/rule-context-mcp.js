@@ -5,7 +5,14 @@ import { aioboxInstalled, AIOBOX_PITCH } from './aiobox-guide.js';
 export const RULE_CONTEXT_TOOL = 'akidevrule_context';
 export const RULE_CONTEXT_TITLE = 'Load Effective Aki/Claude Context';
 // Both strings end with the /akirule step: SKILL.md is embedded every session via CLAUDE.md and echoed in this tool's output, so the step points the model at the already-present routing table; only the routed RULE/METHOD files still need a Read.
-const AKIRULE_STEP = 'Then follow /akirule: the SKILL.md routing table is already included in this output (and in every session) — do not re-read SKILL.md; from its routes, Read only the RULE/METHOD files the task needs, since those are not preloaded. Open your first reply with its [RULES] line.';
+const AKIRULE_STEP = 'Then follow /akirule: the SKILL.md routing table is already included in this output (and in every session) — do not re-read SKILL.md; from its routes, Read only the RULE/METHOD files the task needs, since those are not preloaded. Open your first reply with `[RULES] agent (core) + <topics> (router)` naming the route files you actually Read; a receipt without (router), or the sha256 line copied, is a violation.';
+// Printed first in every successful output (owner 2026-10-04): a web chat has no aki-route-guard hook, and with the sha256 line first it copied that as its receipt and skipped hop 2 (Read the routed RULE/METHOD files).
+export const MANDATORY_BLOCK = [
+  'MANDATORY — BLOCKING. NEVER skip; no hook enforces this here, you are the guard:',
+  '1. MUST: the first line of every reply is `[RULES] agent (core) + <topics> (router)`, listing ONLY route files you actually Read in this chat (e.g. `[RULES] agent (core) + coding,pattern (router)`). Missing (router) = violation. NEVER use the sha256 line below as that line.',
+  '2. MUST: before any Edit, Write or send, Read the route files matching the task in the SKILL.md routing table below: code → coding + pattern; any .md → docs; a decision, plan or review → think. Not Read = do not act.',
+  '3. MUST (agent.B2): NEVER report an action "done" without read-back evidence: the file re-read, the test output, the sent message seen in the chat.',
+].join('\n');
 const CONDUCT_STEP = 'Attempt an operation before calling it impossible, never claim a missing capability, and on failure report the exact command, absolute path, exit status and stderr; state the action and its impact before a destructive or external step.';
 // Self-classifying, not server-detected: the shared MCP session (CLAUDE.md § Session lifecycle) never tracks per-client identity, so the model must judge this from its own nature, not be told which client it is.
 const RESUME_STEP = 'If you are a stateless web chat with no session memory of your own (e.g. a browser AI chat) and the task spans multiple steps, keep a live working file at $HOME/.aki/mcpsv/task/<slug>/working.md (record the goal, progress so far, and the next step) — check for an existing one first and update it as you go — so a later session can resume; skip this if you already have your own persistent session/task tracking (local CLI or app) or the task is a single step.';
@@ -32,14 +39,15 @@ export function register(server, options = {}) {
     try {
       const result = await assemble(input);
       // Without AIObox one line says what it would add (D7); once installed the line is gone and op=state carries the guide.
-      const header = `[RULES] ${result.parity} · ${result.receipt} · ${result.sources.length} sources${installed() ? '' : `\n${AIOBOX_PITCH}`}`;
+      // The receipt line is labelled context, not [RULES], so it cannot be mistaken for the reply's own [RULES] line.
+      const header = `${MANDATORY_BLOCK}\n\ncontext loaded: ${result.parity} · ${result.receipt} · ${result.sources.length} sources${installed() ? '' : `\n${AIOBOX_PITCH}`}`;
       // The assembled corpus ships once, in `content`. Keep it out of `structuredContent` so the ~90KB blob is not serialized twice on the wire (docs/plan/done/rule-context-payload-dedup.md).
       const { context, ...meta } = result;
       return { content: [{ type: 'text', text: context ? `${header}\n\n${context}` : header }], structuredContent: meta };
     } catch (error) {
       const code = error instanceof RuleContextError ? error.code : 'RULE_CONTEXT_ERROR';
       const result = { status: 'error', parity: 'practical-effective', receipt: null, rulesVersion: null, workingRoot: null, sources: [], warnings: [{ code, message: error.message }] };
-      return { content: [{ type: 'text', text: `[RULES] error · ${code}: ${error.message}` }], structuredContent: result, isError: true };
+      return { content: [{ type: 'text', text: `context NOT loaded · ${code}: ${error.message}; no [RULES] line can be claimed until a call succeeds` }], structuredContent: result, isError: true };
     }
   });
 }

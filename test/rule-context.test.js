@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { assembleRuleContext, RuleContextError } from '../scripts/rule-context.js';
-import { register, RULE_CONTEXT_DESCRIPTION, RULE_CONTEXT_TITLE, RULE_CONTEXT_TOOL } from '../scripts/rule-context-mcp.js';
+import { register, MANDATORY_BLOCK, RULE_CONTEXT_DESCRIPTION, RULE_CONTEXT_TITLE, RULE_CONTEXT_TOOL } from '../scripts/rule-context-mcp.js';
 
 const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'aki-rule-context-'));
 const home = path.join(temp, 'home');
@@ -87,7 +87,11 @@ assert.equal(definition.description, RULE_CONTEXT_DESCRIPTION);
 assert.deepEqual(Object.keys(definition.inputSchema), ['workingPath', 'mode', 'knownReceipt']);
 const output = await handler({ workingPath: '/tmp/project' });
 assert.equal(output.structuredContent.status, 'ok');
-assert.match(output.content[0].text, /^\[RULES\] practical-effective · sha256:[a-f0-9]{64} · 1 sources\n\nrules$/);
+assert.ok(output.content[0].text.startsWith(`${MANDATORY_BLOCK}\n\ncontext loaded: practical-effective · sha256:`), 'the mandatory block comes first, then the receipt');
+assert.match(output.content[0].text, /\ncontext loaded: practical-effective · sha256:[a-f0-9]{64} · 1 sources\n\nrules$/);
+assert.equal(/^\[RULES\] (?!agent \(core\))/m.test(output.content[0].text), false, 'no line of the output is a [RULES] line a model could copy as its receipt');
+for (const must of ['BLOCKING', '`[RULES] agent (core) + <topics> (router)`', 'code → coding + pattern', 'any .md → docs', '→ think', 'agent.B2']) assert.ok(MANDATORY_BLOCK.includes(must), must);
+assert.match(RULE_CONTEXT_DESCRIPTION, /a receipt without \(router\)[^.]*is a violation/);
 assert.equal(output.isError, undefined);
 assert.equal('context' in output.structuredContent, false, 'corpus must ship only in content, never duplicated into structuredContent');
 assert.equal(output.structuredContent.sources.length, 1, 'provenance is preserved in structuredContent');
@@ -98,12 +102,12 @@ register({ registerTool(_n, _d, h) { bareHandler = h; } }, {
   assemble: async () => ({ status: 'ok', parity: 'practical-effective', receipt: `sha256:${'a'.repeat(64)}`, rulesVersion: '1', workingRoot: null, sources: [], warnings: [], context: 'rules' }),
   aioboxInstalled: () => false,
 });
-assert.match((await bareHandler({})).content[0].text, /^\[RULES\] [^\n]+\nAIObox \(not installed here\)[^\n]+https:\/\/aiobox\.app\/guide\/aiobox\.md\n\nrules$/);
+assert.match((await bareHandler({})).content[0].text, /\ncontext loaded: [^\n]+\nAIObox \(not installed here\)[^\n]+https:\/\/aiobox\.app\/guide\/aiobox\.md\n\nrules$/);
 
 let errorHandler;
 register({ registerTool(_n, _d, h) { errorHandler = h; } }, { assemble: async () => { throw new Error('boom'); } });
 const failure = await errorHandler({});
 assert.equal(failure.isError, true);
 assert.equal(failure.structuredContent.status, 'error');
-assert.match(failure.content[0].text, /^\[RULES\] error/);
+assert.match(failure.content[0].text, /^context NOT loaded · RULE_CONTEXT_ERROR: boom; no \[RULES\] line/);
 console.log('PASS: rule context MCP metadata, structured provenance, text fallback, and typed failure');
