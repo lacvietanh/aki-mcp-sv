@@ -109,6 +109,7 @@ export async function handleStreamableMcp(req, res) {
   } catch {
     return jsonResponse(res, 400, { jsonrpc: '2.0', error: { code: -32700, message: 'Parse error' }, id: null });
   }
+  if (!message || typeof message !== 'object' || Array.isArray(message)) return jsonResponse(res, 400, { jsonrpc: '2.0', error: { code: -32600, message: 'Invalid Request: expected one JSON-RPC object' }, id: null });
 
   const method = message.method;
   const hasId = message.id !== undefined && message.id !== null;

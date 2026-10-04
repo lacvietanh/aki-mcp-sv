@@ -49,6 +49,9 @@ Major because `chrome_launch` no longer clones profiles and lost `refresh`: it o
 ### Removed
 - **`chrome_launch` `refresh` and the akimcp profile cloner** (allowlist copy, `.aki-clone.json`, `~/.aki/mcpsv/chrome-clones/`): it copied SQLite files while open, could rename a profile out from under a running Chrome, and duplicated AIObox's cloner. The old `chrome-clones` folder is no longer read and can be deleted.
 
+### Security
+- **A request cut off mid-body no longer stops the server** (`scripts/gatekeeper.js`, `scripts/http.js`): an unauthenticated `POST` to `/token`, `/revoke` or `/authorize` whose connection dropped before the body arrived raised an unhandled rejection, which ends the Node process and disconnects every client. The gatekeeper now catches any failure of a request and answers that request alone (`500`, logged). OAuth bodies are capped at 64 KB (`413` beyond), and `/mcp` answers `400` to a JSON body that is not one object (`null`, an array, a scalar) instead of throwing. Covered by `test/gatekeeper.test.js`.
+
 ## [2.2.0] - 2026-10-01
 
 ### Added

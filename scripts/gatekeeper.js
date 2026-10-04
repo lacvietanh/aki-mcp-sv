@@ -34,7 +34,7 @@ export function startGatekeeper(origin = null, onFatal) {
     if (failures.record(key)) logSecurity(`caller ${key} blocked after repeated failed attempts`);
   };
 
-  const server = http.createServer(async (req, res) => {
+  const route = async (req, res) => {
     const path = (req.url || '').split('?')[0];
     const t0 = Date.now();
     const isSecurityAccess = () => OAUTH_PATHS.test(path) || res.statusCode >= 500;
@@ -119,6 +119,17 @@ export function startGatekeeper(origin = null, onFatal) {
 
     res.writeHead(404, { 'Content-Type': 'text/plain' });
     res.end('not found');
+  };
+
+  // A request that fails (body aborted mid-upload, body over the cap, a handler bug) ends that request only: an unhandled rejection here would end the process for every connected client.
+  const server = http.createServer((req, res) => {
+    route(req, res).catch((e) => {
+      const status = e.statusCode || 500;
+      if (status === 500) logErr(`[gatekeeper] ${req.method} ${(req.url || '').split('?')[0]} failed: ${e.message}`);
+      if (res.headersSent) return res.destroy();
+      res.writeHead(status, { 'Content-Type': 'text/plain', Connection: 'close' });
+      res.end(status === 500 ? 'internal error' : e.message);
+    });
   });
 
   server.on('error', (e) => {

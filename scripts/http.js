@@ -16,10 +16,17 @@ const MIME = {
   '.css': 'text/css', '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.txt': 'text/plain; charset=utf-8',
 };
 
-export function readBody(req) {
+// Rejects when the client aborts mid-body, and with statusCode 413 past maxBytes: every caller must catch.
+export function readBody(req, maxBytes = Infinity) {
   return new Promise((resolve, reject) => {
     const chunks = [];
-    req.on('data', (c) => chunks.push(c));
+    let size = 0;
+    req.on('data', (c) => {
+      size += c.length;
+      if (size <= maxBytes) return chunks.push(c);
+      chunks.length = 0;
+      reject(Object.assign(new Error('request body too large'), { statusCode: 413 }));
+    });
     req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
     req.on('error', reject);
   });

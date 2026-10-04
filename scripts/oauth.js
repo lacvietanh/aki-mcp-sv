@@ -31,6 +31,8 @@ const CODE_TTL_MS = 5 * 60 * 1000;
 const PENDING_CLIENT_TTL_MS = 3600_000;
 const IDLE_CLIENT_TTL_MS = 30 * 24 * 3600_000;
 const STATIC_CLIENT_NAME = 'Claude (pre-registered)';
+// OAuth bodies are a few hundred bytes; the cap keeps an unauthenticated caller from making the server buffer an arbitrary upload.
+const MAX_BODY_BYTES = 64 * 1024;
 const MAX_LOGGED_TEXT = 64;
 const cut = (text) => String(text ?? '').slice(0, MAX_LOGGED_TEXT);
 const ACCESS_TTL_S = 365 * 24 * 3600;
@@ -300,7 +302,7 @@ export function metadataHandlers(origin) {
 export async function handleRegister(req, res) {
   let body;
   try {
-    body = JSON.parse(await readBody(req) || '{}');
+    body = JSON.parse(await readBody(req, MAX_BODY_BYTES) || '{}');
   } catch {
     return json(res, 400, { error: 'invalid_client_metadata' });
   }
@@ -378,7 +380,7 @@ function errorPage(title, message) {
 export async function handleAuthorize(req, res, passphrase, origin) {
   res.setHeader('Cache-Control', 'no-store');
   const url = new URL(req.url, 'http://internal');
-  const q = req.method === 'GET' ? url.searchParams : new URLSearchParams(await readBody(req));
+  const q = req.method === 'GET' ? url.searchParams : new URLSearchParams(await readBody(req, MAX_BODY_BYTES));
   const redirectUri = q.get('redirect_uri');
   const clientId = q.get('client_id');
   const codeChallenge = q.get('code_challenge');
@@ -472,7 +474,7 @@ function authenticateClient(req, res, body) {
 
 export async function handleToken(req, res) {
   res.setHeader('Cache-Control', 'no-store');
-  const body = new URLSearchParams(await readBody(req));
+  const body = new URLSearchParams(await readBody(req, MAX_BODY_BYTES));
   const grantType = body.get('grant_type');
   const loggedGrantType = grantType === 'authorization_code' || grantType === 'refresh_token' ? grantType : 'unsupported';
   log(`[oauth] token request: grant_type=${loggedGrantType}`);
@@ -529,7 +531,7 @@ export async function handleToken(req, res) {
 // a revoke only ends the calling client's own refresh grant, and the shared token keeps working until the panel rolls it.
 export async function handleRevoke(req, res) {
   res.setHeader('Cache-Control', 'no-store');
-  const body = new URLSearchParams(await readBody(req));
+  const body = new URLSearchParams(await readBody(req, MAX_BODY_BYTES));
   const client = authenticateClient(req, res, body);
   if (!client) {
     log('[oauth] revoke FAILED: invalid_client (unknown client_id or secret mismatch)');
