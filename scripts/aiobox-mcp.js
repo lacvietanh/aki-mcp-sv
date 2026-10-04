@@ -9,7 +9,7 @@ import { ok, okImage, fail } from './mcp-tool.js';
 import cdp from './cdp-engine.js';
 import { USER_DIR } from './userdata.js';
 import { VERSION } from './version.js';
-import { aioboxDir, aioboxInstalled, readGuide, AIOBOX_PITCH } from './aiobox-guide.js';
+import { aioboxDir, aioboxInstalled, readGuide, AIOBOX_PITCH, OPEN_RULE } from './aiobox-guide.js';
 
 const windowsFile = () => path.join(aioboxDir(), 'cdp', 'windows.json');
 // What this server last saw of the map, kept on disk so the moved-handle check survives an AkiMCP restart too. AkiMCP's own data dir, never AIObox's.
@@ -428,12 +428,33 @@ function changeFlags(change) {
 // AIObox's automation runs (aiobox docs/arch/automation-scheduler.md § Store): the scheduler is the only writer, so this opens read-only. Stamps are fixed-width RFC 3339 UTC, so since compares as text; outcome null = still running.
 const runsFile = () => path.join(aioboxDir(), 'automation.sqlite');
 const RUNS_DEFAULT = 10;
-export function readRuns(file, { automation, since, last = RUNS_DEFAULT } = {}) {
+// A request's run (aiobox plan aio-control-gaps D3) carries request (the id AkiMCP wrote) and steps (JSON [{ step, status, at, info }], rewritten after each step); a store before G1 has neither column, and a run without them shows neither key.
+const RUN_EXTRA_COLUMNS = ['request', 'steps'];
+const parseSteps = (raw) => {
+  try {
+    const steps = JSON.parse(raw);
+    return Array.isArray(steps) ? steps : null;
+  } catch {
+    return null;
+  }
+};
+export function readRuns(file, { automation, since, last = RUNS_DEFAULT, id, request } = {}) {
   if (!fs.existsSync(file)) throw new Refusal('no_runs', 'AIObox has no automation store yet', 'start an AIObox build with the automation scheduler');
   const db = new DatabaseSync(file, { readOnly: true });
   try {
+    const columns = new Set(db.prepare('PRAGMA table_info(runs)').all().map((c) => c.name));
+    const extra = RUN_EXTRA_COLUMNS.filter((c) => columns.has(c));
     const where = [];
     const params = [];
+    if (id !== undefined) {
+      where.push('id = ?');
+      params.push(id);
+    }
+    if (request) {
+      if (!columns.has('request')) return [];
+      where.push('request = ?');
+      params.push(request);
+    }
     if (automation) {
       where.push('automation_id = ?');
       params.push(automation);
@@ -442,11 +463,113 @@ export function readRuns(file, { automation, since, last = RUNS_DEFAULT } = {}) 
       where.push('started_at >= ?');
       params.push(since);
     }
-    const sql = `SELECT id, automation_id AS automation, trigger, handle, started_at AS startedAt, ended_at AS endedAt, outcome, detail FROM runs${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY started_at DESC, id DESC LIMIT ?`;
-    return db.prepare(sql).all(...params, last).map((r) => ({ ...r, running: r.outcome === null }));
+    const sql = `SELECT id, automation_id AS automation, trigger, handle, started_at AS startedAt, ended_at AS endedAt, outcome, detail${extra.map((c) => `, ${c}`).join('')} FROM runs${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY started_at DESC, id DESC LIMIT ?`;
+    return db.prepare(sql).all(...params, last).map(({ request: req, steps, ...r }) => ({ ...r, running: r.outcome === null, ...(req ? { request: req } : {}), ...(steps ? { steps: parseSteps(steps) } : {}) }));
   } finally {
     db.close();
   }
+}
+
+// profiles.json (aiobox plan aio-control-gaps G1a, contract row profiles.json): AIObox writes it whole (tmp + rename) whenever a profile, a login or a usage reading changes. Only profiles registered in AIObox; no cookie, no email beyond the account label AIObox already shows.
+const profilesFile = () => path.join(aioboxDir(), 'profiles.json');
+const PROFILES_VERSION = 1;
+function readProfiles() {
+  let raw;
+  try {
+    raw = fs.readFileSync(profilesFile(), 'utf8');
+  } catch (e) {
+    if (e.code === 'ENOENT') throw new Refusal('no_profiles', 'AIObox has not written ~/.aki/aiobox/profiles.json (a build before G1, or not started since)', 'ask the owner to update and start AIObox; until then open a window with op=new_window window=<a window of that profile>');
+    throw e;
+  }
+  const doc = JSON.parse(raw);
+  if (doc.version !== PROFILES_VERSION) throw new Error(`profiles.json version ${doc.version} is not supported (expected ${PROFILES_VERSION}); update AkiMCP or AIObox`);
+  return doc;
+}
+// The flag that keeps an AI off a profile's provider: an account flag in force for that profileId and provider (a flag without provider is Notion's, guide v9). AIObox checks the same flags.json when it runs the request (D2).
+const accountFlag = (flags, profileId, provider) => flags.find((f) => f.scope === 'account' && f.profileId === profileId && (f.provider ?? 'notion') === provider) || null;
+function profilesView(now = Date.now()) {
+  const doc = readProfiles();
+  const { flags } = coordination(now);
+  const workspaceFlag = (label) => flags.find((f) => f.scope === 'workspace' && f.workspace === label) || null;
+  const providerView = (profileId) => (pr) => {
+    const flag = accountFlag(flags, profileId, pr.id);
+    const workspaces = Array.isArray(pr.workspaces) ? { workspaces: pr.workspaces.map((w) => ({ ...w, flag: workspaceFlag(w.label) })) } : {};
+    return { ...pr, ...workspaces, flag, eligible: pr.login === 'signed_in' && !flag };
+  };
+  return { updatedAt: doc.updatedAt ?? null, profiles: (doc.profiles || []).map((p) => ({ ...p, providers: (p.providers || []).map(providerView(p.id)) })) };
+}
+// profile = its id, or its number as AIObox shows it (P9, 9). Refused with the same codes AIObox uses, so the AI reads one vocabulary.
+function pickProfile(profile, provider) {
+  const view = profilesView();
+  const number = /^P?(\d+)$/i.exec(String(profile).trim())?.[1];
+  const p = view.profiles.find((x) => x.id === profile || (number !== undefined && String(x.number).replace(/^P/i, '') === number));
+  if (!p) throw new Refusal('not_registered', `no AIObox profile '${profile}'; registered: ${view.profiles.map((x) => `${x.id} (P${x.number})`).join(', ') || 'none'}`, 'pick an eligible one from aki__aiobox op=profiles');
+  const pr = p.providers.find((x) => x.id === provider);
+  if (!pr || pr.login !== 'signed_in') throw new Refusal('not_signed_in', `${p.id} is not signed in to ${provider} (${pr ? pr.login : 'AIObox has never seen it there'})`, 'pick an eligible profile from aki__aiobox op=profiles; an AI never signs in');
+  if (pr.flag) throw new Refusal('flagged', `${p.id} ${provider} is flagged: ${pr.flag.reason}`, 'pick another eligible profile from aki__aiobox op=profiles');
+  return { profileId: p.id, provider: pr.id };
+}
+
+// The request channel (aiobox plan aio-control-gaps D1): one file per request in ~/.aki/aiobox/requests/ (tmp + rename), { version: 1, id, op, args, at }. AIObox scans every 500 ms, deletes the file and runs it as an automation (ai-new-window, ai-handoff-open, ai-open-url) whose runs row carries request = id; there is no reply file. The third thing AkiMCP writes under ~/.aki/aiobox/, after windows.refresh and flags.json.
+const requestsDir = () => path.join(aioboxDir(), 'requests');
+const REQUEST_VERSION = 1;
+const REQUEST_MAX_BYTES = 16 * 1024;
+export const HANDOFF_TEXT_MAX_BYTES = 8 * 1024;
+const REQUEST_PICKUP_MS = 5_000;
+const REQUEST_POLL_MS = 250;
+let requestSeq = 0;
+async function sendRequest(op, args) {
+  const id = `akimcp-${process.pid}-${Date.now()}-${(requestSeq += 1)}`;
+  const body = `${JSON.stringify({ version: REQUEST_VERSION, id, op, args, at: new Date().toISOString() })}\n`;
+  const bytes = Buffer.byteLength(body);
+  if (bytes > REQUEST_MAX_BYTES) throw new Refusal('too_large', `the ${op} request is ${bytes} bytes, over ${REQUEST_MAX_BYTES}`, 'shorten the text');
+  fs.mkdirSync(requestsDir(), { recursive: true });
+  const file = path.join(requestsDir(), `${id}.json`);
+  const tmp = path.join(requestsDir(), `.${id}.tmp`);
+  fs.writeFileSync(tmp, body);
+  fs.renameSync(tmp, file);
+  for (const end = Date.now() + REQUEST_PICKUP_MS; fs.existsSync(file); await sleep(REQUEST_POLL_MS)) {
+    if (Date.now() < end) continue;
+    try {
+      fs.unlinkSync(file);
+    } catch (e) {
+      if (e.code === 'ENOENT') break; // AIObox took it just now
+      throw e;
+    }
+    throw new Refusal('app_not_listening', `AIObox did not take request ${id} within ${REQUEST_PICKUP_MS / 1000}s; it was taken back`, 'ask the owner to start or update AIObox (a build with the request channel)');
+  }
+  return id;
+}
+// The run of a request, once it ended or the wait is over (null: no row yet).
+async function awaitRequestRun(request, waitMs) {
+  for (const end = Date.now() + waitMs; ; await sleep(REQUEST_POLL_MS)) {
+    let run = null;
+    try {
+      run = readRuns(runsFile(), { request, last: 1 })[0] ?? null;
+    } catch (e) {
+      if (e.code !== 'no_runs') throw e;
+    }
+    if ((run && !run.running) || Date.now() >= end) return run;
+  }
+}
+const stepsLine = (steps) => (steps || []).map((s) => `${s.step} ${s.status}${s.info ? ` (${s.info})` : ''}`).join(' → ') || 'none';
+// What a request's run says: refused = a Refusal with AIObox's own code; ended badly = an error naming the step; still running = runId and how to read on; ok = detail as AIObox's machine-readable JSON.
+function requestOutcome(op, request, run) {
+  if (!run) return { request, runId: null, done: false, steps: [], next: `AIObox took the request but shows no run of it yet: aki__aiobox op=runs request=${request}; do not ask again` };
+  if (run.outcome === 'refused') {
+    const detail = String(run.detail ?? '');
+    const at = detail.indexOf(': ');
+    const [code, why] = at === -1 ? ['refused', detail] : [detail.slice(0, at), detail.slice(at + 2)];
+    throw new Refusal(code, `AIObox refused ${op} (run ${run.id}): ${why}`, 'read aki__aiobox op=profiles and pick an eligible profile, or report it');
+  }
+  const base = { request, runId: run.id, done: !run.running, steps: run.steps ?? [] };
+  if (run.running) return { ...base, next: `still running: aki__aiobox op=runs id=${run.id} reads each step; do not ask again` };
+  if (run.outcome !== 'ok') throw new Error(`${op} run ${run.id} ended ${run.outcome}: ${run.detail ?? 'no detail'} (steps: ${stepsLine(run.steps)})`);
+  let result = run.detail;
+  try {
+    result = JSON.parse(run.detail);
+  } catch {}
+  return { ...base, outcome: run.outcome, result };
 }
 
 const DRAFT_WARNING = 'the message box holds a draft, so busy may read false while it still answers (Notion); read it again later with op=read, and never touch the draft';
@@ -532,6 +655,10 @@ const READ_OPS = {
   },
   async runs(args) {
     return ok(JSON.stringify({ akimcp: VERSION, runs: readRuns(runsFile(), args) }, null, 2));
+  },
+  // Where a window can open (G1a): AIObox's profiles.json with each provider's flag and eligible (signed in, not flagged) laid over it.
+  async profiles() {
+    return ok(JSON.stringify({ akimcp: VERSION, ...profilesView() }, null, 2));
   },
 };
 
@@ -666,9 +793,19 @@ const NEW_WINDOW_REST_MS = 1_100; // aiobox akipanel.ts NEW_WINDOW_REST_MS (1 s)
 const windowsOfProfile = (map, port) => (map.profiles || []).find((p) => p.port === port)?.windows || [];
 const handlesOfProfile = (map, port) => new Set(windowsOfProfile(map, port).map((w) => w.handle));
 
+// new_window without a window (G1b): AIObox opens one in any eligible profile, launching it when it is not running.
+async function newWindowIn(args) {
+  if (args.profile === undefined || args.provider === undefined) throw new Error('op=new_window needs window, or profile and provider');
+  const target = pickProfile(args.profile, args.provider);
+  const request = await sendRequest('new_window', target);
+  const out = requestOutcome('new_window', request, await awaitRequestRun(request, waitLimitS(args.wait, CALL_WAIT_MAX_S) * 1000));
+  const opened = out.result?.handle ? { window: out.result.handle, targetId: out.result.targetId ?? null } : {};
+  return ok(JSON.stringify({ ...opened, ...target, ...out }, null, 2));
+}
+
 const WRITE_OPS = {
   async new_window(args) {
-    need('new_window', args, ['window']);
+    if (args.window === undefined) return newWindowIn(args);
     const { tab, live: target, used } = await openTab(args);
     const ask = async () => (await cdp.evaluate({ port: tab.port, target, expression: NEW_WINDOW_JS })).value;
     let before = handlesOfProfile(readMap(), tab.port);
@@ -698,6 +835,19 @@ const WRITE_OPS = {
     const first = opened.tabs[0];
     const warning = [used.warning, providerOf(first.url) === wanted ? null : `the new window still shows ${first.url}, not a ${wanted} page`].filter(Boolean).join(' ');
     return ok(JSON.stringify({ window: opened.handle, targetId: first.targetId, chatId: chatIdOf(first.url), opener: tab.handle, openerTargetId: tab.targetId, provider: providerOf(first.url), url: first.url, title: stripHandle(first.title), ...(warning ? { warning } : {}) }, null, 2));
+  },
+  // A whole handoff in one request (G5): AIObox opens the window, runs Connect AkiMCP there, verifies it, places it like `like` and sends text through send v2 with a reply; the old window stays for the caller to close once it read the new one.
+  async handoff_open(args) {
+    need('handoff_open', args, ['profile', 'provider', 'like', 'text']);
+    const bytes = Buffer.byteLength(args.text);
+    if (bytes > HANDOFF_TEXT_MAX_BYTES) throw new Refusal('too_large', `text is ${bytes} bytes, over ${HANDOFF_TEXT_MAX_BYTES}`, 'put the details in the working file or a handoff letter and send a short pointer');
+    const like = resolveTab(readMap(), args.like).handle;
+    const target = pickProfile(args.profile, args.provider);
+    const request = await sendRequest('handoff_open', { ...target, like, text: args.text });
+    const out = requestOutcome('handoff_open', request, await awaitRequestRun(request, waitLimitS(args.wait, CALL_WAIT_MAX_S) * 1000));
+    const opened = out.result?.handle ? { window: out.result.handle, targetId: out.result.targetId ?? null, chatId: out.result.chatId ?? null } : {};
+    const next = out.outcome === 'ok' ? { next: `op=read last=2 on ${opened.window ?? 'the new window'} to see it took the text, then op=close_window window=${like} successor=${opened.window ?? '<new window>'}` } : {};
+    return ok(JSON.stringify({ ...opened, ...target, like, ...out, ...next }, null, 2));
   },
   // Same tab, fresh chat: the chat id is only in the URL after the first message, so the result has none.
   async new_chat(args) {
@@ -852,7 +1002,7 @@ export function register(server) {
       title: 'AIObox: read windows by handle',
       annotations: { readOnlyHint: true, openWorldHint: false },
       description:
-        'Read AIObox windows. Start with op=state: every window (chatId, provider, account, busy, workspace, usage), macros, flags, the guide for acting. op=whoami quote=<20+ chars verbatim of the latest user message> finds your window. Name a window by handle P#·W# (lasting; a retired one leads to its successor), chatId (its chat now) or targetId; expect refuses a window now showing another chat. op=windows: tabs only. op=read: last messages (last=N), else page text. op=wait_idle: waits until the chat stops answering (timeout s), returns its last messages. op=text: elements by selector. op=screenshot. op=runs: automation runs, newest first. Results name the tab used. Acting: aki__aiobox_write.',
+        'Read AIObox windows. Start with op=state: every window (chatId, provider, account, busy, workspace, usage), macros, flags, the guide for acting. op=whoami quote=<20+ chars verbatim of the latest user message> finds your window. Name a window by handle P#·W# (lasting; a retired one leads to its successor), chatId or targetId; expect refuses a window showing another chat. op=windows: tabs only. op=profiles: where a new window can open (login, usage, flag, eligible). op=read: last messages (last=N). op=wait_idle: waits until the chat stops answering. op=text: by selector. op=screenshot. op=runs: automation runs; id= or request= for one, with steps. Acting: aki__aiobox_write.',
       inputSchema: {
         op: z.enum(Object.keys(READ_OPS)).describe(Object.keys(READ_OPS).join(' | ')),
         window: windowArg,
@@ -860,8 +1010,10 @@ export function register(server) {
         quote: z.string().optional().describe('whoami: 20+ characters copied verbatim from the latest user message'),
         timeout: z.number().int().min(1).max(300).optional().describe('wait_idle: seconds (default and most 50 per call; call again while next says so)'),
         last: z.number().int().min(1).max(50).optional().describe('read, wait_idle: messages from the end (default 1); runs: runs (default 10)'),
-        automation: z.string().optional().describe('runs: automation id, e.g. usage, connect-akimcp-notion'),
+        automation: z.string().optional().describe('runs: automation id, e.g. usage, connect-akimcp-notion, ai-handoff-open'),
         since: z.string().optional().describe('runs: started at or after this RFC 3339 UTC stamp'),
+        id: z.number().int().positive().optional().describe('runs: one run (a runId)'),
+        request: z.string().optional().describe('runs: by AkiMCP request id'),
         selector: z.string().optional().describe('text: CSS selector'),
         format: z.enum(['png', 'jpeg']).optional().describe('screenshot: default png'),
       },
@@ -881,22 +1033,23 @@ export function register(server) {
       title: 'AIObox: open a window, send or fill a chat, run JS',
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description:
-        'Act in an AIObox window (chatId, handle or targetId; rules: aki__aiobox op=state). expect refuses another chat, from=<your chatId> your own chat. op=new_window: same profile and provider. op=new_chat: a fresh chat in that tab. op=send: sends now, even mid-answer; delivered:true = shown, queued:true = AIObox holds it; wait=s retries a draft. op=compose only fills the box. op=run_macro: macro, option; returns its status. op=place_like: takes the bounds of like. op=close_window: closes the tab (not while busy or with a draft); successor=<new window> retires its handle. op=flag / op=unflag: the do-not-use list (account+profile or workspace). op=eval: runs JS in the page (it can click and type).',
+        `Act in an AIObox window (handle, chatId or targetId; rules: aki__aiobox op=state); from=<your chatId>. op=new_window: window= or profile+provider (aki__aiobox op=profiles). op=handoff_open: profile, provider, like, text (whole handoff); steps: op=runs id=<runId>. ${OPEN_RULE} op=new_chat: fresh chat. op=send: sends now, even mid-answer (delivered:true = shown, queued:true = held). op=compose: fills only. op=run_macro: macro, option. op=place_like: bounds of like. op=close_window: not busy or with a draft; successor= retires it. op=flag/op=unflag: do-not-use list. op=eval: page JS.`,
       inputSchema: {
         op: z.enum(Object.keys(WRITE_OPS)).describe(Object.keys(WRITE_OPS).join(' | ')),
         window: windowArg,
         expect: expectArg,
         from: z.string().optional().describe('your own chatId (aki__aiobox op=whoami); send, compose, new_chat and close_window refuse it'),
-        like: z.string().optional().describe('place_like: the window to copy the place of (handle, chatId or targetId)'),
+        like: z.string().optional().describe('place_like, handoff_open: the window to copy the place of (handle, chatId or targetId)'),
+        provider: z.string().optional().describe('new_window, handoff_open: notion, claude, gpt or grok'),
         successor: z.string().optional().describe('close_window: the window that took over (handle, chatId or targetId); the closed handle then leads to it'),
         macro: z.string().optional().describe('run_macro: macro id (op=state macros)'),
         option: z.string().optional().describe('run_macro: option id (default: the first)'),
-        text: z.string().optional().describe('send, compose: the text'),
-        wait: z.number().int().min(0).max(300).optional().describe('send: seconds to retry a draft or blocked chat (default 0, at most 50 per call)'),
+        text: z.string().optional().describe('send, compose, handoff_open: the text (handoff_open ≤8 KB)'),
+        wait: z.number().int().min(0).max(300).optional().describe('send: seconds to retry a draft or blocked chat (default 0); new_window, handoff_open: run wait (default 50); max 50 per call'),
         expression: z.string().optional().describe('eval: JS evaluated in the page; the last expression is returned'),
         awaitPromise: z.boolean().optional().describe('eval: await a returned Promise (default true)'),
         account: z.string().optional().describe('flag, unflag: account label (op=state account)'),
-        profile: z.string().optional().describe('flag, unflag: its profileId'),
+        profile: z.string().optional().describe('flag, unflag: its profileId; new_window, handoff_open: profileId or P#'),
         workspace: z.string().optional().describe('flag, unflag: a workspace label instead'),
         reason: z.string().optional().describe('flag: why'),
         hours: z.number().positive().max(720).optional().describe('flag: hours in force (none = until unflag)'),

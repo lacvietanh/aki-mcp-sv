@@ -91,6 +91,7 @@ Decided (chủ, 2026-10-03): bỏ token theo client, `/api/identity`, bearer có
 - [x] `aki__aiobox_write op=flag` / `op=unflag` ghi `flags.json`, AkiMCP là người ghi duy nhất (cleanup-ai-leftovers C1; P1·W2 2026-10-04, `test/aiobox-mcp.test.js`).
 - [x] `aki__aiobox_write op=place_like {window, like}` gọi `akipanel.placeLike(like)` trong `window`, và `op=close_window {window}` gọi `akipanel.closeWindow()` (hai dòng hợp đồng trên; guide v9 § Finishing a handoff); thêm vào `ops` (P1·W2 2026-10-04, test với panel giả). AkiMCP 3.0.0 `op=state` 2026-10-04 09:31Z đã liệt `place_like`, `close_window`. [ ] Kiểm sống gọi thật: chờ AIObox build:app có placeLike/closeWindow + restart AkiMCP.
 - [x] `op=state`/`op=whoami` trả `workspace`, `usage`, `usageWhy` mỗi tab và `workspaces` theo profile, đọc từ `akipanel.usage`/`scopePick`/`exactScope` (owner 2026-10-04; P1·W2, `test/aiobox-mcp.test.js`). [ ] Kiểm sống: sau restart AkiMCP, `op=whoami` khớp số trên panel của tab.
+- [x] G1 + G5 phía AkiMCP (aiobox plan aio-control-gaps; P9·W8 2026-10-04): `op=profiles` (đọc `profiles.json`, thêm `flag`/`eligible`), `op=new_window profile+provider`, `op=handoff_open` qua `requests/` (từ chối bằng mã của app, `app_not_listening` sau 5 s), `op=runs id=`/`request=`/`steps`, câu `OPEN_RULE` (D5) trong mô tả `aiobox_write`, fallback guide, cảnh báo `chrome_launch` (`scripts/aiobox-mcp.js`, `scripts/aiobox-guide.js`, `scripts/chrome-mcp.js`, test `test/aiobox-mcp.test.js` với app giả). [ ] Kiểm sống sau build app G1+G5 và restart AkiMCP.
 
 ## Việc phía AIObox
 

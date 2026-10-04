@@ -16,11 +16,12 @@ import {
   stopChrome,
   resolvePort,
 } from './chrome-profile.js';
+import { OPEN_RULE } from './aiobox-guide.js';
 
-// While AIObox runs it owns these clones: a Chrome opened here has no AIObox panel, guard or handle. Warn only until AIObox can open a stopped profile itself (plan/aiobox-control-ops.md O2), then refuse.
+// While AIObox runs it owns these clones: a Chrome opened here has no AIObox panel, guard or handle. AIObox now opens a stopped profile itself (aiobox plan aio-control-gaps G1, op=new_window profile+provider); this stays a warning until that is live everywhere, then becomes a refusal.
 export function aioboxWarning() {
   if (!fs.existsSync(path.join(os.homedir(), '.aki', 'aiobox', 'cdp', 'windows.json'))) return null;
-  return 'AIObox is running and owns these profiles: for a chat window use aki__aiobox_write op=new_window from a window of that profile (aki__aiobox op=state lists them); a Chrome opened here has no AIObox panel or handle.';
+  return `AIObox is running and owns these profiles: ${OPEN_RULE} aki__aiobox op=profiles lists where a window can open, aki__aiobox_write op=new_window profile=<id> provider=<id> opens it; a Chrome opened here has no AIObox panel or handle.`;
 }
 
 export const provider = {
@@ -60,7 +61,7 @@ export function register(server) {
       title: 'Chromium: open shared profile on a CDP port',
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
       description:
-        'Opens a shared profile clone made by AIObox (logins kept). If another process runs it, attaches to its CDP port (owned false) and opens url as a new tab; else launches stealth Chrome on --remote-debugging-port=0 (owned true). Never clones.',
+        'Opens a shared profile clone made by AIObox (logins kept). If another process runs it, attaches to its CDP port (owned false) and opens url as a new tab; else launches stealth Chrome on --remote-debugging-port=0 (owned true). Never clones. While AIObox runs, chat windows open only via aki__aiobox_write op=new_window or op=handoff_open.',
       inputSchema: {
         profile: z.string().optional().describe('Profile 14 or shared id chrome-profile-14 (default Default)'),
         browser: z.string().optional().describe('chrome, brave, or edge (default chrome)'),

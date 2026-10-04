@@ -202,7 +202,7 @@ pages['T-NOTION'] = { body: 'notion body', akipanel: readonlyPanel({
 pages['T-GPT'] = { akipanel: readonlyPanel({ capabilities: {} }), body: 'history: please compare the last two answers now, then more' };
 const state = JSON.parse((await call('aiobox', { op: 'state' })).text);
 assert.equal(state.akimcp, VERSION);
-assert.deepEqual(state.ops, { aiobox: ['windows', 'state', 'whoami', 'read', 'wait_idle', 'text', 'screenshot', 'runs'], aiobox_write: ['new_window', 'new_chat', 'place_like', 'close_window', 'flag', 'unflag', 'compose', 'send', 'run_macro', 'eval'] });
+assert.deepEqual(state.ops, { aiobox: ['windows', 'state', 'whoami', 'read', 'wait_idle', 'text', 'screenshot', 'runs', 'profiles'], aiobox_write: ['new_window', 'handoff_open', 'new_chat', 'place_like', 'close_window', 'flag', 'unflag', 'compose', 'send', 'run_macro', 'eval'] });
 assert.deepEqual(state.flags, [], 'no flags.json yet: empty list');
 assert.equal('claims' in state, false, 'claims are gone (aiobox plan cleanup-ai-leftovers)');
 // No ~/.aki/aiobox/guide.md yet: the short fallback, pointing at the web guide.
@@ -407,7 +407,7 @@ live[1111] = [];
 assert.match((await call('aiobox', { op: 'read', window: 'P1·W1' })).text, /window map is stale: P1·W1 \(target T-NOTION\) is no longer open/);
 
 // new_window goes through akipanel.newWindow(), then finds the handle AIObox adds to this profile in windows.json.
-assert.equal((await call('aiobox_write', { op: 'new_window' })).text, 'rejected: op=new_window needs window');
+assert.equal((await call('aiobox_write', { op: 'new_window' })).text, 'rejected: op=new_window needs window, or profile and provider');
 pages['T-GPT'].akipanel = undefined;
 assert.equal((await call('aiobox_write', { op: 'new_window', window: 'P7·W2' })).text, 'rejected: P7·W2: this window has no AIObox panel');
 pages['T-GPT'].akipanel = readonlyPanel({ online: false, newWindow: () => assert.fail('offline panel must not be asked') });
@@ -636,6 +636,94 @@ assert.deepEqual(allRuns.map((r) => [r.automation, r.running]), [['usage', true]
 assert.deepEqual(allRuns[1], { id: 2, automation: 'connect-akimcp-notion', trigger: 'manual', handle: 'P1·W2', startedAt: '2026-10-04T02:00:00.000Z', endedAt: '2026-10-04T02:00:40.000Z', outcome: 'ok', detail: '2 window(s): 1 done · 1 timeout', running: false });
 assert.deepEqual(JSON.parse((await call('aiobox', { op: 'runs', automation: 'usage', last: 1 })).text).runs.map((r) => r.id), [3]);
 assert.deepEqual(JSON.parse((await call('aiobox', { op: 'runs', since: '2026-10-04T02:00:00.000Z' })).text).runs.map((r) => r.id), [3, 2], 'since compares the stamps as text');
+
+// G1/G5 (aiobox plan aio-control-gaps): profiles.json, the request channel and request runs. A fake AIObox takes each request file, deletes it and writes its run the way the scheduler does.
+{
+  const { OPEN_RULE, GUIDE_FALLBACK } = await import('../scripts/aiobox-guide.js');
+  assert.ok(GUIDE_FALLBACK.includes(OPEN_RULE) && aioboxWarning().includes(OPEN_RULE), 'D5: the fallback guide and chrome_launch carry the one opening rule');
+  assert.ok(mcp._registeredTools.aiobox_write.description.includes(OPEN_RULE), 'D5: aiobox_write carries it too');
+  const chromeServer = new McpServer({ name: 'c', version: '1' });
+  (await import('../scripts/chrome-mcp.js')).register(chromeServer);
+  assert.match(chromeServer._registeredTools.chrome_launch.description, /chat windows open only via aki__aiobox_write op=new_window or op=handoff_open/);
+  assert.doesNotMatch(GUIDE_FALLBACK, /never launches a profile/i);
+
+  const profilesPath = path.join(aioboxHome, 'profiles.json');
+  assert.match((await call('aiobox', { op: 'profiles' })).text, /profiles\.json.*\(no_profiles;/, 'an AIObox before G1 = a refusal with its next step');
+  fs.writeFileSync(path.join(aioboxHome, 'flags.json'), JSON.stringify({ list: [{ scope: 'account', account: 'n@x', profileId: 'chrome-profile-18', provider: 'notion', reason: 'interrupted x2', flaggedAt: '2026-10-04T00:00:00.000Z' }, { scope: 'workspace', workspace: 'dldn.1', provider: 'notion', reason: 'quota', flaggedAt: '2026-10-04T00:00:00.000Z' }] }));
+  fs.writeFileSync(profilesPath, JSON.stringify({ version: 1, updatedAt: '2026-10-04T18:00:00.000Z', profiles: [
+    { id: 'chrome-profile-7', number: 2, name: 'Work', browser: 'chrome', running: false, providers: [
+      { id: 'claude', login: 'signed_in', account: 'c@x', observedAt: '2026-10-04T17:00:00.000Z', stale: false, windows: 0, usage: null },
+      { id: 'gpt', login: 'signed_out', account: null, observedAt: null, stale: true, windows: 0, usage: null },
+    ] },
+    { id: 'chrome-profile-18', number: 9, name: 'Aki', browser: 'chrome', running: true, providers: [
+      { id: 'notion', login: 'signed_in', account: 'n@x', observedAt: '2026-10-04T17:00:00.000Z', stale: false, windows: 3, usage: { session: 10, weekly: 40, readAt: '2026-10-04T17:59:00.000Z' }, workspaces: [{ id: 'w1', label: 'dldn.1', plan: 'plus', session: 99, weekly: 99 }, { id: 'w2', label: 'lva.1', plan: 'plus', session: 2, weekly: 5 }] },
+    ] },
+  ] }));
+  const view = JSON.parse((await call('aiobox', { op: 'profiles' })).text);
+  const prov = (pid, id) => view.profiles.find((p) => p.id === pid).providers.find((x) => x.id === id);
+  assert.deepEqual([prov('chrome-profile-7', 'claude').eligible, prov('chrome-profile-7', 'gpt').eligible, prov('chrome-profile-18', 'notion').eligible], [true, false, false], 'eligible = signed in and not flagged');
+  assert.equal(prov('chrome-profile-18', 'notion').flag.reason, 'interrupted x2', 'the account flag is laid over its profile and provider');
+  assert.deepEqual(prov('chrome-profile-18', 'notion').workspaces.map((w) => w.flag?.reason ?? null), ['quota', null], 'a workspace flag marks that workspace only');
+
+  assert.equal((await call('aiobox_write', { op: 'new_window', profile: 'chrome-profile-7' })).text, 'rejected: op=new_window needs window, or profile and provider');
+  assert.match((await call('aiobox_write', { op: 'new_window', profile: 'chrome-profile-99', provider: 'claude' })).text, /no AIObox profile 'chrome-profile-99'; registered: chrome-profile-7 \(P2\), chrome-profile-18 \(P9\) \(not_registered;/);
+  assert.match((await call('aiobox_write', { op: 'new_window', profile: 'P2', provider: 'gpt' })).text, /chrome-profile-7 is not signed in to gpt \(signed_out\) \(not_signed_in;/, 'P# names a profile too');
+  assert.match((await call('aiobox_write', { op: 'new_window', profile: 'chrome-profile-18', provider: 'notion' })).text, /chrome-profile-18 notion is flagged: interrupted x2 \(flagged;/);
+  const requestsPath = path.join(aioboxHome, 'requests');
+  assert.equal(fs.existsSync(requestsPath), false, 'a refused call writes no request');
+
+  // No AIObox reading requests: the file is taken back after 5 s.
+  assert.match((await call('aiobox_write', { op: 'new_window', profile: '2', provider: 'claude' })).text, /AIObox did not take request akimcp-\d+-\d+-\d+ within 5s; it was taken back \(app_not_listening;/);
+  assert.deepEqual(fs.readdirSync(requestsPath), [], 'nothing left behind');
+
+  const { DatabaseSync } = await import('node:sqlite');
+  const db = new DatabaseSync(runsFile);
+  db.exec('ALTER TABLE runs ADD COLUMN request TEXT; ALTER TABLE runs ADD COLUMN steps TEXT');
+  const addRun = db.prepare('INSERT INTO runs (automation_id, trigger, handle, started_at, ended_at, outcome, detail, request, steps) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+  const seen = [];
+  const app = setInterval(() => {
+    for (const name of fs.readdirSync(requestsPath).filter((n) => n.endsWith('.json'))) {
+      const file = path.join(requestsPath, name);
+      const req = JSON.parse(fs.readFileSync(file, 'utf8'));
+      fs.unlinkSync(file);
+      seen.push(req);
+      const at = new Date().toISOString();
+      const step = (s, status = 'ok') => ({ step: s, status, at, info: null });
+      if (req.op === 'new_window') addRun.run('ai-new-window', 'request', null, at, at, 'ok', JSON.stringify({ handle: 'P2·W1', targetId: 'T-NEW' }), req.id, JSON.stringify(['scope', 'launch', 'open', 'panel'].map((s) => step(s))));
+      else if (req.args.text === 'over budget') addRun.run('ai-handoff-open', 'request', null, at, at, 'refused', 'budget: 6 new windows in the last hour', req.id, JSON.stringify([step('scope', 'error')]));
+      else if (req.args.text === 'slow') addRun.run('ai-handoff-open', 'request', null, at, null, null, null, req.id, JSON.stringify([step('scope'), step('launch', 'skipped'), step('open'), step('connect', 'running')]));
+      else if (req.args.text === 'broken') addRun.run('ai-handoff-open', 'request', null, at, at, 'error', 'verify: no signed-in claude.ai client', req.id, JSON.stringify([step('open'), step('connect'), { ...step('verify', 'error'), info: 'no signed-in claude.ai client' }]));
+      else addRun.run('ai-handoff-open', 'request', null, at, at, 'ok', JSON.stringify({ handle: 'P2·W2', targetId: 'T-H', chatId: 'c-1' }), req.id, JSON.stringify(['scope', 'launch', 'open', 'panel', 'connect', 'verify', 'place', 'send'].map((s) => step(s))));
+    }
+  }, 50);
+
+  const opened = JSON.parse((await call('aiobox_write', { op: 'new_window', profile: 'chrome-profile-7', provider: 'claude' })).text);
+  assert.deepEqual([opened.window, opened.targetId, opened.profileId, opened.provider, opened.done, opened.outcome, opened.steps.map((s) => s.step)], ['P2·W1', 'T-NEW', 'chrome-profile-7', 'claude', true, 'ok', ['scope', 'launch', 'open', 'panel']]);
+  assert.match(seen[0].id, /^akimcp-\d+-\d+-\d+$/);
+  assert.deepEqual([seen[0].version, seen[0].op, seen[0].args, typeof seen[0].at], [1, 'new_window', { profileId: 'chrome-profile-7', provider: 'claude' }, 'string'], 'the request shape of the contract');
+  assert.equal(opened.request, seen[0].id);
+  assert.ok(!fs.readdirSync(requestsPath).some((n) => n.endsWith('.tmp')), 'no temp file left behind');
+
+  assert.match((await call('aiobox_write', { op: 'handoff_open', profile: 'P2', provider: 'claude', like: 'P1·W1' })).text, /op=handoff_open needs text/);
+  assert.match((await call('aiobox_write', { op: 'handoff_open', profile: 'P2', provider: 'claude', like: 'P9·W9', text: 'x' })).text, /no window 'P9·W9'.*\(no_window/, 'like must be an open window');
+  assert.match((await call('aiobox_write', { op: 'handoff_open', profile: 'P2', provider: 'claude', like: 'P1·W1', text: 'x'.repeat(8 * 1024 + 1) })).text, /text is 8193 bytes, over 8192 \(too_large;/);
+  const handed = JSON.parse((await call('aiobox_write', { op: 'handoff_open', profile: 'P2', provider: 'claude', like: 'abc', text: 'take over: read working.md' })).text);
+  assert.deepEqual([handed.window, handed.chatId, handed.like, handed.done, handed.steps.length], ['P2·W2', 'c-1', 'P1·W1', true, 8], 'like is passed on as the handle it names');
+  assert.equal(seen.at(-1).args.text, 'take over: read working.md');
+  assert.match(handed.next, /op=close_window window=P1·W1 successor=P2·W2/);
+  assert.match((await call('aiobox_write', { op: 'handoff_open', profile: 'P2', provider: 'claude', like: 'P1·W1', text: 'over budget' })).text, /^rejected: AIObox refused handoff_open \(run \d+\): 6 new windows in the last hour \(budget;/, "AIObox's refusal keeps its own code");
+  assert.match((await call('aiobox_write', { op: 'handoff_open', profile: 'P2', provider: 'claude', like: 'P1·W1', text: 'broken' })).text, /handoff_open run \d+ ended error: verify: no signed-in claude\.ai client \(steps: open ok → connect ok → verify error \(no signed-in claude\.ai client\)\)/);
+  const slow = JSON.parse((await call('aiobox_write', { op: 'handoff_open', profile: 'P2', provider: 'claude', like: 'P1·W1', text: 'slow', wait: 1 })).text);
+  assert.deepEqual([slow.done, slow.window, slow.steps.at(-1)], [false, undefined, { step: 'connect', status: 'running', at: slow.steps.at(-1).at, info: null }]);
+  assert.match(slow.next, new RegExp(`still running: aki__aiobox op=runs id=${slow.runId} reads each step`));
+  const one = JSON.parse((await call('aiobox', { op: 'runs', id: slow.runId })).text).runs;
+  assert.deepEqual([one.length, one[0].request, one[0].running, one[0].steps.length], [1, slow.request, true, 4], 'op=runs id= reads one run with its steps');
+  assert.equal(JSON.parse((await call('aiobox', { op: 'runs', request: opened.request })).text).runs[0].automation, 'ai-new-window');
+  assert.equal('steps' in JSON.parse((await call('aiobox', { op: 'runs', automation: 'usage', last: 1 })).text).runs[0], false, 'a run without steps shows no key');
+  clearInterval(app);
+  db.close();
+  fs.rmSync(path.join(aioboxHome, 'flags.json'));
+}
 
 clearInterval(responder);
 await client.close();
