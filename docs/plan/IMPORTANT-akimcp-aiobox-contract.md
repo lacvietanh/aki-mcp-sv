@@ -74,9 +74,9 @@ Decided (chủ, 2026-10-03): bỏ token theo client, `/api/identity`, bearer có
 - [x] Kiểm runtime `aki__aiobox_write op=new_window` (2026-10-03, sau restart AkiMCP): từ P1·W4 (tài khoản test) ra `P1·W5` Notion `/ai`, title có tiền tố handle; đã đóng cửa sổ thử.
 - [x] Định danh bền và chống handle bị đánh số lại (sự cố 2026-10-03 19:3x: AIObox restart 18:38, P2·W11→P2·W1, P1·W6→P1·W1, tin gửi theo handle cũ trỏ vào cửa sổ không còn): chat id, `targetId`, `profileId` trong `op=windows`; `window` nhận chat id; `expect`; `generation`, `renumbered`, `warning` (2026-10-03, `scripts/aiobox-mcp.js`, `test/aiobox-mcp.test.js`). Đọc `epoch`/`appPid`/`generation`/`updatedAt`/`answered` và gửi `windows.refresh` khi AIObox ghi `epoch`; chưa có thì dựa vào so `targetId`/handle.
 - [x] `aki__aiobox_write op=send {window, text, wait?}` gọi `live.send(text)` khi `capabilities.send === 1`, trả `error` nguyên văn, version khác báo lỗi rõ, panel chưa có send báo `no_send` (yêu cầu của owner 2026-10-03: tin giữa các cửa sổ phải gửi hẳn, không chỉ điền). `wait=<s>` chờ `busy` hết như `op=wait_idle` (hết giờ: `busy`), `from` = chat của mình thì `self_target` (2026-10-03, `scripts/aiobox-mcp.js`, test `test/aiobox-mcp.test.js`). Kiểm runtime chờ restart AkiMCP và rebuild AIObox.
-- [ ] `aki__aiobox_write op=new_chat {window}` gọi `akipanel.newChat()` như dòng hợp đồng ở trên (owner chốt 2026-10-04; P3·W6). Phía AIObox đã có `newChat()` và `chat().data.draft` (desktop 0.8.0, chưa rebuild app).
-- [ ] `op=state` trả `read` mỗi cửa sổ từ `akipanel.read` (owner 2026-10-04; P3·W7).
-- [ ] `op=state` đọc `~/.aki/aiobox/guide.md` như dòng hợp đồng ở trên, gỡ hằng `GUIDE` (aiobox `docs/plan/ai-guide.md` G3; P3·W7).
+- [x] `aki__aiobox_write op=new_chat {window}` gọi `akipanel.newChat()` như dòng hợp đồng ở trên (owner chốt 2026-10-04; P3·W6). Kiểm sống 2026-10-04 (AIObox build 13:09, AkiMCP 3.0.0 restart 13:31, Notion, cửa sổ test riêng): từ chối chat của chính mình (`self_target`), có nháp (nháp giữ nguyên), đang trả lời; rảnh thì về `/ai`, trả `previousChatId`, `chatId` null.
+- [x] `op=state` trả `read` mỗi cửa sổ từ `akipanel.read` (owner 2026-10-04; P3·W7). Kiểm sống 2026-10-04 sau restart AkiMCP 13:31: mọi cửa sổ Notion `read: live`.
+- [x] `op=state` đọc `~/.aki/aiobox/guide.md` như dòng hợp đồng ở trên, gỡ hằng `GUIDE` (aiobox `docs/plan/ai-guide.md` G3; P3·W7). Kiểm sống 2026-10-04: `guideVersion: 6` = file (bản dự phòng trả `null`).
 
 ## Việc phía AIObox
 
