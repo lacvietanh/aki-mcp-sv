@@ -17,7 +17,11 @@ const seenFile = () => path.join(USER_DIR, 'aiobox-seen.json');
 const MAP_VERSION = 1;
 const CHAT_VERSION = 1; // akipanel.capabilities.chat: the shape of live.chat() this reader understands
 const COMPOSE_VERSION = 2; // akipanel.capabilities.compose: live.compose(text) returns a Promise of { ok, error }
-const SEND_VERSION = 1; // akipanel.capabilities.send: live.send(text) resolves { ok: true } once the new user message shows in chat(), else { ok: false, error } and nothing sent (empty text, busy, draft in the composer)
+// akipanel.capabilities.send, contract row live.send: v2 owns busy, drafts and its queue, resolving { ok: true, data: { delivered: true, midAnswer?, draft? } } or { ok: true, data: { queued: true, position, reason } }; v1 refuses busy and drafts and resolves { ok: true } once the message shows. v1 stays read until every AIObox build has v2.
+const SEND_VERSION = 2;
+const SEND_V1 = 1;
+// A user message counts as the one sent when it holds this many codepoints of the sent text, markup and spacing dropped (a provider renders Markdown).
+const DELIVERED_MATCH = 60;
 const RAW_TEXT_CAP = 20_000; // codepoints of page text returned by op=read without a provider reader; the tail is kept, since the latest message is at the end
 const TEXT_ELEMENTS_CAP = 50;
 const TEXT_ELEMENT_CAP = 4_000;
@@ -495,41 +499,47 @@ const COMPOSE_JS = (text) => `(async () => {
   const r = await panel.live.compose(${JSON.stringify(text)});
   return r && r.ok === true ? { ok: true } : { error: String(r?.error ?? 'live.compose() returned no result') };
 })()`;
-// live.send (AIObox's provider adapter) sends one user message and resolves only once it shows in the chat; it refuses (sending nothing) when busy or when the composer holds a draft, and does not wait itself.
+// One send, nothing sent on any refusal. v2: AIObox's live.send decides (busy, draft, queue). v1: a draft holds the message back untouched ({ held: 'draft' }); a chat answering takes it mid-answer only when it reads live/queued (owner 2026-10-04: those have no busy), by compose and the provider's send button into the empty box, else { held: 'busy' }; idle: live.send. users = user messages before, so the delivery check skips older copies of the same text.
+const SUBMIT_SELECTORS = ['[aria-label="Submit AI message"]', 'button[data-testid="send-button"]', '#composer-submit-button', 'button[aria-label="Submit"]', 'button[type="submit"]'];
 const SEND_JS = (text) => `(async () => {
   const panel = window.akipanel;
   if (!panel) return { error: 'this window has no AIObox panel' };
   let caps = {};
   try { caps = JSON.parse(JSON.stringify(panel.capabilities ?? {})) || {}; } catch {}
   if (caps.send === undefined || typeof panel.live?.send !== 'function') return { missing: true };
-  if (caps.send !== ${SEND_VERSION}) return { unsupported: String(caps.send) };
-  const r = await panel.live.send(${JSON.stringify(text)});
-  return r && r.ok === true ? { ok: true } : { error: String(r?.error ?? 'live.send() returned no result') };
-})()`;
-// A provider whose chat takes a message mid-answer (akipanel.read live or queued: Notion, ChatGPT, Grok, Claude) has no busy for a sender (owner, 2026-10-04): while it answers, live.send v1 still refuses, so the message goes in by compose and the provider's send button, only into an empty box, confirmed by one more user turn. Idle, blocked, or no reader: notLive, and live.send does it.
-const SUBMIT_SELECTORS = ['[aria-label="Submit AI message"]', 'button[data-testid="send-button"]', '#composer-submit-button', 'button[aria-label="Submit"]', 'button[type="submit"]'];
-const SEND_LIVE_JS = (text) => `(async () => {
-  const panel = window.akipanel;
-  if (panel?.read !== 'live' && panel?.read !== 'queued') return { notLive: true };
-  let caps = {};
-  try { caps = JSON.parse(JSON.stringify(panel.capabilities ?? {})) || {}; } catch {}
-  if (caps.chat !== ${CHAT_VERSION} || caps.compose !== ${COMPOSE_VERSION} || typeof panel.live?.chat !== 'function' || typeof panel.live?.compose !== 'function') return { notLive: true };
-  const before = panel.live.chat();
-  if (!before || before.ok !== true) return { error: String(before?.error ?? 'live.chat() returned no result') };
-  if (!before.data?.busy) return { notLive: true };
-  if (before.data.draft) return { error: 'the message box holds a draft; it is left untouched' };
-  const users = (r) => (r?.data?.messages || []).filter((m) => m.role === 'user').length;
-  const n = users(before);
-  const c = await panel.live.compose(${JSON.stringify(text)});
-  if (!c || c.ok !== true) return { error: String(c?.error ?? 'live.compose() returned no result') };
-  const button = ${JSON.stringify(SUBMIT_SELECTORS)}.map((s) => document.querySelector(s)).find((b) => b && !b.disabled);
-  if (!button) return { error: 'composed mid-answer but found no send button; the text is still in the message box' };
-  button.click();
-  for (let i = 0; i < 50; i++) {
-    await new Promise((r) => setTimeout(r, 100));
-    if (users(panel.live.chat()) > n) return { ok: true };
+  if (caps.send !== ${SEND_VERSION} && caps.send !== ${SEND_V1}) return { unsupported: String(caps.send) };
+  const reader = caps.chat === ${CHAT_VERSION} && typeof panel.live.chat === 'function';
+  const now = reader ? panel.live.chat() : null;
+  const users = now?.ok === true ? (now.data?.messages || []).filter((m) => m.role === 'user').length : null;
+  const sendBy = async (r) => (r && r.ok === true ? { ok: true, users, ...(r.data || {}) } : { error: String(r?.error ?? 'live.send() returned no result') });
+  if (caps.send === ${SEND_VERSION}) return sendBy(await panel.live.send(${JSON.stringify(text)}));
+  if (now?.ok === true && now.data?.draft) return { held: 'draft' };
+  if (now?.ok === true && now.data?.busy) {
+    if ((panel.read !== 'live' && panel.read !== 'queued') || caps.compose !== ${COMPOSE_VERSION} || typeof panel.live.compose !== 'function') return { held: 'busy' };
+    const c = await panel.live.compose(${JSON.stringify(text)});
+    if (!c || c.ok !== true) return { error: String(c?.error ?? 'live.compose() returned no result') };
+    const button = ${JSON.stringify(SUBMIT_SELECTORS)}.map((s) => document.querySelector(s)).find((b) => b && !b.disabled);
+    if (!button) return { error: 'composed mid-answer but found no send button; the text is still in the message box' };
+    button.click();
+    return { ok: true, users, midAnswer: true };
   }
-  return { error: 'clicked send mid-answer but no new user message showed in 5s' };
+  return sendBy(await panel.live.send(${JSON.stringify(text)}));
+})()`;
+// delivered = a user message after the first `after` ones holds the sent text; polled 5 s, since a provider draws the new turn late.
+const DELIVERED_JS = (text, after) => `(async () => {
+  const panel = window.akipanel;
+  let caps = {};
+  try { caps = JSON.parse(JSON.stringify(panel?.capabilities ?? {})) || {}; } catch {}
+  if (caps.chat !== ${CHAT_VERSION} || typeof panel?.live?.chat !== 'function') return { unread: true };
+  const plain = (s) => [...String(s ?? '').replace(/[*_\`~#>|\\[\\]()]/g, '').replace(/\\s+/g, ' ').trim()];
+  const want = plain(${JSON.stringify(text)}).slice(0, ${DELIVERED_MATCH}).join('');
+  for (let i = 0; i < 50; i++) {
+    const r = panel.live.chat();
+    const fresh = (r?.data?.messages || []).filter((m) => m.role === 'user').slice(${Number(after) || 0});
+    if (fresh.some((m) => plain(m.text).join('').includes(want))) return { seen: true };
+    await new Promise((res) => setTimeout(res, 100));
+  }
+  return { seen: false };
 })()`;
 // akipanel.runMacro is AIObox's panel button: the macro runs on the window the call came from, and its outcome lands in akipanel.macroRuns[id] (running, then done, started, skipped or error; aiobox docs/arch/provider-macros.md).
 const MACRO_JS = (id, option) => `(() => {
@@ -712,28 +722,29 @@ const WRITE_OPS = {
     if (!value?.ok) throw new Error(`${tab.handle}: ${value?.error ?? 'compose returned no result'}`);
     return ok(JSON.stringify({ ...used, composed: true, sent: false }, null, 2));
   },
-  // Sends for real, at once to a live/queued chat even mid-answer (SEND_LIVE_JS). wait=<s> waits out an answer only on a blocked chat (as op=wait_idle); live.send's own refusal comes back verbatim.
+  // Sends for real (SEND_JS); delivered: true only once DELIVERED_JS sees the text as a new user message. wait=<s> retries a message send v1 held back (a draft, or a blocked chat answering); send v2 queues those itself.
   async send(args) {
     need('send', args, ['window', 'text']);
     const { tab, live: target, used } = await openTab(args);
     if (args.from && args.from === used.chatId) throw new Refusal('self_target', `${tab.handle} is your own chat (${used.chatId})`, "send to the other session's window, found by its handle in op=state");
     const started = Date.now();
-    const mid = (await cdp.evaluate({ port: tab.port, target, expression: SEND_LIVE_JS(args.text), awaitPromise: true })).value;
-    if (mid?.error) throw new Error(`${tab.handle}: ${mid.error}`);
-    if (mid?.ok) return ok(JSON.stringify({ ...used, sent: true, midAnswer: true, waitedMs: Date.now() - started }, null, 2));
     const waitS = waitLimitS(args.wait, 0);
+    let value;
     for (const end = started + waitS * 1000; ; await sleep(WAIT_IDLE_POLL_MS)) {
-      const { value } = await cdp.evaluate({ port: tab.port, target, expression: READ_JS(1) });
-      if (value?.source !== 'provider' || !value.busy || Date.now() >= end) {
-        if (value?.busy && waitS) throw new Refusal('busy', `${tab.handle} was still answering after ${waitS}s`, waitS < CALL_WAIT_MAX_S ? 'raise wait (at most 50), or check it later with op=wait_idle' : 'op=send wait=50 again in this turn; still busy: report "not sent: <window> busy", never promise a later send');
-        break;
-      }
+      ({ value } = await cdp.evaluate({ port: tab.port, target, expression: SEND_JS(args.text), awaitPromise: true }));
+      if (!value?.held || Date.now() >= end) break;
     }
-    const { value } = await cdp.evaluate({ port: tab.port, target, expression: SEND_JS(args.text), awaitPromise: true });
+    const retry = waitS < CALL_WAIT_MAX_S ? 'op=send wait=50 in this turn' : 'op=send wait=50 again in this turn';
+    if (value?.held === 'draft') throw new Refusal('draft', `${tab.handle} holds a draft in its message box${waitS ? ` after ${waitS}s` : ''}; it is left untouched`, `${retry}; still there: ask another window to relay it, or report "not sent: ${tab.handle} draft"`);
+    if (value?.held) throw new Refusal('busy', `${tab.handle} is answering and its provider takes no message mid-answer (read=blocked)${waitS ? `, still after ${waitS}s` : ''}`, `${retry}; still busy: report "not sent: ${tab.handle} busy", never promise a later send`);
     if (value?.missing) throw new Refusal('no_send', `${tab.handle} has no AIObox send capability (an older AIObox build, or not a chat page)`, 'use op=compose and ask the owner to press Enter, or rebuild AIObox');
-    if (value?.unsupported !== undefined) throw new Error(`AIObox send capability version ${value.unsupported} in ${tab.handle} is not supported (expected ${SEND_VERSION}); update AkiMCP or AIObox`);
+    if (value?.unsupported !== undefined) throw new Error(`AIObox send capability version ${value.unsupported} in ${tab.handle} is not supported (expected ${SEND_VERSION} or ${SEND_V1}); update AkiMCP or AIObox`);
     if (!value?.ok) throw new Error(`${tab.handle}: ${value?.error ?? 'send returned no result'}`);
-    return ok(JSON.stringify({ ...used, sent: true, waitedMs: Date.now() - started }, null, 2));
+    const how = { ...(value.midAnswer ? { midAnswer: true } : {}), ...(value.draft ? { draft: value.draft } : {}) };
+    if (value.queued) return ok(JSON.stringify({ ...used, sent: false, delivered: false, queued: true, position: value.position, reason: value.reason, waitedMs: Date.now() - started, next: `AIObox holds it and sends it once ${tab.handle} can take it; it arrived only when op=read there shows it` }, null, 2));
+    const seen = (await cdp.evaluate({ port: tab.port, target, expression: DELIVERED_JS(args.text, value.users), awaitPromise: true })).value;
+    const delivered = seen?.seen === true;
+    return ok(JSON.stringify({ ...used, sent: true, delivered, ...how, waitedMs: Date.now() - started, ...(delivered ? {} : { next: `${seen?.unread ? 'this page has no chat reader' : 'the message does not show in the chat yet'}: op=read last=3 on ${tab.handle} before saying it arrived; never send it again before reading` }) }, null, 2));
   },
   async run_macro(args) {
     need('run_macro', args, ['window', 'macro']);
@@ -802,7 +813,7 @@ export function register(server) {
       title: 'AIObox: open a window, send or fill a chat, run JS',
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description:
-        'Act in an AIObox window (chatId, handle or targetId; rules: aki__aiobox op=state). expect refuses another chat, from=<your chatId> your own chat. op=new_window: a new chat of the same profile and provider. op=new_chat: a fresh chat in that tab. op=send: sends now, even mid-answer (read=blocked: wait=s); op=compose only fills the box. op=run_macro: runs a window macro (macro, option), returns its status. op=place_like: takes the bounds of like. op=close_window: closes the tab through AIObox (refused while busy or with a draft). op=flag / op=unflag: the do-not-use list (account+profile or workspace). op=eval: runs JS in the page, returns the result; it can click, type and change the page.',
+        'Act in an AIObox window (chatId, handle or targetId; rules: aki__aiobox op=state). expect refuses another chat, from=<your chatId> your own chat. op=new_window: same profile and provider. op=new_chat: a fresh chat in that tab. op=send: sends now, even mid-answer; delivered:true = shown, queued:true = AIObox holds it; wait=s retries a draft. op=compose only fills the box. op=run_macro: runs a macro (macro, option), returns its status. op=place_like: takes the bounds of like. op=close_window: closes the tab (refused while busy or with a draft). op=flag / op=unflag: the do-not-use list (account+profile or workspace). op=eval: runs JS in the page and returns the result (it can click and type).',
       inputSchema: {
         op: z.enum(Object.keys(WRITE_OPS)).describe(Object.keys(WRITE_OPS).join(' | ')),
         window: windowArg,
@@ -812,7 +823,7 @@ export function register(server) {
         macro: z.string().optional().describe('run_macro: macro id (op=state macros)'),
         option: z.string().optional().describe('run_macro: option id (default: the first)'),
         text: z.string().optional().describe('send, compose: the text'),
-        wait: z.number().int().min(0).max(300).optional().describe('send: seconds to wait for a busy chat (default 0, at most 50 per call)'),
+        wait: z.number().int().min(0).max(300).optional().describe('send: seconds to retry a draft or blocked chat (default 0, at most 50 per call)'),
         expression: z.string().optional().describe('eval: JS evaluated in the page; the last expression is returned'),
         awaitPromise: z.boolean().optional().describe('eval: await a returned Promise (default true)'),
         account: z.string().optional().describe('flag, unflag: account label (op=state account)'),

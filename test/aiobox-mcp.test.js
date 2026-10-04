@@ -504,31 +504,42 @@ assert.equal((await call('aiobox_write', { op: 'compose', window: 'P7·W2', text
 pages['T-GPT'].akipanel = readonlyPanel({ capabilities: { compose: 1 }, live: { compose: () => ({ ok: true }) } });
 assert.match((await call('aiobox_write', { op: 'compose', window: 'P7·W2', text: 'x' })).text, /compose capability version 1 in P7·W2 is not supported \(expected 2\)/);
 
-// send goes through akipanel.live.send (v1) and really sends: an older panel is named, wait= waits out an answer, the page's refusal comes back verbatim, the caller's own chat is refused.
+// send v1 (AIObox before L0): a chat answering that takes no message mid-answer, or a draft in the box, holds the message back untouched; wait= retries; delivered only once the text shows as a new user message.
 assert.match((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'x' })).text, /P7·W2 has no AIObox send capability.*\(no_send/);
 let gptBusy = true;
 const sent = [];
+const gptMsgs = [];
 pages['T-GPT'].akipanel = readonlyPanel({
   capabilities: { chat: 1, send: 1 },
-  live: { chat: () => ({ ok: true, data: { messages: [], busy: gptBusy } }), send: async (t) => (gptBusy ? { ok: false, error: 'the chat is answering' } : (sent.push(t), { ok: true, data: null })) },
+  live: { chat: () => ({ ok: true, data: { messages: gptMsgs, busy: gptBusy } }), send: async (t) => (gptBusy ? { ok: false, error: 'the chat is answering' } : (sent.push(t), gptMsgs.push({ role: 'user', text: t }), { ok: true, data: null })) },
 });
-assert.equal((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'x' })).text, 'rejected: P7·W2: the chat is answering', 'without wait the page refuses, verbatim');
-assert.match((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'x', wait: 1 })).text, /P7·W2 was still answering after 1s.*\(busy/);
+assert.match((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'x' })).text, /P7·W2 is answering and its provider takes no message mid-answer.*\(busy/);
+assert.match((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'x', wait: 1 })).text, /still after 1s.*\(busy/);
 setTimeout(() => { gptBusy = false; }, 1200);
-const sentOut = JSON.parse((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'go on', wait: 5 })).text);
-assert.deepEqual([sentOut.sent, sentOut.chatId, sent], [true, '123', ['go on']]);
+const sentOut = JSON.parse((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'go **on**', wait: 5 })).text);
+assert.deepEqual([sentOut.sent, sentOut.delivered, sentOut.chatId, sent], [true, true, '123', ['go **on**']]);
 assert.ok(sentOut.waitedMs >= 1000, 'it waited for the answer to end');
 assert.match((await call('aiobox_write', { op: 'send', window: '123', text: 'x', from: '123' })).text, /is your own chat \(123\) \(self_target/);
-assert.deepEqual(sent, ['go on'], 'refusals send nothing');
-pages['T-GPT'].akipanel = readonlyPanel({ capabilities: { send: 2 }, live: { send: async () => ({ ok: true }) } });
-assert.match((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'x' })).text, /send capability version 2 in P7·W2 is not supported \(expected 1\)/);
-// A page that can send but has no chat reader has no busy state to wait for: wait= is skipped, and a send that reports nothing is an error, never "sent".
+assert.deepEqual(sent, ['go **on**'], 'refusals send nothing');
+pages['T-GPT'].akipanel = readonlyPanel({ capabilities: { send: 3 }, live: { send: async () => ({ ok: true }) } });
+assert.match((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'x' })).text, /send capability version 3 in P7·W2 is not supported \(expected 2 or 1\)/);
+// A page that can send but has no chat reader: nothing to wait for, a send that reports nothing is an error, and one that reports ok is sent but never delivered.
 pages['T-GPT'].akipanel = readonlyPanel({ capabilities: { send: 1 }, live: { send: async () => undefined } });
 const noReaderStarted = Date.now();
 assert.equal((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'x', wait: 30 })).text, 'rejected: P7·W2: live.send() returned no result');
 assert.ok(Date.now() - noReaderStarted < 2000, 'no wait without a reader');
+pages['T-GPT'].akipanel = readonlyPanel({ capabilities: { send: 1 }, live: { send: async () => ({ ok: true, data: null }) } });
+const unreadOut = JSON.parse((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'x' })).text);
+assert.deepEqual([unreadOut.sent, unreadOut.delivered], [true, false]);
+assert.match(unreadOut.next, /no chat reader: op=read last=3 on P7·W2/);
 assert.equal((await call('aiobox_write', { op: 'send', window: 'P7·W2' })).text, 'rejected: op=send needs text');
-// read=live/queued has no busy (owner): mid-answer the text goes in by compose + the send button at once, no wait, only into an empty box; live.send is not called.
+// An older user message with the same text is not the delivery: only messages after the send count.
+const dupMsgs = [{ role: 'user', text: 'same' }];
+pages['T-GPT'].akipanel = readonlyPanel({ capabilities: { chat: 1, send: 1 }, live: { chat: () => ({ ok: true, data: { messages: dupMsgs, busy: false } }), send: async () => ({ ok: true, data: null }) } });
+const dupOut = JSON.parse((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'same' })).text);
+assert.deepEqual([dupOut.sent, dupOut.delivered], [true, false], 'the old copy is skipped');
+assert.match(dupOut.next, /does not show in the chat yet/);
+// read=live/queued has no busy (owner): mid-answer the text goes in by compose + the send button at once, only into an empty box; a draft holds it back untouched until wait= sees the box empty.
 const liveMsgs = [{ role: 'user', text: 'q' }];
 let liveDraft = false;
 let liveBox = '';
@@ -540,12 +551,26 @@ pages['T-GPT'].akipanel = readonlyPanel({
 });
 pages['T-GPT'].querySelector = (s) => (s === 'button[data-testid="send-button"]' ? { disabled: false, click: () => { liveSent.push(liveBox); liveMsgs.push({ role: 'user', text: liveBox }); liveBox = ''; } } : null);
 const midOut = JSON.parse((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'now' })).text);
-assert.deepEqual([midOut.sent, midOut.midAnswer, liveSent], [true, true, ['now']]);
+assert.deepEqual([midOut.sent, midOut.delivered, midOut.midAnswer, liveSent], [true, true, true, ['now']]);
 assert.ok(midOut.waitedMs < 2000, 'sent at once, no busy wait');
 liveDraft = true;
-assert.equal((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'x' })).text, 'rejected: P7·W2: the message box holds a draft; it is left untouched');
+assert.match((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'x' })).text, /P7·W2 holds a draft in its message box; it is left untouched \(draft; next: op=send wait=50 in this turn; still there: ask another window to relay it/);
 assert.deepEqual(liveSent, ['now'], 'a draft is never touched');
+setTimeout(() => { liveDraft = false; }, 1200);
+const afterDraft = JSON.parse((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'later', wait: 5 })).text);
+assert.deepEqual([afterDraft.delivered, liveSent], [true, ['now', 'later']], 'sent once the box is empty');
 delete pages['T-GPT'].querySelector;
+// send v2 (L0): AIObox's live.send owns busy, drafts and the queue, so AkiMCP calls it whatever the chat shows and only checks the delivery.
+const v2Msgs = [];
+let v2Reply = (t) => (v2Msgs.push({ role: 'user', text: t }), { ok: true, data: { delivered: true, midAnswer: true, draft: 'restored' } });
+pages['T-GPT'].akipanel = readonlyPanel({ read: 'blocked', capabilities: { chat: 1, send: 2 }, live: { chat: () => ({ ok: true, data: { messages: v2Msgs, busy: true, draft: true } }), send: async (t) => v2Reply(t) } });
+const v2Out = JSON.parse((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'v2' })).text);
+assert.deepEqual([v2Out.sent, v2Out.delivered, v2Out.midAnswer, v2Out.draft], [true, true, true, 'restored']);
+v2Reply = () => ({ ok: true, data: { queued: true, position: 2, reason: 'busy' } });
+const queuedOut = JSON.parse((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'q2' })).text);
+assert.deepEqual([queuedOut.sent, queuedOut.delivered, queuedOut.queued, queuedOut.position, queuedOut.reason], [false, false, true, 2, 'busy']);
+v2Reply = () => ({ ok: false, error: 'the message box did not take the text' });
+assert.equal((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'x' })).text, 'rejected: P7·W2: the message box did not take the text');
 
 assert.equal((await call('aiobox_write', { op: 'eval', window: 'P7·W2' })).text, 'rejected: op=eval needs expression');
 const evaluated = JSON.parse((await call('aiobox_write', { op: 'eval', window: 'T-GPT', expression: '6*7' })).text);
@@ -556,3 +581,4 @@ clearInterval(responder);
 await client.close();
 fs.rmSync(home, { recursive: true, force: true });
 console.log('aiobox-mcp.test.js: ok');
+
