@@ -13,6 +13,15 @@ export const MANDATORY_BLOCK = 'BLOCKING — no rule Read, no action: before any
 const CONDUCT_STEP = 'Attempt an operation before calling it impossible, never claim a missing capability, and on failure report the exact command, absolute path, exit status and stderr; state the action and its impact before a destructive or external step.';
 // Self-classifying, not server-detected: the shared MCP session (CLAUDE.md § Session lifecycle) never tracks per-client identity, so the model must judge this from its own nature, not be told which client it is.
 const RESUME_STEP = 'If you are a stateless web chat with no session memory of your own (e.g. a browser AI chat) and the task spans multiple steps, keep a live working file at $HOME/.aki/mcpsv/task/<slug>/working.md (record the goal, progress so far, and the next step) — check for an existing one first and update it as you go — so a later session can resume; skip this if you already have your own persistent session/task tracking (local CLI or app) or the task is a single step.';
+// How sessions share one checkout, the working file and handoff letters (owner 2026-10-04, aiobox audit-content-context G2–G4): AkiMCP's multi-session convention, so it ships here, not in AkiDevRule or the AIObox guide. Commit and push rules live in AkiDevRule.
+export const SHARED_WORK = [
+  'Working beside other sessions (AkiMCP convention):',
+  "- Every session edits the same checkout. Before editing: `git status`. A file already dirty that you did not change is someone else's: do not edit, stash, check out or commit it; ask the coordinator whose it is.",
+  "- Your task's working file: `$HOME/.aki/mcpsv/task/<slug>/working.md` (goal, progress, next step, the files you edit). Drafts and notes go there or in /tmp, never in `~/.aki/` itself or `~/.aki/aiobox/`.",
+  '- Files everyone touches (`CHANGELOG.md`, `desktop/CHANGELOG.md`, `working.md`): edit only your own lines, right before committing. Commit with `git commit -m "…" -- <your paths>`, never `git add -A` or `.`.',
+  '- Long or risky work on paths others touch too: `git worktree add <repo>/.claude/worktrees/<role> -b wt-<role>`, merged into main locally when done.',
+  "- Handing work over: a letter in `~/.aki/handoff/` named for the successor's role. The successor reads it, the working.md and the old chat, takes over the working.md file list and tells the related sessions.",
+].join('\n');
 const AIOBOX_STEP = 'If you are named by a handle like P2·W1 (AIObox puts it at the start of your page title), you run in an AIObox window: aki__aiobox op=whoami finds your own window, then op=state lists every window and returns the rules for acting in AIObox.';
 export const RULE_CONTEXT_DESCRIPTION = `Call once before the first substantive action in every chat to load the effective default guidance. The server resolves global imports and applicable project CLAUDE.local/AGENTS context itself; do not search for or individually read bootstrap files. Pass an absolute workingPath when known. Read-only. ${AKIRULE_STEP} ${CONDUCT_STEP} ${RESUME_STEP} ${AIOBOX_STEP}`;
 export const RULE_CONTEXT_INSTRUCTIONS = `Before the first substantive action, call aki__akidevrule_context once; pass an absolute workingPath when known. Do not discover or read bootstrap files individually. A returned receipt is the only success signal. ${AKIRULE_STEP} ${CONDUCT_STEP} ${RESUME_STEP} ${AIOBOX_STEP}`;
@@ -40,7 +49,8 @@ export function register(server, options = {}) {
       const header = `${NO_YAPPING}\n${MANDATORY_BLOCK}\n\ncontext loaded: ${result.parity} · ${result.receipt} · ${result.sources.length} sources${installed() ? '' : `\n${AIOBOX_PITCH}`}`;
       // The assembled corpus ships once, in `content`. Keep it out of `structuredContent` so the ~90KB blob is not serialized twice on the wire (docs/plan/done/rule-context-payload-dedup.md).
       const { context, ...meta } = result;
-      return { content: [{ type: 'text', text: context ? `${header}\n\n${context}` : header }], structuredContent: meta };
+      const text = `${header}\n\n${SHARED_WORK}`;
+      return { content: [{ type: 'text', text: context ? `${text}\n\n${context}` : text }], structuredContent: meta };
     } catch (error) {
       const code = error instanceof RuleContextError ? error.code : 'RULE_CONTEXT_ERROR';
       const result = { status: 'error', parity: 'practical-effective', receipt: null, rulesVersion: null, workingRoot: null, sources: [], warnings: [{ code, message: error.message }] };
