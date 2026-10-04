@@ -202,7 +202,7 @@ pages['T-NOTION'] = { body: 'notion body', akipanel: readonlyPanel({
 pages['T-GPT'] = { akipanel: readonlyPanel({ capabilities: {} }), body: 'history: please compare the last two answers now, then more' };
 const state = JSON.parse((await call('aiobox', { op: 'state' })).text);
 assert.equal(state.akimcp, VERSION);
-assert.deepEqual(state.ops, { aiobox: ['windows', 'state', 'whoami', 'read', 'wait_idle', 'text', 'screenshot'], aiobox_write: ['new_window', 'new_chat', 'place_like', 'close_window', 'flag', 'unflag', 'compose', 'send', 'run_macro', 'eval'] });
+assert.deepEqual(state.ops, { aiobox: ['windows', 'state', 'whoami', 'read', 'wait_idle', 'text', 'screenshot', 'runs'], aiobox_write: ['new_window', 'new_chat', 'place_like', 'close_window', 'flag', 'unflag', 'compose', 'send', 'run_macro', 'eval'] });
 assert.deepEqual(state.flags, [], 'no flags.json yet: empty list');
 assert.equal('claims' in state, false, 'claims are gone (aiobox plan cleanup-ai-leftovers)');
 // No ~/.aki/aiobox/guide.md yet: the short fallback, pointing at the web guide.
@@ -618,6 +618,24 @@ assert.equal((await call('aiobox_write', { op: 'eval', window: 'P7·W2' })).text
 const evaluated = JSON.parse((await call('aiobox_write', { op: 'eval', window: 'T-GPT', expression: '6*7' })).text);
 assert.equal(evaluated.window, 'P7·W2', 'a targetId addresses the window too');
 assert.equal(evaluated.value, 42);
+
+const runsFile = path.join(home, '.aki', 'aiobox', 'automation.sqlite');
+assert.match((await call('aiobox', { op: 'runs' })).text, /^rejected: AIObox has no automation store yet \(no_runs;/, 'no store = a refusal with its next step');
+{
+  const { DatabaseSync } = await import('node:sqlite');
+  const db = new DatabaseSync(runsFile);
+  db.exec('CREATE TABLE runs (id INTEGER PRIMARY KEY, automation_id TEXT, trigger TEXT, handle TEXT, started_at TEXT, ended_at TEXT, outcome TEXT, detail TEXT)');
+  const add = db.prepare('INSERT INTO runs (automation_id, trigger, handle, started_at, ended_at, outcome, detail) VALUES (?, ?, ?, ?, ?, ?, ?)');
+  add.run('usage', 'cron', null, '2026-10-04T01:00:00.000Z', '2026-10-04T01:00:02.000Z', 'ok', null);
+  add.run('connect-akimcp-notion', 'manual', 'P1·W2', '2026-10-04T02:00:00.000Z', '2026-10-04T02:00:40.000Z', 'ok', '2 window(s): 1 done · 1 timeout');
+  add.run('usage', 'cron', null, '2026-10-04T03:00:00.000Z', null, null, null);
+  db.close();
+}
+const allRuns = JSON.parse((await call('aiobox', { op: 'runs' })).text).runs;
+assert.deepEqual(allRuns.map((r) => [r.automation, r.running]), [['usage', true], ['connect-akimcp-notion', false], ['usage', false]], 'newest first; outcome null = running');
+assert.deepEqual(allRuns[1], { id: 2, automation: 'connect-akimcp-notion', trigger: 'manual', handle: 'P1·W2', startedAt: '2026-10-04T02:00:00.000Z', endedAt: '2026-10-04T02:00:40.000Z', outcome: 'ok', detail: '2 window(s): 1 done · 1 timeout', running: false });
+assert.deepEqual(JSON.parse((await call('aiobox', { op: 'runs', automation: 'usage', last: 1 })).text).runs.map((r) => r.id), [3]);
+assert.deepEqual(JSON.parse((await call('aiobox', { op: 'runs', since: '2026-10-04T02:00:00.000Z' })).text).runs.map((r) => r.id), [3, 2], 'since compares the stamps as text');
 
 clearInterval(responder);
 await client.close();

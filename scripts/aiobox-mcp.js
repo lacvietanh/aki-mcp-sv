@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
 import { ok, okImage, fail } from './mcp-tool.js';
 import cdp from './cdp-engine.js';
@@ -424,6 +425,30 @@ function changeFlags(change) {
   fs.renameSync(tmp, flagsFile());
   return list.map((e) => ({ ...e, scope: scopeOf(e) }));
 }
+// AIObox's automation runs (aiobox docs/arch/automation-scheduler.md § Store): the scheduler is the only writer, so this opens read-only. Stamps are fixed-width RFC 3339 UTC, so since compares as text; outcome null = still running.
+const runsFile = () => path.join(aioboxDir(), 'automation.sqlite');
+const RUNS_DEFAULT = 10;
+export function readRuns(file, { automation, since, last = RUNS_DEFAULT } = {}) {
+  if (!fs.existsSync(file)) throw new Refusal('no_runs', 'AIObox has no automation store yet', 'start an AIObox build with the automation scheduler');
+  const db = new DatabaseSync(file, { readOnly: true });
+  try {
+    const where = [];
+    const params = [];
+    if (automation) {
+      where.push('automation_id = ?');
+      params.push(automation);
+    }
+    if (since) {
+      where.push('started_at >= ?');
+      params.push(since);
+    }
+    const sql = `SELECT id, automation_id AS automation, trigger, handle, started_at AS startedAt, ended_at AS endedAt, outcome, detail FROM runs${where.length ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY started_at DESC, id DESC LIMIT ?`;
+    return db.prepare(sql).all(...params, last).map((r) => ({ ...r, running: r.outcome === null }));
+  } finally {
+    db.close();
+  }
+}
+
 const DRAFT_WARNING = 'the message box holds a draft, so busy may read false while it still answers (Notion); read it again later with op=read, and never touch the draft';
 const renumberedOf = (map) => (map.renumbered ? { ...map.renumbered, warning: renumberWarning(map.renumbered) } : null);
 
@@ -504,6 +529,9 @@ const READ_OPS = {
     const shot = okImage(data, mimeType);
     shot.content.push({ type: 'text', text: JSON.stringify(used) });
     return shot;
+  },
+  async runs(args) {
+    return ok(JSON.stringify({ akimcp: VERSION, runs: readRuns(runsFile(), args) }, null, 2));
   },
 };
 
@@ -824,14 +852,16 @@ export function register(server) {
       title: 'AIObox: read windows by handle',
       annotations: { readOnlyHint: true, openWorldHint: false },
       description:
-        'Read AIObox Chrome windows. Start with op=state: every window (chatId, provider, account, busy, workspace, usage), macros, flags, the guide for acting in AIObox. op=whoami quote=<20+ chars verbatim from the latest user message> finds your own window. Name a window by handle P#·W# (lasting; a retired one leads to its successor), chatId (the chat open in it now) or targetId; expect refuses a window now showing another chat. op=windows: tabs only. op=read: last messages (last=N), else page text. op=wait_idle: waits until the chat stops answering (timeout s), returns its last messages. op=text: elements by selector. op=screenshot. Results name the tab used. Acting: aki__aiobox_write.',
+        'Read AIObox windows. Start with op=state: every window (chatId, provider, account, busy, workspace, usage), macros, flags, the guide for acting. op=whoami quote=<20+ chars verbatim of the latest user message> finds your window. Name a window by handle P#·W# (lasting; a retired one leads to its successor), chatId (its chat now) or targetId; expect refuses a window now showing another chat. op=windows: tabs only. op=read: last messages (last=N), else page text. op=wait_idle: waits until the chat stops answering (timeout s), returns its last messages. op=text: elements by selector. op=screenshot. op=runs: automation runs, newest first. Results name the tab used. Acting: aki__aiobox_write.',
       inputSchema: {
         op: z.enum(Object.keys(READ_OPS)).describe(Object.keys(READ_OPS).join(' | ')),
         window: windowArg,
         expect: expectArg,
         quote: z.string().optional().describe('whoami: 20+ characters copied verbatim from the latest user message'),
         timeout: z.number().int().min(1).max(300).optional().describe('wait_idle: seconds (default and most 50 per call; call again while next says so)'),
-        last: z.number().int().min(1).max(50).optional().describe('read, wait_idle: messages from the end (default 1)'),
+        last: z.number().int().min(1).max(50).optional().describe('read, wait_idle: messages from the end (default 1); runs: runs (default 10)'),
+        automation: z.string().optional().describe('runs: automation id, e.g. usage, connect-akimcp-notion'),
+        since: z.string().optional().describe('runs: started at or after this RFC 3339 UTC stamp'),
         selector: z.string().optional().describe('text: CSS selector'),
         format: z.enum(['png', 'jpeg']).optional().describe('screenshot: default png'),
       },
