@@ -245,7 +245,7 @@ tools-server.js — one shared McpServer, in-process (InMemoryTransport, no chil
                                   chrome-profile.js   (Chrome/Brave/Edge discovery, shared-profile ownership)
                                   cdp-mcp.js          (devtools_targets/eval/screenshot over CDP)
                                   aiobox-mcp.js       (AIObox windows by handle: list, read chat, text, screenshot, eval)
-                                  cdp-engine.js       (shared CDP launch/target/eval engine)
+                                  cdp-engine.js       (shared CDP target/eval engine)
                                   fetch-mcp.js        (SSRF-protected localhost/LAN HTTP fetch)
                                   task-mcp.js         (detached background task start/manage)
                                   port-mcp.js         (TCP port status/kill)
@@ -298,7 +298,7 @@ aki-mcp-sv/
 │   ├── chrome-profile.js         # opens or attaches to shared CDP profiles by Chrome's SingletonLock owner
 │   ├── cdp-mcp.js                # devtools_targets/eval/screenshot tools over CDP
 │   ├── aiobox-mcp.js             # aki__aiobox / aiobox_write: AIObox windows by handle, from ~/.aki/aiobox/cdp/windows.json
-│   ├── cdp-engine.js             # app-agnostic CDP launch/target/eval engine shared by chrome-mcp/postman-mcp
+│   ├── cdp-engine.js             # app-agnostic CDP target/eval engine shared by chrome-mcp/postman-mcp
 │   ├── fetch-mcp.js              # aki__local_fetch: SSRF-protected localhost/LAN HTTP client
 │   ├── task-mcp.js               # aki__task_start/task_manage: detached background task runner
 │   ├── port-mcp.js               # aki__port_status/kill_port: TCP port inspection + kill

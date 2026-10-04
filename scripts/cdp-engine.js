@@ -8,7 +8,6 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
-import { spawn } from 'node:child_process';
 import CDP from 'chrome-remote-interface';
 
 const DEFAULT_HOST = '127.0.0.1';
@@ -65,10 +64,13 @@ function selectTarget(targets, filter) {
   return pages.find(test) || null;
 }
 
+// A frozen renderer never answers Runtime.evaluate, and without a bound the tool call hangs until the bridge's 10-minute timeout. Every evaluate is bounded here, once, for all callers.
+const EVALUATE_TIMEOUT_MS = 60_000;
+
 // Evaluate JS in a target and return the serialized result — or throw with the page-side message on a thrown exception. `target` may be a target object (from listTargets/findTarget), a target id string, or omitted with a `filter` to locate one.
 export async function evaluate({
   host = DEFAULT_HOST, port, target, filter, expression,
-  awaitPromise = true, returnByValue = true, userGesture = true,
+  awaitPromise = true, returnByValue = true, userGesture = true, timeoutMs = EVALUATE_TIMEOUT_MS,
 } = {}) {
   if (!expression) throw new Error('evaluate requires an expression');
   let resolved = target && typeof target === 'object' ? target : null;
@@ -78,9 +80,16 @@ export async function evaluate({
   }
   if (!resolved) throw new Error(`no matching CDP target on ${host}:${port}`);
   const client = await openClient({ host, port, target: resolved.webSocketDebuggerUrl || resolved.id });
-  try {
+  let timer;
+  const expired = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`the page did not answer within ${timeoutMs / 1000}s (the tab is frozen, or the script is still running)`)), timeoutMs);
+  });
+  const run = async () => {
     await client.Runtime.enable().catch(() => {});
-    const { result, exceptionDetails } = await client.Runtime.evaluate({ expression, awaitPromise, returnByValue, userGesture, includeCommandLineAPI: true });
+    return client.Runtime.evaluate({ expression, awaitPromise, returnByValue, userGesture, includeCommandLineAPI: true });
+  };
+  try {
+    const { result, exceptionDetails } = await Promise.race([run(), expired]);
     if (exceptionDetails) {
       throw new Error(exceptionDetails.exception?.description || exceptionDetails.text || 'page evaluation error');
     }
@@ -90,30 +99,9 @@ export async function evaluate({
       target: { id: resolved.id, url: resolved.url, title: resolved.title },
     };
   } finally {
+    clearTimeout(timer);
     await client.close().catch(() => {});
   }
-}
-
-// Launch any Electron/Chromium app with remote debugging enabled, then wait until its CDP endpoint
-// answers. `execPath` = the app binary; `args` are appended after the debug flags. Non-invasive:
-// detached + unref so the app outlives this process. Returns the endpoint it came up on.
-export async function launch({ execPath, args = [], port = 9222, host = DEFAULT_HOST, timeoutMs = 20000 } = {}) {
-  if (!execPath) throw new Error('launch requires execPath');
-  const flags = [`--remote-debugging-port=${port}`, '--disable-blink-features=AutomationControlled', ...args];
-  const child = spawn(execPath, flags, { detached: true, stdio: 'ignore' });
-  child.unref();
-  const deadline = Date.now() + timeoutMs;
-  let lastError;
-  do {
-    try {
-      await CDP.List({ host, port });
-      return { host, port, pid: child.pid || null, launched: true };
-    } catch (e) {
-      lastError = e;
-      await sleep(200);
-    }
-  } while (Date.now() < deadline);
-  throw new Error(`launched ${execPath} but its CDP endpoint never came up on ${host}:${port}${lastError ? ` (${lastError.message})` : ''}`);
 }
 
 // Find the first page target whose in-page probe returns truthy. Robust for multi-window apps
@@ -286,7 +274,6 @@ export default {
   listTargets,
   evaluate,
   findTarget,
-  launch,
   screenshot,
   click,
   type,

@@ -317,8 +317,7 @@ async function probeTabs(map, quote) {
   const probes = await Promise.allSettled(tabs.map((t) => {
     const live = liveByPort.get(t.port).find((l) => l.id === t.targetId);
     if (!live) return Promise.reject(new Error('not live'));
-    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), PROBE_TIMEOUT_MS).unref());
-    return Promise.race([cdp.evaluate({ port: t.port, target: live, expression: PROBE_JS(quote) }), timeout]);
+    return cdp.evaluate({ port: t.port, target: live, expression: PROBE_JS(quote), timeoutMs: PROBE_TIMEOUT_MS });
   }));
   return new Map(tabs.flatMap((t, i) => (probes[i].status === 'fulfilled' && probes[i].value?.value ? [[t.targetId, probes[i].value.value]] : [])));
 }
