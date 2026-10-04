@@ -202,7 +202,7 @@ pages['T-NOTION'] = { body: 'notion body', akipanel: readonlyPanel({
 pages['T-GPT'] = { akipanel: readonlyPanel({ capabilities: {} }), body: 'history: please compare the last two answers now, then more' };
 const state = JSON.parse((await call('aiobox', { op: 'state' })).text);
 assert.equal(state.akimcp, VERSION);
-assert.deepEqual(state.ops, { aiobox: ['windows', 'state', 'whoami', 'read', 'wait_idle', 'text', 'screenshot', 'runs', 'profiles'], aiobox_write: ['new_window', 'handoff_open', 'new_chat', 'place_like', 'close_window', 'flag', 'unflag', 'compose', 'send', 'run_macro', 'eval'] });
+assert.deepEqual(state.ops, { aiobox: ['windows', 'state', 'whoami', 'read', 'wait_idle', 'text', 'screenshot', 'runs', 'profiles'], aiobox_write: ['new_window', 'handoff_open', 'new_chat', 'switch_workspace', 'place_like', 'close_window', 'flag', 'unflag', 'compose', 'send', 'run_macro', 'eval'] });
 assert.deepEqual(state.flags, [], 'no flags.json yet: empty list');
 assert.equal('claims' in state, false, 'claims are gone (aiobox plan cleanup-ai-leftovers)');
 // No ~/.aki/aiobox/guide.md yet: the short fallback, pointing at the web guide.
@@ -497,6 +497,42 @@ for (const destroyContext of [false, true]) {
 }
 assert.deepEqual(newChats, ['https://chatgpt.com/c/123', 'https://chatgpt.com/c/123']);
 delete pages['T-GPT'].url;
+
+// switch_workspace (aiobox G2) asks akipanel.switchWorkspace(id) on a Notion tab for the workspace AkiMCP matched by id or label in the account's usage; it refuses a flagged one, the caller's own chat and a tab already there (moved: false), and returns once the page's panel names the new workspace.
+{
+  const savedNotion = pages['T-NOTION'];
+  live[1111] = [{ id: 'T-NOTION', type: 'page', title: 'P1·W1 · nt@x.com · Chat | Notion', url: 'https://app.notion.com/chat?t=abc' }];
+  assert.equal((await call('aiobox_write', { op: 'switch_workspace', window: 'P1·W1' })).text, 'rejected: op=switch_workspace needs workspace');
+  assert.match((await call('aiobox_write', { op: 'switch_workspace', window: 'P7·W2', workspace: 'Linh1' })).text, /P7·W2 is not a Notion window \(not_notion/);
+  pages['T-NOTION'] = { akipanel: readonlyPanel({ online: true, usage: notionUsage, scopePick: WS }) };
+  assert.match((await call('aiobox_write', { op: 'switch_workspace', window: 'P1·W1', workspace: 'Linh1' })).text, /P1·W1 has no AIObox switchWorkspace.*\(no_switch_workspace/);
+  const switched = [];
+  const notionPage = (refusal) => {
+    pages['T-NOTION'] = { url: 'https://app.notion.com/chat?t=abc', akipanel: readonlyPanel({ online: true, usage: notionUsage, scopePick: WS, switchWorkspace: (id) => {
+      switched.push(id);
+      if (refusal) return { ok: false, error: refusal };
+      setTimeout(() => { pages['T-NOTION'] = { url: 'https://app.notion.com/ai', akipanel: readonlyPanel({ online: true, usage: notionUsage, scopePick: 'other' }) }; }, 700);
+      return { ok: true, data: null };
+    } }) };
+  };
+  notionPage('the provider is still answering');
+  assert.equal((await call('aiobox_write', { op: 'switch_workspace', window: 'P1·W1', workspace: 'Linh1' })).text, 'rejected: P1·W1: the provider is still answering', "the panel's own refusal comes back verbatim");
+  notionPage();
+  assert.match((await call('aiobox_write', { op: 'switch_workspace', window: 'P1·W1', workspace: 'nobody' })).text, /'nobody' is no workspace of P1·W1's account \(no_workspace/);
+  assert.match((await call('aiobox_write', { op: 'switch_workspace', window: 'abc', workspace: 'Linh1', from: 'abc' })).text, /is your own chat \(abc\) \(self_target/);
+  const stay = JSON.parse((await call('aiobox_write', { op: 'switch_workspace', window: 'P1·W1', workspace: ' linh2 ' })).text);
+  assert.deepEqual([stay.moved, stay.workspace], [false, { id: WS, label: 'Linh2' }], 'a label matches trimmed and in any case; already there moves nothing');
+  fs.writeFileSync(flagsPath, JSON.stringify({ list: [{ scope: 'workspace', workspace: 'Linh1', provider: 'notion', reason: 'quota', flaggedAt: '2026-10-04T00:00:00.000Z' }] }));
+  assert.match((await call('aiobox_write', { op: 'switch_workspace', window: 'P1·W1', workspace: 'other' })).text, /Linh1 is flagged: quota \(flagged/);
+  fs.rmSync(flagsPath);
+  assert.deepEqual(switched, ['other'], 'only the panel refusal reached the panel');
+  const moved = JSON.parse((await call('aiobox_write', { op: 'switch_workspace', window: 'P1·W1', workspace: 'Linh1' })).text);
+  delete moved.warning;
+  assert.deepEqual(moved, { window: 'P1·W1', targetId: 'T-NOTION', chatId: null, previousChatId: 'abc', url: 'https://app.notion.com/ai', workspace: { id: 'other', label: 'Linh1' }, previousWorkspace: { id: WS, label: 'Linh2' }, moved: true, next: 'op=send the first message there, then op=state shows its chatId' }, 'the old page is not taken for the new workspace');
+  assert.deepEqual(switched, ['other', 'other']);
+  pages['T-NOTION'] = savedNotion;
+  live[1111] = [];
+}
 
 // place_like goes through akipanel.placeLike(like) in the new window; a chatId as like is sent as that tab's targetId; AIObox's rejection comes back verbatim.
 assert.equal((await call('aiobox_write', { op: 'place_like', window: 'P7·W2' })).text, 'rejected: op=place_like needs like');

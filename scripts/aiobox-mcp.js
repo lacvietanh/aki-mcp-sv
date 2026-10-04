@@ -786,11 +786,33 @@ const CLOSE_WINDOW_JS = (successor) => `(() => {
   const r = panel.closeWindow(${successor ? JSON.stringify({ successor }) : ''});
   return r && r.ok === true ? { ok: true } : { error: String(r?.error ?? 'closeWindow() returned no result') };
 })()`;
+// akipanel.switchWorkspace(idOrLabel) (aiobox plan aio-control-gaps G2): Notion only, refused like newChat (busy, draft); AIObox then navigates the tab there (app.notion.com/<domain>, then Notion AI's home), so the old page is still there right after the call.
+const WORKSPACES_JS = `(() => {
+  const panel = window.akipanel;
+  if (!panel) return { error: 'this window has no AIObox panel' };
+  if (typeof panel.switchWorkspace !== 'function') return { missing: true };
+  let scopes = [];
+  try { scopes = JSON.parse(JSON.stringify(panel.usage?.usage?.scopes ?? [])) || []; } catch {}
+  return { scopes: scopes.map((s) => ({ id: s.id, label: s.label ?? null })), pick: typeof panel.scopePick === 'string' ? panel.scopePick : null };
+})()`;
+const SWITCH_WORKSPACE_JS = (id) => `(() => {
+  const r = window.akipanel.switchWorkspace(${JSON.stringify(id)});
+  return r && r.ok === true ? { ok: true } : { error: String(r?.error ?? 'switchWorkspace() returned no result') };
+})()`;
+const SCOPE_PICK_JS = `(() => ({ online: !!window.akipanel?.online, pick: typeof window.akipanel?.scopePick === 'string' ? window.akipanel.scopePick : null, url: location.href }))()`;
+// The id and label matching of akipanel.switchWorkspace: an id with or without dashes, a label trimmed, both case-insensitive.
+const spaceKey = (id) => String(id).replace(/-/g, '').toLowerCase();
+const findWorkspace = (scopes, wanted) => {
+  const w = wanted.trim().toLowerCase();
+  return scopes.find((s) => spaceKey(s.id) === spaceKey(w) || String(s.label ?? '').trim().toLowerCase() === w) || null;
+};
 const NAVIGATED = /context was destroyed|navigated or closed|Cannot find context/i;
 // closeWindow is one-way to AIObox (P8·W1 a81d28d): the app refuses a successor not open, the same window or a loop only in its log, so a close counts once the tab is gone.
 const CLOSE_WAIT_MS = 3_000;
 const CLOSE_POLL_MS = 250;
 const NEW_CHAT_WAIT_MS = 15_000;
+// AIObox waits up to 20 s for app.notion.com and 8 s for scopePick (aiobox cdp/panel.rs switch_workspace), plus the navigation itself; under one tool call.
+const SWITCH_WAIT_MS = 40_000;
 const MACRO_RUN_JS = (id) => `(() => { const r = window.akipanel?.macroRuns?.[${JSON.stringify(id)}]; return r ? { status: r.status, message: r.message ?? null, at: r.at } : null; })()`;
 const MACRO_ENDED = new Set(['done', 'started', 'skipped', 'error']);
 const MACRO_WAIT_MS = CALL_WAIT_MAX_S * 1000;
@@ -880,6 +902,39 @@ const WRITE_OPS = {
       }
     }
     throw new Error(`${tab.handle} did not show an empty chat within ${NEW_CHAT_WAIT_MS / 1000}s (now at ${last?.url ?? 'unknown'})`);
+  },
+  // Notion: the tab moves to another workspace of its account; AkiMCP refuses a flagged one and returns once the new page's panel names it.
+  async switch_workspace(args) {
+    need('switch_workspace', args, ['window', 'workspace']);
+    const { tab, live: target, used } = await openTab(args);
+    if (args.from && args.from === used.chatId) throw new Refusal('self_target', `${tab.handle} is your own chat (${used.chatId})`, "switch your own tab with Notion's sidebar switcher");
+    if (providerOf(tab.url) !== 'notion') throw new Refusal('not_notion', `${tab.handle} is not a Notion window`, 'only Notion has workspaces');
+    const seen = (await cdp.evaluate({ port: tab.port, target, expression: WORKSPACES_JS })).value;
+    if (seen?.missing) throw new Refusal('no_switch_workspace', `${tab.handle} has no AIObox switchWorkspace (an older AIObox build)`, "rebuild AIObox, or use Notion's sidebar switcher");
+    if (seen?.error) throw new Error(`${tab.handle}: ${seen.error}`);
+    const scope = findWorkspace(seen.scopes, args.workspace);
+    if (!scope) throw new Refusal('no_workspace', `'${args.workspace}' is no workspace of ${tab.handle}'s account`, 'pick one by id or label from aki__aiobox op=state workspaces');
+    const flag = coordination().flags.find((f) => f.scope === 'workspace' && (f.workspace === scope.label || spaceKey(f.workspace) === spaceKey(scope.id)));
+    if (flag) throw new Refusal('flagged', `${scope.label ?? scope.id} is flagged: ${flag.reason}`, 'pick another workspace from aki__aiobox op=state workspaces');
+    const workspace = { id: scope.id, label: scope.label };
+    if (seen.pick && spaceKey(seen.pick) === spaceKey(scope.id)) return ok(JSON.stringify({ ...used, workspace, moved: false }, null, 2));
+    const previousWorkspace = seen.pick ? findWorkspace(seen.scopes, seen.pick) ?? { id: seen.pick, label: null } : null;
+    let value;
+    try {
+      value = (await cdp.evaluate({ port: tab.port, target, expression: SWITCH_WORKSPACE_JS(scope.id) })).value;
+    } catch (e) {
+      if (!NAVIGATED.test(e.message)) throw e;
+      value = { ok: true };
+    }
+    if (value?.error) throw new Error(`${tab.handle}: ${value.error}`);
+    let last = null;
+    for (const end = Date.now() + SWITCH_WAIT_MS; Date.now() < end; await sleep(NEW_WINDOW_POLL_MS)) {
+      last = (await cdp.evaluate({ port: tab.port, target, expression: SCOPE_PICK_JS }).catch(() => null))?.value ?? last;
+      if (last?.online && last.pick && spaceKey(last.pick) === spaceKey(scope.id)) {
+        return ok(JSON.stringify({ ...used, previousChatId: used.chatId, chatId: chatIdOf(last.url), url: last.url, workspace, previousWorkspace, moved: true, next: 'op=send the first message there, then op=state shows its chatId' }, null, 2));
+      }
+    }
+    throw new Error(`${tab.handle} did not reach ${workspace.label ?? workspace.id} within ${SWITCH_WAIT_MS / 1000}s (now at ${last?.url ?? 'unknown'}, workspace ${last?.pick ?? 'unknown'})`);
   },
   // The new window of a handoff takes the old one's place; `like` may be a chatId too, sent to AIObox as that tab's targetId.
   async place_like(args) {
@@ -1042,12 +1097,12 @@ export function register(server) {
       title: 'AIObox: open a window, send or fill a chat, run JS',
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description:
-        `Act in an AIObox window (handle, chatId or targetId; rules: aki__aiobox op=state); from=<your chatId>. op=new_window: window= or profile+provider (aki__aiobox op=profiles). op=handoff_open: profile, provider, like, text (whole handoff); steps: op=runs id=<runId>. ${OPEN_RULE} op=new_chat: fresh chat. op=send: sends now, even mid-answer (delivered:true = shown, queued:true = held). op=compose: fills only. op=run_macro: macro, option. op=place_like: bounds of like. op=close_window: not busy or with a draft; successor= retires it. op=flag/op=unflag: do-not-use list. op=eval: page JS.`,
+        `Act in an AIObox window (handle, chatId or targetId; rules: aki__aiobox op=state); from=<your chatId>. op=new_window: window= or profile+provider (aki__aiobox op=profiles). op=handoff_open: profile, provider, like, text (whole handoff); steps: op=runs id=<runId>. ${OPEN_RULE} op=new_chat: fresh chat. op=switch_workspace: workspace=. op=send: now, even mid-answer (delivered:true shown, queued:true held). op=compose: fills only. op=run_macro: macro, option. op=place_like: bounds of like. op=close_window: idle, no draft; successor= retires. op=flag/unflag: no-use list. op=eval: page JS.`,
       inputSchema: {
         op: z.enum(Object.keys(WRITE_OPS)).describe(Object.keys(WRITE_OPS).join(' | ')),
         window: windowArg,
         expect: expectArg,
-        from: z.string().optional().describe('your own chatId (aki__aiobox op=whoami); send, compose, new_chat and close_window refuse it'),
+        from: z.string().optional().describe('your own chatId (aki__aiobox op=whoami); send, compose, new_chat, switch_workspace, close_window refuse it'),
         like: z.string().optional().describe('place_like, handoff_open: the window to copy the place of (handle, chatId or targetId)'),
         provider: z.string().optional().describe('new_window, handoff_open, flag, unflag: notion, claude, gpt or grok (flag default notion)'),
         successor: z.string().optional().describe('close_window: the window that took over (handle, chatId or targetId); the closed handle then leads to it'),
@@ -1059,7 +1114,7 @@ export function register(server) {
         awaitPromise: z.boolean().optional().describe('eval: await a returned Promise (default true)'),
         account: z.string().optional().describe('flag, unflag: account label (op=state account)'),
         profile: z.string().optional().describe('flag, unflag: its profileId; new_window, handoff_open: profileId or P#'),
-        workspace: z.string().optional().describe('flag, unflag: a workspace label instead'),
+        workspace: z.string().optional().describe('flag, unflag: a workspace label instead; switch_workspace: its id or label (Notion)'),
         reason: z.string().optional().describe('flag: why'),
         hours: z.number().positive().max(720).optional().describe('flag: hours in force (none = until unflag)'),
       },

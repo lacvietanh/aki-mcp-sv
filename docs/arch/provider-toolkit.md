@@ -1,6 +1,6 @@
 # Provider toolkit — how tools are hosted, hidden and added
 
-> updated 2026-10-04 · v3.0.0 (plan: [`plan/done/provider-toolkit-architecture.md`](../plan/done/provider-toolkit-architecture.md), measurements: [`research/tool-surface-provider-toolkit.md`](../research/tool-surface-provider-toolkit.md))
+> updated 2026-10-05 · v3.0.0 (plan: [`plan/done/provider-toolkit-architecture.md`](../plan/done/provider-toolkit-architecture.md), measurements: [`research/tool-surface-provider-toolkit.md`](../research/tool-surface-provider-toolkit.md))
 
 The tools server is one `McpServer` that hosts every tool module (a provider). This doc is the contract for what each provider declares, how the registry decides what a client sees, the shape a new provider takes, and the test that holds the whole surface in place. Tool names and schemas of the existing 36 tools were not changed by it.
 
@@ -43,7 +43,7 @@ export const provider = {
 6. A descriptor, a detect and annotations are mandatory. Secrets live under the keys dir of `userdata.js` and never reach output or logs.
 7. Each op still has to earn its place beside `run_cmd` (`feat/tools.md` § When a tool earns its place).
 
-The first provider built on it is `aiobox` (`scripts/aiobox-mcp.js`): `aki__aiobox` (`op` = `state` | `whoami` | `windows` | `read` | `wait_idle` | `text` | `screenshot`, read-only by mechanism because the page code is fixed) and `aki__aiobox_write` (`op` = `new_window` | `new_chat` | `place_like` | `close_window` | `compose` | `send` | `run_macro` | `eval`); the rules for acting in AIObox are returned by `op=state` (`guide`), not written into the descriptions. Its file and page contract with AIObox is in [`plan/IMPORTANT-akimcp-aiobox-contract.md`](../plan/IMPORTANT-akimcp-aiobox-contract.md) § Hợp đồng AkiMCP đọc từ AIObox.
+The first provider built on it is `aiobox` (`scripts/aiobox-mcp.js`): `aki__aiobox` (`op` = `state` | `whoami` | `windows` | `read` | `wait_idle` | `text` | `screenshot`, read-only by mechanism because the page code is fixed) and `aki__aiobox_write` (`op` = `new_window` | `new_chat` | `switch_workspace` | `place_like` | `close_window` | `compose` | `send` | `run_macro` | `eval`); the rules for acting in AIObox are returned by `op=state` (`guide`), not written into the descriptions. Its file and page contract with AIObox is in [`plan/IMPORTANT-akimcp-aiobox-contract.md`](../plan/IMPORTANT-akimcp-aiobox-contract.md) § Hợp đồng AkiMCP đọc từ AIObox.
 
 ## Contract 4 — Tool surface test
 
