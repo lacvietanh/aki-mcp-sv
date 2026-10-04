@@ -191,11 +191,12 @@ ${updateBanner}
 <section id="s0" class="collapsible-card${origin ? ' is-complete' : ''}"><details class="collapsible"${origin ? '' : ' open'}>
 <summary><span class="collapse-heading">0 · Remote ingress (Web &amp; Mobile AI) — optional</span>${origin ? '<span class="done-tag">ingress active</span>' : '<span class="done-tag" style="color:var(--muted);border-color:var(--line)">optional · local is live</span>'}<span class="collapse-icon" aria-hidden="true"></span></summary>
 <div class="collapse-body">
-<p class="helptext">${origin ? `AKIMCP is live at ${copyEl(origin)} through <strong>${esc(ingressLabel)}</strong>. Expand this card only when you need to change ingress.` : `Local clients already work with no setup — the engine is live on <span class="mono">127.0.0.1</span>. Configure ingress here <em>only</em> to also let remote/mobile web AI (Claude.ai, ChatGPT) reach this machine over the internet. Default path is Tailscale Funnel; restart after switching ingress.`}</p>
+<p class="helptext">${origin ? `AKIMCP is live at ${copyEl(origin)} through <strong>${esc(ingressLabel)}</strong>. Expand this card only when you need to change ingress.` : `Local clients already work with no setup — the engine is live on <span class="mono">127.0.0.1</span>. Configure ingress here <em>only</em> to also let remote/mobile web AI (Claude.ai, ChatGPT) reach this machine over the internet. Restart after switching ingress.`}</p>
+${ingress === 'cloudflared' ? '' : `<p class="helptext"><strong>Cloudflare Tunnel is the recommended ingress</strong> (the "Owned public origin" tab): it holds a steadier connection, carries more bandwidth and answers from a far larger global network than Tailscale Funnel. Funnel needs no domain and <span class="mono">npm start</span> sets it up by itself, so it is what runs until you choose otherwise.</p>`}
 
 <nav class="tabs" role="tablist">
   <button class="tab${activeIngressTab === 'tailscale' ? ' active' : ''}" data-tab="tailscale">Tailscale + Funnel</button>
-  <button class="tab${activeIngressTab === 'owned' ? ' active' : ''}" data-tab="owned">Owned public origin</button>
+  <button class="tab${activeIngressTab === 'owned' ? ' active' : ''}" data-tab="owned">Owned public origin · recommended</button>
   <button class="tab${activeIngressTab === 'aiobox' ? ' active' : ''}" data-tab="aiobox">Hosted domain</button>
 </nav>
 
@@ -211,7 +212,7 @@ ${updateBanner}
 <div class="acts"><button data-act="tailscale">Recheck</button><span class="msg" id="msgTs"></span></div>
 <p class="helptext">Connector keeps dropping with <em>"hostname doesn't resolve / isn't reachable"</em>? The Funnel edge desynced, a Tailscale-side issue, not this server. Re-sync in a terminal (needs ${copyEl('sudo')}, so it can't be a button here), then reconnect. Why: <span class="mono">docs/research/claude-ai-oauth-connector.md</span> round 9.</p>
 ${field('Re-sync command', 'tailscale funnel --https=443 off && tailscale serve reset && tailscale funnel --bg 9999')}
-<p class="helptext">Funnel unreliable in your region even after re-syncing? See the "Owned public origin" tab for two ways to bypass it.</p>
+<p class="helptext">Funnel works with no domain, but a Cloudflare tunnel is steadier and faster: when you have a domain (or someone gave you a tunnel file), switch in the "Owned public origin" tab.</p>
 </div>
 
 <div class="tabpane${activeIngressTab === 'owned' ? ' active' : ''}" id="tab-owned">

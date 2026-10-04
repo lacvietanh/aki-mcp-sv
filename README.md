@@ -258,7 +258,7 @@ panel.js       — 127.0.0.1:9998, never exposed via Funnel
                  install akidevrule, generate the connector prompt
 ```
 
-The ingress layer is swappable: Tailscale Funnel is the zero-config default, but the same `/mcp` endpoint can instead be served through your own Cloudflare named tunnel or any stable public HTTPS edge you already run — see [Exposing to the internet](#exposing-to-the-internet). Everything below the ingress line (gatekeeper, OAuth) is unchanged whichever edge you pick.
+The ingress layer is swappable: Tailscale Funnel is the zero-config default, and the same `/mcp` endpoint can be served through your own Cloudflare named tunnel (recommended: steadier and faster) or any stable public HTTPS edge you already run — see [Exposing to the internet](#exposing-to-the-internet). Everything below the ingress line (gatekeeper, OAuth) is unchanged whichever edge you pick.
 
 OAuth (not token-in-URL) is used because claude.ai always attempts Dynamic Client Registration regardless of configuration (`docs/research/claude-ai-oauth-connector.md`). ChatGPT also expects OAuth; this server advertises `/register` (RFC 7591 DCR) so ChatGPT can self-register while Claude can keep using the pre-issued Client ID/Secret.
 
@@ -344,7 +344,7 @@ Copy `.env.example` to `.env` and uncomment what you need — `start.js` loads i
 
 ## Exposing to the internet
 
-Tailscale Funnel is the default, zero-config path and stays the recommended flow. If Funnel is unreliable for you, two alternative ingress options let you bring your own public edge instead — see [Alternative ingress](#alternative-ingress-if-funnel-is-unreliable) below.
+Tailscale Funnel is the zero-config path: it needs no domain and `npm start` sets it up by itself. **A Cloudflare tunnel is the recommended ingress** once you have a domain or a tunnel file: it holds a steadier connection, carries more bandwidth and answers from a far larger global network. See [Recommended ingress](#recommended-ingress-cloudflare-tunnel-or-your-own-edge) below.
 
 `npm start` enables Funnel automatically when needed (see above), no manual step. Funnel is state stored in `tailscaled` (survives reboots), independent of `npm start`'s own lifecycle; disable it entirely with `tailscale funnel 9999 off`.
 
@@ -363,9 +363,9 @@ curl --resolve <host>:443:<IP-from-above> https://<host>/.well-known/oauth-autho
 
 If that returns `SSL_ERROR_SYSCALL`/timeout despite `tailscale funnel status` saying "on", re-run `tailscale funnel --bg 9999` to force a config re-push (not a code bug). Full writeup: `docs/research/claude-ai-oauth-connector.md`, section "Debug round 5".
 
-### Alternative ingress (if Funnel is unreliable)
+### Recommended ingress: Cloudflare tunnel or your own edge
 
-The Funnel edge can intermittently drop individual requests in some regions. The drop-rate difference against Cloudflare is still unmeasured, so these are not a proven upgrade — reach for them only if Funnel is unreliable for you. Both replace the Tailscale edge entirely; the OAuth server and tool suite are unchanged. Precedence when more than one is set: `--tunnel` > `PUBLIC_ORIGIN` > saved panel config (section 0 → "Owned public origin") > Tailscale Funnel. Full rationale: `docs/plan/done/cloudflare-tunnel-ingress.md`.
+The Funnel edge can drop individual requests in some regions and desync from Tailscale's control plane (see the diagnosis above), and Tailscale caps Funnel's bandwidth. A Cloudflare tunnel avoids both and serves from Cloudflare's global network, so it is the owner's recommended ingress; the difference in drop rate has not been measured in this repo. Both options below replace the Tailscale edge entirely; the OAuth server and tool suite are unchanged. Precedence when more than one is set: `--tunnel` > `PUBLIC_ORIGIN` > saved panel config (section 0 → "Owned public origin") > Tailscale Funnel. Full rationale: `docs/plan/done/cloudflare-tunnel-ingress.md`.
 
 **Bring your own edge (`PUBLIC_ORIGIN`):** point an env var at a stable public HTTPS origin you run and terminate yourself, and `npm start` skips Tailscale entirely, serving at that origin:
 
