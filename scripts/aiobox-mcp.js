@@ -506,6 +506,31 @@ const SEND_JS = (text) => `(async () => {
   const r = await panel.live.send(${JSON.stringify(text)});
   return r && r.ok === true ? { ok: true } : { error: String(r?.error ?? 'live.send() returned no result') };
 })()`;
+// A provider whose chat takes a message mid-answer (akipanel.read live or queued: Notion, ChatGPT, Grok, Claude) has no busy for a sender (owner, 2026-10-04): while it answers, live.send v1 still refuses, so the message goes in by compose and the provider's send button, only into an empty box, confirmed by one more user turn. Idle, blocked, or no reader: notLive, and live.send does it.
+const SUBMIT_SELECTORS = ['[aria-label="Submit AI message"]', 'button[data-testid="send-button"]', '#composer-submit-button', 'button[aria-label="Submit"]', 'button[type="submit"]'];
+const SEND_LIVE_JS = (text) => `(async () => {
+  const panel = window.akipanel;
+  if (panel?.read !== 'live' && panel?.read !== 'queued') return { notLive: true };
+  let caps = {};
+  try { caps = JSON.parse(JSON.stringify(panel.capabilities ?? {})) || {}; } catch {}
+  if (caps.chat !== ${CHAT_VERSION} || caps.compose !== ${COMPOSE_VERSION} || typeof panel.live?.chat !== 'function' || typeof panel.live?.compose !== 'function') return { notLive: true };
+  const before = panel.live.chat();
+  if (!before || before.ok !== true) return { error: String(before?.error ?? 'live.chat() returned no result') };
+  if (!before.data?.busy) return { notLive: true };
+  if (before.data.draft) return { error: 'the message box holds a draft; it is left untouched' };
+  const users = (r) => (r?.data?.messages || []).filter((m) => m.role === 'user').length;
+  const n = users(before);
+  const c = await panel.live.compose(${JSON.stringify(text)});
+  if (!c || c.ok !== true) return { error: String(c?.error ?? 'live.compose() returned no result') };
+  const button = ${JSON.stringify(SUBMIT_SELECTORS)}.map((s) => document.querySelector(s)).find((b) => b && !b.disabled);
+  if (!button) return { error: 'composed mid-answer but found no send button; the text is still in the message box' };
+  button.click();
+  for (let i = 0; i < 50; i++) {
+    await new Promise((r) => setTimeout(r, 100));
+    if (users(panel.live.chat()) > n) return { ok: true };
+  }
+  return { error: 'clicked send mid-answer but no new user message showed in 5s' };
+})()`;
 // akipanel.runMacro is AIObox's panel button: the macro runs on the window the call came from, and its outcome lands in akipanel.macroRuns[id] (running, then done, started, skipped or error; aiobox docs/arch/provider-macros.md).
 const MACRO_JS = (id, option) => `(() => {
   const panel = window.akipanel;
@@ -687,12 +712,15 @@ const WRITE_OPS = {
     if (!value?.ok) throw new Error(`${tab.handle}: ${value?.error ?? 'compose returned no result'}`);
     return ok(JSON.stringify({ ...used, composed: true, sent: false }, null, 2));
   },
-  // Sends for real. wait=<s> first waits out an answer in progress (as op=wait_idle); live.send's own refusal comes back verbatim.
+  // Sends for real, at once to a live/queued chat even mid-answer (SEND_LIVE_JS). wait=<s> waits out an answer only on a blocked chat (as op=wait_idle); live.send's own refusal comes back verbatim.
   async send(args) {
     need('send', args, ['window', 'text']);
     const { tab, live: target, used } = await openTab(args);
     if (args.from && args.from === used.chatId) throw new Refusal('self_target', `${tab.handle} is your own chat (${used.chatId})`, "send to the other session's window, found by its handle in op=state");
     const started = Date.now();
+    const mid = (await cdp.evaluate({ port: tab.port, target, expression: SEND_LIVE_JS(args.text), awaitPromise: true })).value;
+    if (mid?.error) throw new Error(`${tab.handle}: ${mid.error}`);
+    if (mid?.ok) return ok(JSON.stringify({ ...used, sent: true, midAnswer: true, waitedMs: Date.now() - started }, null, 2));
     const waitS = waitLimitS(args.wait, 0);
     for (const end = started + waitS * 1000; ; await sleep(WAIT_IDLE_POLL_MS)) {
       const { value } = await cdp.evaluate({ port: tab.port, target, expression: READ_JS(1) });
@@ -774,7 +802,7 @@ export function register(server) {
       title: 'AIObox: open a window, send or fill a chat, run JS',
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description:
-        'Act in an AIObox window (chatId, handle or targetId; rules: aki__aiobox op=state). expect refuses another chat, from=<your chatId> your own chat. op=new_window: a new chat of the same profile and provider. op=new_chat: a fresh chat in that tab. op=send: sends text (wait=s waits for idle first); op=compose only fills the box. op=run_macro: runs a window macro (macro, option), returns its status. op=place_like: moves window onto the bounds of like. op=close_window: closes the tab through AIObox (refused while busy or with a draft). op=flag / op=unflag: the do-not-use list (account+profile or workspace). op=eval: runs JS in the page, returns the result; it can click, type and change the page.',
+        'Act in an AIObox window (chatId, handle or targetId; rules: aki__aiobox op=state). expect refuses another chat, from=<your chatId> your own chat. op=new_window: a new chat of the same profile and provider. op=new_chat: a fresh chat in that tab. op=send: sends now, even mid-answer (read=blocked: wait=s); op=compose only fills the box. op=run_macro: runs a window macro (macro, option), returns its status. op=place_like: takes the bounds of like. op=close_window: closes the tab through AIObox (refused while busy or with a draft). op=flag / op=unflag: the do-not-use list (account+profile or workspace). op=eval: runs JS in the page, returns the result; it can click, type and change the page.',
       inputSchema: {
         op: z.enum(Object.keys(WRITE_OPS)).describe(Object.keys(WRITE_OPS).join(' | ')),
         window: windowArg,

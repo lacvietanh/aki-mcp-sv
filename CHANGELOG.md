@@ -5,6 +5,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 ## [Unreleased]
 
 ### Added
+
+- **`aki__aiobox_write op=send` sends at once to a chat that takes messages mid-answer** (owner, 2026-10-04: Notion, ChatGPT, Grok, Claude have no busy; `akipanel.read` `live`/`queued`): while it answers, the text goes in through `live.compose()` and the provider's send button, only into an empty box, and counts as sent once one more user turn shows (`midAnswer: true`); a draft is refused untouched. Only a `blocked` chat (Gemini) still waits with `wait=`. The fallback guide no longer sends by `op=eval`.
 - **`aki__aiobox_write op=place_like` and `op=close_window`** (`scripts/aiobox-mcp.js`, AIObox guide v9 handoff): the new window takes the old one's place through `akipanel.placeLike(like)`, and the old window closes through `akipanel.closeWindow()`, never a CDP close; AIObox's refusal (busy, draft, offline) comes back verbatim. `op=state` also returns the `claims` and `flags` still in force from AIObox's agent files (guide v10: a flag names an account or a workspace, and one without `until` holds until unflagged).
 
 ### Changed

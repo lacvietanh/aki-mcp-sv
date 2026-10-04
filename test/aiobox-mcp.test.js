@@ -125,8 +125,8 @@ const pages = {
 };
 const runInPage = (id, expression) => {
   const page = pages[id] || {};
-  const document = { body: { innerText: page.body ?? '' }, querySelector: () => null, readyState: 'complete' };
-  return Promise.resolve(vm.runInNewContext(expression, { window: { akipanel: page.akipanel }, document, location: { href: page.url ?? 'about:blank' } })).then((v) => JSON.parse(JSON.stringify(v)));
+  const document = { body: { innerText: page.body ?? '' }, querySelector: page.querySelector ?? (() => null), readyState: 'complete' };
+  return Promise.resolve(vm.runInNewContext(expression, { window: { akipanel: page.akipanel }, document, setTimeout, location: { href: page.url ?? 'about:blank' } })).then((v) => JSON.parse(JSON.stringify(v)));
 };
 const seen = [];
 cdp.listTargets = async ({ port }) => live[port] || [];
@@ -528,6 +528,24 @@ const noReaderStarted = Date.now();
 assert.equal((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'x', wait: 30 })).text, 'rejected: P7·W2: live.send() returned no result');
 assert.ok(Date.now() - noReaderStarted < 2000, 'no wait without a reader');
 assert.equal((await call('aiobox_write', { op: 'send', window: 'P7·W2' })).text, 'rejected: op=send needs text');
+// read=live/queued has no busy (owner): mid-answer the text goes in by compose + the send button at once, no wait, only into an empty box; live.send is not called.
+const liveMsgs = [{ role: 'user', text: 'q' }];
+let liveDraft = false;
+let liveBox = '';
+const liveSent = [];
+pages['T-GPT'].akipanel = readonlyPanel({
+  read: 'live',
+  capabilities: { chat: 1, compose: 2, send: 1 },
+  live: { chat: () => ({ ok: true, data: { messages: liveMsgs, busy: true, draft: liveDraft } }), compose: async (t) => { liveBox = t; return { ok: true }; }, send: async () => ({ ok: false, error: 'the chat is answering' }) },
+});
+pages['T-GPT'].querySelector = (s) => (s === 'button[data-testid="send-button"]' ? { disabled: false, click: () => { liveSent.push(liveBox); liveMsgs.push({ role: 'user', text: liveBox }); liveBox = ''; } } : null);
+const midOut = JSON.parse((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'now' })).text);
+assert.deepEqual([midOut.sent, midOut.midAnswer, liveSent], [true, true, ['now']]);
+assert.ok(midOut.waitedMs < 2000, 'sent at once, no busy wait');
+liveDraft = true;
+assert.equal((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'x' })).text, 'rejected: P7·W2: the message box holds a draft; it is left untouched');
+assert.deepEqual(liveSent, ['now'], 'a draft is never touched');
+delete pages['T-GPT'].querySelector;
 
 assert.equal((await call('aiobox_write', { op: 'eval', window: 'P7·W2' })).text, 'rejected: op=eval needs expression');
 const evaluated = JSON.parse((await call('aiobox_write', { op: 'eval', window: 'T-GPT', expression: '6*7' })).text);
