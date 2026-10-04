@@ -306,7 +306,7 @@ const READ_JS = (last) => `(() => {
 
 const TEXT_JS = (selector) => `[...document.querySelectorAll(${JSON.stringify(selector)})].slice(0, ${TEXT_ELEMENTS_CAP}).map((el) => ({ text: Array.from(el.innerText || '').slice(0, ${TEXT_ELEMENT_CAP}).join(''), ariaLabel: el.getAttribute('aria-label') }))`;
 
-// One short look at a chat tab for op=state and op=whoami: busy and account, the provider's macros, read (how its chat takes a message sent mid-answer: live | queued | blocked | null; no panel = no field), and whether the user's latest message (provider reader) or the page text (no reader) contains quote.
+// One short look at a chat tab for op=state and op=whoami: busy and account, the provider's macros, read (how its chat takes a message sent mid-answer: live | queued | blocked | null; no panel = no field), the tab's own workspace and usage (here, below; no panel = no field), and whether the user's latest message (provider reader) or the page text (no reader) contains quote.
 const PROBE_JS = (quote) => `(() => {
   const norm = (s) => String(s || '').replace(/\\s+/g, ' ').trim();
   const panel = window.akipanel;
@@ -316,14 +316,37 @@ const PROBE_JS = (quote) => `(() => {
   const macros = copy(panel?.state?.macros, []).map((m) => ({ id: m.id, label: m.label, options: (m.options || []).map((o) => o.id) }));
   const quote = ${quote === undefined ? 'null' : `norm(${JSON.stringify(quote)})`};
   const read = panel ? (['live', 'queued', 'blocked'].includes(panel.read) ? panel.read : null) : undefined;
+  // Workspace and usage as AIObox reads them for this tab (contract row akipanel.usage): Notion's scopePick with exactScope is the tab's own workspace, usage.usage is its reading when scopeId is that workspace. Never guessed from the title: what is missing is null with why.
+  const here = (() => {
+    if (!panel) return undefined;
+    const u = copy(panel.usage, null);
+    if (caps.usage === undefined || !u) return { workspace: null, usage: null, why: 'this AIObox panel reports no usage' };
+    const pct = (v) => (typeof v?.utilizationPct === 'number' ? v.utilizationPct : null);
+    const reading = (r, readAt) => ({ session: pct(r?.session), weekly: pct(r?.weekly), readAt, ...(u.stale ? { stale: true } : {}) });
+    const inner = u.usage || {};
+    if (panel.exactScope !== true) return { workspace: null, usage: reading(inner, u.checkedAt ?? null), why: 'this provider has no workspaces: usage is for the whole account' };
+    // Every workspace of the account as the snapshot holds them, for choosing where to go (op=state workspaces).
+    const scopes = (inner.scopes || []).map((s) => ({ id: s.id, label: s.label ?? null, status: s.plan === 'free' ? 'free' : (s.status ?? null), session: pct(s.session), weekly: pct(s.weekly) }));
+    const id = typeof panel.scopePick === 'string' ? panel.scopePick : null;
+    if (!id) {
+      let wait = null;
+      try { wait = typeof panel.scopeWait === 'function' ? panel.scopeWait() : panel.scopeWait; } catch {}
+      return { workspace: null, usage: null, why: wait ? String(wait) : 'AIObox is still finding the workspace of this tab', scopes };
+    }
+    const scope = (inner.scopes || []).find((s) => s.id === id) || null;
+    const workspace = { id, label: scope?.label ?? null, status: scope?.plan === 'free' ? 'free' : (u.status ?? null) };
+    if (inner.scopeId === id) return { workspace, usage: reading(inner, u.checkedAt ?? null), scopes };
+    if (scope?.session || scope?.weekly) return { workspace, usage: reading(scope, null), why: 'from the account snapshot, not a reading of this tab', scopes };
+    return { workspace, usage: null, why: scope?.plan === 'free' ? 'free workspace: no AI quota' : 'no usage reading for this workspace yet', scopes };
+  })();
   if (caps.chat === ${CHAT_VERSION} && typeof panel?.live?.chat === 'function') {
     const r = panel.live.chat();
     if (r && r.ok === true) {
       const lastUser = [...(r.data?.messages || [])].reverse().find((m) => m.role === 'user');
-      return { reader: true, busy: !!r.data?.busy, account, read, macros, match: quote ? norm(lastUser?.text).includes(quote) : null };
+      return { reader: true, busy: !!r.data?.busy, account, read, here, macros, match: quote ? norm(lastUser?.text).includes(quote) : null };
     }
   }
-  return { reader: false, busy: null, account, read, macros, match: quote ? norm(document.body?.innerText).includes(quote) : null };
+  return { reader: false, busy: null, account, read, here, macros, match: quote ? norm(document.body?.innerText).includes(quote) : null };
 })()`;
 const CHAT_PROVIDERS = new Set(['notion', 'gpt', 'claude', 'grok', 'gemini']);
 const PROBE_TIMEOUT_MS = 3_000;
@@ -342,6 +365,8 @@ async function probeTabs(map, quote) {
   return new Map(tabs.flatMap((t, i) => (probes[i].status === 'fulfilled' && probes[i].value?.value ? [[t.targetId, probes[i].value.value]] : [])));
 }
 
+// The probe's here as row fields: workspace and usage, usageWhy when one is missing or not the tab's own reading.
+const hereOf = (p) => (p?.here === undefined ? {} : { workspace: p.here.workspace, usage: p.here.usage, ...(p.here.why ? { usageWhy: p.here.why } : {}) });
 const tabRow = (t) => ({ handle: t.handle, chatId: chatIdOf(t.url), targetId: t.targetId, profileId: t.profile.id ?? null, provider: providerOf(t.url), profile: t.profile.name, title: stripHandle(t.title), url: t.url });
 const opsList = () => ({ aiobox: Object.keys(READ_OPS), aiobox_write: Object.keys(WRITE_OPS) });
 
@@ -411,13 +436,16 @@ const READ_OPS = {
     const map = await freshMap();
     const probed = await probeTabs(map);
     const macros = {};
+    // Per profile, every workspace of its account with its usage, from the first tab of it that holds the snapshot (Notion).
+    const workspaces = {};
     const tabs = tabsOf(map).map((t) => {
       const p = probed.get(t.targetId);
       const row = tabRow(t);
       if (p?.macros?.length && !macros[row.provider]) macros[row.provider] = p.macros;
-      return p ? { ...row, busy: p.busy, account: p.account, ...(p.read === undefined ? {} : { read: p.read }) } : row;
+      if (p?.here?.scopes?.length && row.profileId && !workspaces[row.profileId]) workspaces[row.profileId] = p.here.scopes;
+      return p ? { ...row, busy: p.busy, account: p.account, ...(p.read === undefined ? {} : { read: p.read }), ...hereOf(p) } : row;
     });
-    return ok(JSON.stringify({ akimcp: VERSION, ops: opsList(), ...readGuide(), run: map.run, renumbered: renumberedOf(map), macros, ...coordination(), tabs }, null, 2));
+    return ok(JSON.stringify({ akimcp: VERSION, ops: opsList(), ...readGuide(), run: map.run, renumbered: renumberedOf(map), macros, ...coordination(), workspaces, tabs }, null, 2));
   },
   // The caller's own window: the AI cannot see its tab, but it sees the user's latest message verbatim, and that text is in exactly one chat (the busy one, while it answers). Two chats showing it are returned as ambiguous, never guessed between.
   async whoami(args) {
@@ -431,7 +459,7 @@ const READ_OPS = {
     const pool = byReader.length ? byReader : hits;
     const busy = pool.filter((h) => h.probe.busy);
     const pick = pool.length === 1 ? pool[0] : busy.length === 1 ? busy[0] : null;
-    const row = (h) => ({ ...tabRow(h.tab), busy: h.probe.busy, account: h.probe.account, matchedBy: h.probe.reader ? 'latest user message' : 'page text' });
+    const row = (h) => ({ ...tabRow(h.tab), busy: h.probe.busy, account: h.probe.account, ...hereOf(h.probe), matchedBy: h.probe.reader ? 'latest user message' : 'page text' });
     if (!pool.length) throw new Refusal('not_found', 'no AIObox chat window shows that quote', 'copy a longer exact passage of the latest user message; a chat outside AIObox has no window here');
     if (!pick) return ok(JSON.stringify({ akimcp: VERSION, ambiguous: pool.map(row) }, null, 2));
     return ok(JSON.stringify({ akimcp: VERSION, you: row(pick), keep: 'chatId, not the handle' }, null, 2));
@@ -796,7 +824,7 @@ export function register(server) {
       title: 'AIObox: read windows by handle',
       annotations: { readOnlyHint: true, openWorldHint: false },
       description:
-        'Read AIObox Chrome windows. Start with op=state: every window (chatId, provider, account, busy), macros, current flags, and the guide for acting in AIObox. op=whoami quote=<20+ chars verbatim from the latest user message> finds your own window. Name a window by handle P#·W# (lasting; a retired one leads to its successor), chatId (the chat open in it now) or targetId; expect refuses a window now showing another chat. op=windows: tabs only. op=read: last messages (last=N), else page text. op=wait_idle: waits until the chat stops answering (timeout s), returns its last messages. op=text: elements by selector. op=screenshot. Results name the tab used. Acting: aki__aiobox_write.',
+        'Read AIObox Chrome windows. Start with op=state: every window (chatId, provider, account, busy, workspace, usage), macros, flags, the guide for acting in AIObox. op=whoami quote=<20+ chars verbatim from the latest user message> finds your own window. Name a window by handle P#·W# (lasting; a retired one leads to its successor), chatId (the chat open in it now) or targetId; expect refuses a window now showing another chat. op=windows: tabs only. op=read: last messages (last=N), else page text. op=wait_idle: waits until the chat stops answering (timeout s), returns its last messages. op=text: elements by selector. op=screenshot. Results name the tab used. Acting: aki__aiobox_write.',
       inputSchema: {
         op: z.enum(Object.keys(READ_OPS)).describe(Object.keys(READ_OPS).join(' | ')),
         window: windowArg,

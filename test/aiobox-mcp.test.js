@@ -179,9 +179,15 @@ const runs = {};
 const panelRuns = [];
 let notionBusy = true;
 let notionDraft;
+// The tab's own usage as AIObox's panel holds it (seen live 2026-10-04): scopePick + exactScope name the workspace, usage.usage is its reading when scopeId is it.
+const WS = 'b4fecf59-09a0-811b-976b-000387ab3c62';
+const notionUsage = { profileId: 'chrome-profile-11', provider: 'notion', status: 'measured', checkedAt: '2026-10-04T12:34:48.017Z', stale: false, usage: { session: { utilizationPct: 48.97 }, weekly: { utilizationPct: 48.97 }, scopeId: WS, scopes: [{ id: 'other', label: 'Linh1', plan: 'business', session: { utilizationPct: 50.41 }, weekly: { utilizationPct: 50.41 } }, { id: WS, label: 'Linh2', plan: 'business' }, { id: 'free-ws', label: 'nt-free', plan: 'free' }] } };
 pages['T-NOTION'] = { body: 'notion body', akipanel: readonlyPanel({
   online: true,
-  capabilities: { chat: 1 },
+  capabilities: { chat: 1, usage: 1 },
+  usage: notionUsage,
+  scopePick: WS,
+  exactScope: true,
   account,
   read: 'live',
   state: { macros: macroList },
@@ -254,10 +260,28 @@ assert.deepEqual(notionRow.account, account);
 assert.equal(state.tabs.find((t) => t.targetId === 'T-GPT').busy, null, 'no reader: busy is unknown, not guessed');
 assert.deepEqual([notionRow.read, state.tabs.find((t) => t.targetId === 'T-GPT').read], ['live', null], 'read comes from akipanel.read; a panel without it is null');
 assert.deepEqual(state.macros, { notion: [{ id: 'connect-akimcp', label: 'Connect AkiMCP', options: ['fast', 'full'] }] });
+// Workspace and usage come from the tab's akipanel, never from the title; missing is null with usageWhy.
+assert.deepEqual([notionRow.workspace, notionRow.usage, notionRow.usageWhy], [{ id: WS, label: 'Linh2', status: 'measured' }, { session: 48.97, weekly: 48.97, readAt: '2026-10-04T12:34:48.017Z' }, undefined]);
+assert.deepEqual(state.workspaces[notionRow.profileId].map((w) => [w.label, w.status, w.session]), [['Linh1', null, 50.41], ['Linh2', null, null], ['nt-free', 'free', null]], 'op=state lists the account workspaces per profile, for choosing where to go');
+const gptRow = state.tabs.find((t) => t.targetId === 'T-GPT');
+assert.deepEqual([gptRow.workspace, gptRow.usage, gptRow.usageWhy], [null, null, 'this AIObox panel reports no usage']);
+const usageCase = async (fields) => {
+  const saved = pages['T-NOTION'].akipanel;
+  pages['T-NOTION'].akipanel = readonlyPanel({ capabilities: { usage: 1 }, usage: notionUsage, exactScope: true, scopePick: null, ...fields });
+  const row = JSON.parse((await call('aiobox', { op: 'state' })).text).tabs.find((t) => t.targetId === 'T-NOTION');
+  pages['T-NOTION'].akipanel = saved;
+  return [row.workspace, row.usage, row.usageWhy];
+};
+assert.deepEqual(await usageCase({}), [null, null, 'AIObox is still finding the workspace of this tab'], 'a tab still resolving names no workspace');
+assert.deepEqual(await usageCase({ scopeWait: 'no usage reader in this page · Refresh' }), [null, null, 'no usage reader in this page · Refresh'], "AIObox's own reason is passed on");
+assert.deepEqual(await usageCase({ scopePick: 'other' }), [{ id: 'other', label: 'Linh1', status: 'measured' }, { session: 50.41, weekly: 50.41, readAt: null }, 'from the account snapshot, not a reading of this tab']);
+assert.deepEqual(await usageCase({ scopePick: 'free-ws' }), [{ id: 'free-ws', label: 'nt-free', status: 'free' }, null, 'free workspace: no AI quota']);
+assert.deepEqual(await usageCase({ exactScope: false, usage: { status: 'measured', checkedAt: 't', stale: true, usage: { session: { utilizationPct: 7 }, weekly: { utilizationPct: 9 } } } }), [null, { session: 7, weekly: 9, readAt: 't', stale: true }, 'this provider has no workspaces: usage is for the whole account']);
 
 assert.match((await call('aiobox', { op: 'whoami', quote: 'too short' })).text, /short_quote/);
 const me = JSON.parse((await call('aiobox', { op: 'whoami', quote: 'please compare  the last two answers' })).text);
 assert.deepEqual([me.you.chatId, me.you.handle, me.you.matchedBy, me.you.busy], ['abc', 'P1·W1', 'latest user message', true], "the reader's latest user message outranks page text that also shows the quote");
+assert.deepEqual([me.you.workspace, me.you.usage], [{ id: WS, label: 'Linh2', status: 'measured' }, { session: 48.97, weekly: 48.97, readAt: '2026-10-04T12:34:48.017Z' }], 'whoami says which workspace you are on and its usage');
 assert.equal(JSON.parse((await call('aiobox', { op: 'whoami', quote: 'history: please compare the last two' })).text).you.targetId, 'T-GPT', 'without a reader match, page text decides');
 pages['T-CLAUDE'] = { body: 'history: please compare the last two answers' };
 assert.deepEqual(JSON.parse((await call('aiobox', { op: 'whoami', quote: 'history: please compare the last two' })).text).ambiguous.map((t) => t.targetId), ['T-GPT', 'T-CLAUDE'], 'two chats showing the quote are not guessed between');
