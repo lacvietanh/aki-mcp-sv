@@ -282,41 +282,69 @@ assert.match((await call('aiobox_write', { op: 'compose', window: 'abc', text: '
 delete pages['T-CLAUDE'];
 Object.assign(pages, savedPages);
 
-// A chat id names the window too, and expect refuses a handle that now names another chat.
+// A chat id names the window too, and expect refuses a window that now shows another chat.
 assert.equal(JSON.parse((await call('aiobox', { op: 'read', window: 'abc' })).text).window, 'P1·W1');
 assert.equal(JSON.parse((await call('aiobox', { op: 'read', window: 'P1·W1', expect: 'abc' })).text).chatId, 'abc');
 assert.equal(JSON.parse((await call('aiobox', { op: 'read', window: 'P1·W1', expect: 'Chat | Notion' })).text).window, 'P1·W1', 'expect may be title text');
 const wrong = await call('aiobox', { op: 'read', window: 'P1·W1', expect: 'zzz' });
 assert.ok(wrong.isError);
-assert.match(wrong.text, /handle P1·W1 now points to "nt@x.com · Chat \| Notion" \(chat abc\), not "zzz"; handles were renumbered/);
+assert.match(wrong.text, /handle P1·W1 now points to "nt@x.com · Chat \| Notion" \(chat abc\), not "zzz"; the window shows another chat now/);
 
-// AIObox restarts: the same tabs come back under new numbers (P7's window becomes W1) and the old P7·W2 now names a new tab. Every read compares with the map seen before.
+// Handles are lasting (aiobox plan D6): an AIObox restart with Chrome still running is a new epoch with the same numbers, and is no event.
 const before = fs.readFileSync(mapFile, 'utf8');
-const moved = JSON.parse(before);
-Object.assign(moved, { epoch: 1, appPid: 4242, generation: 1, updatedAt: '2026-10-03T18:38:05.000Z', answered: null });
+const rerun = JSON.parse(before);
+Object.assign(rerun, { epoch: 1, appPid: 4242, generation: 1, updatedAt: '2026-10-03T18:38:05.000Z', answered: null });
+fs.writeFileSync(mapFile, JSON.stringify(rerun));
+const same = JSON.parse((await call('aiobox', { op: 'windows' })).text);
+assert.equal(refreshes, 1, 'op=windows asks an AIObox that can refresh, every time');
+assert.deepEqual([same.run.epoch, same.run.appPid, same.run.generation], [1, 4242, 2], 'the list is the one AIObox wrote after the request');
+assert.ok(!fs.existsSync(refreshFile));
+assert.equal(same.renumbered, null, 'an AIObox restart that keeps every handle warns nothing');
+assert.equal(JSON.parse((await call('aiobox_write', { op: 'eval', window: 'P7·W2', expression: '1' })).text).warning, undefined);
+// Chrome restarted and session restore put P7·W2 back on a new target: the same window, so no warning either; nor when it comes back to the first target.
+const restored = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
+restored.profiles[1].windows[0].tabs[0].targetId = 'T-RESTORED';
+fs.writeFileSync(mapFile, JSON.stringify(restored));
+assert.equal(JSON.parse((await call('aiobox', { op: 'windows' })).text).renumbered, null, 'a handle on a new target is its window restored');
+fs.writeFileSync(mapFile, JSON.stringify(rerun));
+assert.equal(JSON.parse((await call('aiobox', { op: 'windows' })).text).renumbered, null);
+
+// The one fault left: an open tab whose handle changes (AIObox gave T-GPT P7·W1, and P7·W2 to another tab).
+const moved = JSON.parse(JSON.stringify(rerun));
 moved.profiles[1].windows = [
   { handle: 'P7·W1', windowId: 2, state: 'normal', tabs: [{ handle: 'P7·W1', targetId: 'T-GPT', url: 'https://chatgpt.com/c/123', title: 'lac · Review' }] },
   { handle: 'P7·W2', windowId: 9, state: 'normal', tabs: [{ handle: 'P7·W2', targetId: 'T-OTHER', url: 'https://chatgpt.com/c/999', title: 'lac · Other' }] },
 ];
 fs.writeFileSync(mapFile, JSON.stringify(moved));
 const after = JSON.parse((await call('aiobox', { op: 'windows' })).text);
-assert.equal(refreshes, 1, 'op=windows asks an AIObox that can refresh, every time');
-assert.equal(after.run.epoch, 1);
-assert.equal(after.run.appPid, 4242);
-assert.equal(after.run.generation, 2, 'the list is the one AIObox wrote after the request');
-assert.ok(!fs.existsSync(refreshFile));
-assert.deepEqual(after.renumbered.changes.map((c) => [c.was.split(' ')[0], c.handle, c.targetId]), [['P7·W2', 'P7·W1', 'T-GPT'], ['P7·W2', 'P7·W2', 'T-OTHER']]);
-assert.match(after.renumbered.warning, /^handles renumbered since .*: P7·W2 -> P7·W1, P7·W2 of another tab \(target T-GPT, chat 123\) -> P7·W2\./);
+assert.deepEqual(after.renumbered.changes.map((c) => [c.was, c.handle, c.targetId]), [['P7·W2', 'P7·W1', 'T-GPT']], 'only the tab that changed handle, not the handle now on another tab');
+assert.match(after.renumbered.warning, /^AIObox moved a handle on an open tab since .*: P7·W2 -> P7·W1 \(target T-GPT, chat 123\)\. Handles should never move/);
 live[7777] = [{ id: 'T-GPT', type: 'page', title: 'P7·W1 · lac · Review', url: 'https://chatgpt.com/c/123' }, { id: 'T-OTHER', type: 'page', title: 'P7·W2 · lac · Other', url: 'https://chatgpt.com/c/999' }];
 // An agent still holding "P7·W2" for chat 123 is refused with expect, warned without it, and reaches it by chat id.
 assert.match((await call('aiobox_write', { op: 'eval', window: 'P7·W2', expression: '1', expect: '123' })).text, /handle P7·W2 now points to "lac · Other" \(chat 999\), not "123"/);
-assert.match(JSON.parse((await call('aiobox_write', { op: 'eval', window: 'P7·W2', expression: '1' })).text).warning, /handles renumbered since/);
+assert.match(JSON.parse((await call('aiobox_write', { op: 'eval', window: 'P7·W2', expression: '1' })).text).warning, /AIObox moved a handle/);
 const byChat = JSON.parse((await call('aiobox_write', { op: 'eval', window: '123', expression: '1' })).text);
 assert.equal(byChat.window, 'P7·W1');
 assert.equal(byChat.targetId, 'T-GPT');
-// The renumbering is remembered on disk, so a restarted AkiMCP (or another call) still reports it; an unchanged map adds nothing new.
+// The record is kept on disk, so a restarted AkiMCP (or another call) still reports it; an unchanged map adds nothing new.
 assert.deepEqual(JSON.parse((await call('aiobox', { op: 'windows' })).text).renumbered.changes, after.renumbered.changes);
-assert.ok(JSON.parse(fs.readFileSync(seenFile, 'utf8')).last.restarted, 'a new epoch: AIObox restarted');
+
+// A handoff retires a handle (close_window after place_like): windows.json retired[] leads to the successor, hop by hop; the result says resolvedFrom. A loop and a chain ending in a closed window are refused.
+const withRetired = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
+withRetired.retired = [
+  { handle: 'P5·W3', successor: 'p7w8', at: '2026-10-04T10:00:00Z' },
+  { handle: 'P7·W8', successor: 'P7·W1', at: '2026-10-04T10:05:00Z' },
+  { handle: 'P5·W4', successor: 'P5·W5', at: '2026-10-04T10:00:00Z' },
+  { handle: 'P5·W5', successor: 'P5·W4', at: '2026-10-04T10:01:00Z' },
+  { handle: 'P5·W6', successor: 'P5·W7', at: '2026-10-04T10:00:00Z' },
+];
+fs.writeFileSync(mapFile, JSON.stringify(withRetired));
+const followed = JSON.parse((await call('aiobox_write', { op: 'eval', window: 'P5·W3', expression: '1' })).text);
+assert.deepEqual([followed.window, followed.targetId, followed.resolvedFrom], ['P7·W1', 'T-GPT', 'P5·W3'], 'two hops to the window that took over');
+assert.equal(JSON.parse((await call('aiobox_write', { op: 'eval', window: 'P7·W1', expression: '1' })).text).resolvedFrom, undefined, 'a live handle is not resolved from anything');
+assert.match((await call('aiobox', { op: 'read', window: 'P5·W4' })).text, /retired handles loop: P5·W4 -> P5·W5 -> P5·W4 \(retired_loop/);
+assert.match((await call('aiobox', { op: 'read', window: 'P5·W6' })).text, /no window 'P5·W6' \(retired: P5·W6 -> P5·W7, which is not open\); open: /);
+fs.writeFileSync(mapFile, JSON.stringify(moved));
 // A window the map does not name yet (just opened) is found after one refresh; without an answer the call fails naming both, and leaves no request behind.
 live[7777].push({ id: 'T-W5', type: 'page', title: 'P7·W5 · lac · Fresh', url: 'https://chatgpt.com/c/555' });
 onRefresh = (map) => map.profiles[1].windows.push({ handle: 'P7·W5', windowId: 5, state: 'normal', tabs: [{ handle: 'P7·W5', targetId: 'T-W5', url: 'https://chatgpt.com/c/555', title: 'lac · Fresh' }] });
@@ -359,7 +387,7 @@ pages['T-GPT'].akipanel = readonlyPanel({
 });
 const opened = JSON.parse((await call('aiobox_write', { op: 'new_window', window: 'p7w2' })).text);
 assert.equal(asked, 1);
-assert.equal(opened.warning !== undefined, true, 'P7·W2 was renumbered in this run, so acting on it warns');
+assert.equal(opened.warning !== undefined, true, 'T-GPT moved back to P7·W2 in this run, so acting on it warns');
 delete opened.warning;
 assert.deepEqual(opened, { window: 'P7·W4', targetId: 'T-NEW', chatId: null, opener: 'P7·W2', openerTargetId: 'T-GPT', provider: 'gpt', url: 'https://chatgpt.com/', title: 'lac · ChatGPT' });
 // The owner clicked New window a moment ago: the panel rests (newWindow would be a no-op) and their window lands in the map. new_window waits the rest out and returns a window of its own, never theirs.

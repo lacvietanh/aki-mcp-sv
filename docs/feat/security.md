@@ -128,7 +128,7 @@ All under the data dir (`~/.aki/mcpsv/` by default), mode `0600`, never inside t
 | `oauth-dcr-clients.json` | registered public clients (no secret) | nothing | delete and restart; every DCR connector reconnects |
 | `setting.json` | folders, allowlist, trusted zones, limits | not secret, but a write widens access | the local owner (panel or editor); also the file tools while the data dir is under an allowed folder (by decision, see Real limitations) |
 | `tool-calls.jsonl` | one line per `aiobox*` / `chrome_*` / `devtools_*` call: time, client, user agent, `op`, `window`, `port`, ok or error, never the arguments' text (rotated at 1 MB) | which AI drove which window, when | delete any time |
-| `aiobox-seen.json` | the AIObox window map last seen (handle per targetId, chat ids), for renumbering warnings | which chats are open | delete any time; the next call starts a new baseline |
+| `aiobox-seen.json` | the AIObox window map last seen (handle per targetId, chat ids), for moved-handle warnings | which chats are open | delete any time; the next call starts a new baseline |
 
 The panel token lives only in memory and changes on every start; `instance.json` (0600) carries it with the panel port and the running ingress origin so AIObox can call the loopback panel, and is removed on shutdown. Which of these files AIObox reads, and in what shape, is pinned in `docs/plan/IMPORTANT-akimcp-aiobox-contract.md` and `test/aiobox-contract.test.js`.
 

@@ -11,7 +11,7 @@ import { VERSION } from './version.js';
 import { aioboxDir, aioboxInstalled, readGuide, AIOBOX_PITCH } from './aiobox-guide.js';
 
 const windowsFile = () => path.join(aioboxDir(), 'cdp', 'windows.json');
-// What this server last saw of the map, kept on disk so the renumbering check survives an AkiMCP restart too. AkiMCP's own data dir, never AIObox's.
+// What this server last saw of the map, kept on disk so the moved-handle check survives an AkiMCP restart too. AkiMCP's own data dir, never AIObox's.
 const seenFile = () => path.join(USER_DIR, 'aiobox-seen.json');
 
 const MAP_VERSION = 1;
@@ -31,7 +31,7 @@ class Refusal extends Error {
     this.code = code;
   }
 }
-const NEXT_STATE = 'call aki__aiobox op=state and name the window by its chatId';
+const NEXT_STATE = 'call aki__aiobox op=state and name the window by its handle';
 
 // Same rule as aiobox `cdp/handle.rs::parse_handle`: separators and case are ignored, so P7·W2, p7w2, P7.W2, P7-W2 and "P7 W2" are one handle; ·T# names a later tab.
 export function parseHandle(input) {
@@ -73,7 +73,7 @@ function providerOf(url) {
   }
 }
 
-// The chat id in a provider URL: the one name of a conversation that survives an AIObox or Chrome restart (Notion ?t=<id>, ChatGPT and Grok /c/<id>, Claude /chat/<id>, Gemini /app/<id>). A handle is only the label AIObox gives the window now.
+// The chat id in a provider URL: the one name of a conversation that survives an AIObox or Chrome restart (Notion ?t=<id>, ChatGPT and Grok /c/<id>, Claude /chat/<id>, Gemini /app/<id>). It changes when a window opens another chat; the window's own lasting name is its handle.
 export function chatIdOf(url) {
   try {
     const u = new URL(url);
@@ -144,7 +144,6 @@ async function freshMap() {
 
 const tabsOf = (map) => (map.profiles || []).flatMap((p) => (p.windows || []).flatMap((w) => (w.tabs || []).map((t) => ({ ...t, port: p.port, profile: p }))));
 const windowHandles = (map) => (map.profiles || []).flatMap((p) => (p.windows || []).map((w) => w.handle));
-const appKey = (run) => (run.epoch === null ? null : `${run.appPid}@${run.epoch}`);
 
 function readSeen() {
   try {
@@ -155,33 +154,26 @@ function readSeen() {
   }
 }
 
-// Handles AIObox gives out live only in its memory: an AIObox restart starts every Chrome at W1 again, and a new Chrome does too, so one handle can name another chat than it did a minute ago and nothing errors. Compared by targetId (same tab, new handle) and by handle (same handle, another tab), against the last map this server saw. The newest renumbering is kept until a later one replaces it, so every caller can still learn of it.
+// A handle is the window's lasting name: AIObox numbers windows per profile, never gives a number twice, and keeps it across AIObox and Chrome restarts (aiobox plan window-control D6). So a new AIObox run is no event, and a handle on a new target is its window restored. The one thing that must not happen is an open tab (same targetId) changing handle: an AIObox fault, compared against the last map this server saw and kept until a later one replaces it, so every caller can still learn of it.
 function observe(map) {
   const tabs = tabsOf(map).filter((t) => t.handle);
   const byTarget = Object.fromEntries(tabs.map((t) => [t.targetId, t.handle]));
   const chatOf = Object.fromEntries(tabs.map((t) => [t.targetId, chatIdOf(t.url)]));
   const prev = readSeen();
-  const app = appKey(map.run);
-  let last = prev?.last || null;
+  // A record from before D6 that only says AIObox restarted (no moved tab) is dropped.
+  let last = prev?.last?.changes?.length ? prev.last : null;
   if (prev) {
-    const prevByHandle = Object.fromEntries(Object.entries(prev.byTarget).map(([id, h]) => [h, id]));
-    const changes = [];
-    for (const t of tabs) {
-      const was = prev.byTarget[t.targetId];
-      const heldBy = prevByHandle[t.handle];
-      if (was && was !== t.handle) changes.push({ handle: t.handle, was, targetId: t.targetId, chatId: chatOf[t.targetId] });
-      else if (!was && heldBy && heldBy !== t.targetId) changes.push({ handle: t.handle, was: `${t.handle} of another tab (target ${heldBy}${prev.chatOf?.[heldBy] ? `, chat ${prev.chatOf[heldBy]}` : ''})`, targetId: t.targetId, chatId: chatOf[t.targetId] });
-    }
-    // Any change of the app block is a new AIObox run: one that starts writing it (an upgrade) restarted too.
-    const restarted = (prev.app ?? null) !== app;
-    if (changes.length || restarted) last = { since: prev.at, detectedAt: new Date().toISOString(), restarted, changes };
+    const changes = tabs
+      .filter((t) => prev.byTarget[t.targetId] && prev.byTarget[t.targetId] !== t.handle)
+      .map((t) => ({ handle: t.handle, was: prev.byTarget[t.targetId], targetId: t.targetId, chatId: chatOf[t.targetId] }));
+    if (changes.length) last = { since: prev.at, detectedAt: new Date().toISOString(), changes };
   }
-  const same = prev && (prev.app ?? null) === app && JSON.stringify(prev.byTarget) === JSON.stringify(byTarget);
+  const same = prev && JSON.stringify(prev.byTarget) === JSON.stringify(byTarget) && (prev.last ?? null) === (last ?? null);
   if (!same) {
     try {
       fs.mkdirSync(path.dirname(seenFile()), { recursive: true });
       const tmp = `${seenFile()}.${process.pid}.tmp`;
-      fs.writeFileSync(tmp, JSON.stringify({ at: map.run.updatedAt ?? map.run.writtenAt, app, byTarget, chatOf, last }), { mode: 0o600 });
+      fs.writeFileSync(tmp, JSON.stringify({ at: map.run.updatedAt ?? map.run.writtenAt, byTarget, chatOf, last }), { mode: 0o600 });
       fs.renameSync(tmp, seenFile());
     } catch (e) {
       process.stderr.write(`[aiobox] ${seenFile()} not written: ${e.message}\n`);
@@ -190,16 +182,39 @@ function observe(map) {
   return last;
 }
 
-// A window is named by its handle (the current label), its CDP targetId, or its chat id (stable across restarts).
+// A window is named by its handle (its lasting name), its CDP targetId, or its chat id (the chat open in it now). A handle AIObox retired at a handoff (close_window after place_like: windows.json retired[] { handle, successor, at }) leads hop by hop to the window that took over, and the result says resolvedFrom.
 function resolveTab(map, input) {
-  const h = parseHandle(input);
   const tabs = tabsOf(map);
-  const tab = h?.window
-    ? tabs.find((t) => t.handle === formatHandle(h.profile, h.window, h.tab))
-    : tabs.find((t) => t.targetId === input) || tabs.find((t) => chatIdOf(t.url) === input);
-  if (!tab) throw new Refusal('no_window', `no window '${input}'; open: ${windowHandles(map).join(', ') || 'none'}`, NEXT_STATE);
-  return tab;
+  const h = parseHandle(input);
+  const open = () => `open: ${windowHandles(map).join(', ') || 'none'}`;
+  if (!h?.window) {
+    const tab = tabs.find((t) => t.targetId === input) || tabs.find((t) => chatIdOf(t.url) === input);
+    if (!tab) throw new Refusal('no_window', `no window '${input}'; ${open()}`, NEXT_STATE);
+    return tab;
+  }
+  const asked = formatHandle(h.profile, h.window, h.tab);
+  const chain = [asked];
+  for (let name = asked; ; ) {
+    const tab = tabs.find((t) => t.handle === name);
+    if (tab) return chain.length > 1 ? { ...tab, resolvedFrom: asked } : tab;
+    const next = successorOf(map, name);
+    if (!next) break;
+    if (chain.includes(next)) throw new Refusal('retired_loop', `retired handles loop: ${[...chain, next].join(' -> ')}`, NEXT_STATE);
+    chain.push(next);
+    name = next;
+  }
+  const retired = chain.length > 1 ? ` (retired: ${chain.join(' -> ')}, which is not open)` : '';
+  throw new Refusal('no_window', `no window '${input}'${retired}; ${open()}`, NEXT_STATE);
 }
+
+const writtenHandle = (s) => {
+  const h = parseHandle(s ?? '');
+  return h?.window ? formatHandle(h.profile, h.window, h.tab) : null;
+};
+const successorOf = (map, name) => {
+  const r = (Array.isArray(map.retired) ? map.retired : []).find((x) => writtenHandle(x?.handle) === name);
+  return r ? writtenHandle(r.successor) : null;
+};
 
 // expect: the tab the caller means, as a targetId, chat id, or text its url or title contains. Checked against the live target, so a handle that now names another chat is refused instead of acted on.
 function checkExpect(tab, live, expect) {
@@ -208,22 +223,23 @@ function checkExpect(tab, live, expect) {
   const title = stripHandle(live.title || tab.title || '');
   const chatId = chatIdOf(url);
   if (live.id === expect || tab.targetId === expect || chatId === expect || url.includes(expect) || title.includes(expect)) return;
-  throw new Refusal('wrong_window', `handle ${tab.handle} now points to "${title}" (${chatId ? `chat ${chatId}` : `target ${tab.targetId}`}), not "${expect}"; handles were renumbered or reassigned`, NEXT_STATE);
+  throw new Refusal('wrong_window', `handle ${tab.handle} now points to "${title}" (${chatId ? `chat ${chatId}` : `target ${tab.targetId}`}), not "${expect}"; the window shows another chat now`, NEXT_STATE);
 }
 
-// Every op on a window says which tab it used, by stable id too, and warns when that tab's handle moved in the newest renumbering.
+// Every op on a window says which tab it used (and the retired handle it was asked by), and warns when that tab's handle, or the handle asked for, moved in the newest moved-handle record.
 function usedTab(tab, live, map) {
   const url = live?.url || tab.url;
   const out = { window: tab.handle, targetId: tab.targetId, chatId: chatIdOf(url), url };
+  if (tab.resolvedFrom) out.resolvedFrom = tab.resolvedFrom;
   const r = map.renumbered;
-  const hit = r?.changes?.some((c) => c.handle === tab.handle || c.targetId === tab.targetId);
+  const hit = r?.changes?.some((c) => c.handle === tab.handle || c.was === tab.handle || c.targetId === tab.targetId);
   if (hit && Date.now() - Date.parse(r.detectedAt) < WARN_FOR_MS) out.warning = renumberWarning(r);
   return out;
 }
-// How long an op on a renumbered window keeps warning; op=windows reports the newest renumbering for as long as it is the newest.
+// How long an op on a window whose handle moved keeps warning; op=windows reports the newest record for as long as it is the newest.
 const WARN_FOR_MS = 2 * 60 * 60 * 1000;
 
-const renumberWarning = (r) => `handles renumbered since ${r.since}${r.restarted ? ' (AIObox restarted)' : ''}: ${r.changes.map((c) => `${c.was} -> ${c.handle}`).join(', ') || 'see op=windows'}. A handle is only the current label; name a window by its chat id or pass expect.`;
+const renumberWarning = (r) => `AIObox moved a handle on an open tab since ${r.since}: ${r.changes.map((c) => `${c.was} -> ${c.handle} (target ${c.targetId}${c.chatId ? `, chat ${c.chatId}` : ''})`).join(', ')}. Handles should never move; check op=windows and pass expect.`;
 
 // Resolve and check one window for an op: freshly read map, live target, optional expect. A miss (no such window, target gone, title naming another handle) asks AIObox to refresh once when it can, then decides on the new map; expect is never retried into a match.
 async function openTab(args) {
@@ -247,7 +263,7 @@ async function openTab(args) {
   return { ...found, used: usedTab(found.tab, found.live, found.map) };
 }
 
-// The map and Chrome can disagree for a moment (a window just closed, a handle renumbered). A live target whose title carries a different written handle, or no live target at all, means the map is stale: refuse rather than act on the wrong window. A page without a title prefix (chrome://, new tab) is accepted, since AIObox cannot prefix it.
+// The map and Chrome can disagree for a moment (a window just closed or restored). A live target whose title carries a different written handle, or no live target at all, means the map is stale: refuse rather than act on the wrong window. A page without a title prefix (chrome://, new tab) is accepted, since AIObox cannot prefix it.
 async function liveTarget(tab) {
   const live = (await cdp.listTargets({ port: tab.port })).find((t) => t.id === tab.targetId);
   if (!live) throw new Refusal('stale_map', `window map is stale: ${tab.handle} (target ${tab.targetId}) is no longer open on port ${tab.port}`, NEXT_STATE);
@@ -618,7 +634,7 @@ const WRITE_OPS = {
   async compose(args) {
     need('compose', args, ['window', 'text']);
     const { tab, live: target, used } = await openTab(args);
-    if (args.from && args.from === used.chatId) throw new Refusal('self_target', `${tab.handle} is your own chat (${used.chatId})`, "compose into the other session's window, found by its chatId in op=state");
+    if (args.from && args.from === used.chatId) throw new Refusal('self_target', `${tab.handle} is your own chat (${used.chatId})`, "compose into the other session's window, found by its handle in op=state");
     const { value } = await cdp.evaluate({ port: tab.port, target, expression: COMPOSE_JS(args.text), awaitPromise: true });
     if (value?.unsupported !== undefined) throw new Error(`AIObox compose capability version ${value.unsupported} in ${tab.handle} is not supported (expected ${COMPOSE_VERSION}); update AkiMCP or AIObox`);
     if (!value?.ok) throw new Error(`${tab.handle}: ${value?.error ?? 'compose returned no result'}`);
@@ -628,7 +644,7 @@ const WRITE_OPS = {
   async send(args) {
     need('send', args, ['window', 'text']);
     const { tab, live: target, used } = await openTab(args);
-    if (args.from && args.from === used.chatId) throw new Refusal('self_target', `${tab.handle} is your own chat (${used.chatId})`, "send to the other session's window, found by its chatId in op=state");
+    if (args.from && args.from === used.chatId) throw new Refusal('self_target', `${tab.handle} is your own chat (${used.chatId})`, "send to the other session's window, found by its handle in op=state");
     const started = Date.now();
     const waitS = waitLimitS(args.wait, 0);
     for (const end = started + waitS * 1000; ; await sleep(WAIT_IDLE_POLL_MS)) {
@@ -675,7 +691,7 @@ export const provider = {
 };
 
 const windowArg = z.string().optional().describe('handle P#·W#, chatId or targetId');
-const expectArg = z.string().optional().describe('targetId, chatId, or text the url or title must contain; refused if window names another tab');
+const expectArg = z.string().optional().describe('targetId, chatId, or text the url or title must contain; refused if the window shows another');
 
 export function register(server) {
   server.registerTool(
@@ -684,7 +700,7 @@ export function register(server) {
       title: 'AIObox: read windows by handle',
       annotations: { readOnlyHint: true, openWorldHint: false },
       description:
-        'Read AIObox Chrome windows. Start with op=state: every window (chatId, provider, account, busy), macros, current claims and flags, and the guide for acting in AIObox. op=whoami quote=<20+ chars verbatim from the latest user message> finds your own window. Name a window by chatId (stable) or handle P#·W# (a label, renumbered on restart) or targetId; expect refuses a handle that now names another tab. op=windows: tabs only. op=read: last messages (last=N), else page text. op=wait_idle: waits until the chat stops answering (timeout s), returns its last messages. op=text: elements by selector. op=screenshot. Results name the tab used. Acting: aki__aiobox_write.',
+        'Read AIObox Chrome windows. Start with op=state: every window (chatId, provider, account, busy), macros, current claims and flags, and the guide for acting in AIObox. op=whoami quote=<20+ chars verbatim from the latest user message> finds your own window. Name a window by handle P#·W# (lasting; a retired one leads to its successor), chatId (the chat open in it now) or targetId; expect refuses a window now showing another chat. op=windows: tabs only. op=read: last messages (last=N), else page text. op=wait_idle: waits until the chat stops answering (timeout s), returns its last messages. op=text: elements by selector. op=screenshot. Results name the tab used. Acting: aki__aiobox_write.',
       inputSchema: {
         op: z.enum(Object.keys(READ_OPS)).describe(Object.keys(READ_OPS).join(' | ')),
         window: windowArg,
@@ -711,7 +727,7 @@ export function register(server) {
       title: 'AIObox: open a window, send or fill a chat, run JS',
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description:
-        'Act in an AIObox window (chatId, handle or targetId; rules: aki__aiobox op=state). expect refuses a renumbered handle, from=<your chatId> your own chat. op=new_window: a new chat of the same profile and provider; returns handle, chatId, targetId. op=new_chat: a fresh chat in that tab. op=send: sends text (wait=s waits for idle first); op=compose only fills the box. op=run_macro: runs a window macro (macro, option), returns its status. op=place_like: moves window onto the bounds of like. op=close_window: closes the tab through AIObox (refused while busy or with a draft). op=eval: expression runs in the page, result returned (awaitPromise default true); it can click, type and change the page.',
+        'Act in an AIObox window (chatId, handle or targetId; rules: aki__aiobox op=state). expect refuses another chat, from=<your chatId> your own chat. op=new_window: a new chat of the same profile and provider; returns handle, chatId, targetId. op=new_chat: a fresh chat in that tab. op=send: sends text (wait=s waits for idle first); op=compose only fills the box. op=run_macro: runs a window macro (macro, option), returns its status. op=place_like: moves window onto the bounds of like. op=close_window: closes the tab through AIObox (refused while busy or with a draft). op=eval: expression runs in the page, result returned (awaitPromise default true); it can click, type and change the page.',
       inputSchema: {
         op: z.enum(Object.keys(WRITE_OPS)).describe(Object.keys(WRITE_OPS).join(' | ')),
         window: windowArg,
