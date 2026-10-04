@@ -15,6 +15,17 @@ import { VERSION } from './version.js';
 
 // A client that cached an older tools/list sends ops or fields this server no longer (or not yet) has; the SDK's -32602 then reads like the caller's typo. Name the likely cause once, here, for every tool.
 const STALE_SCHEMA_HINT = ` (akimcp ${VERSION}: if the tool description lists what you sent, your client's tool schema is stale; reconnect AkiMCP or start a new chat)`;
+// Only an argument this server's schema takes can point at a stale client schema (a value or op it lacks); an argument it does not take is the caller's own wrong name, so the hint names the arguments instead.
+async function invalidArgsHint(session, params) {
+  let properties = null;
+  try {
+    const list = await requestUpstream(session, { jsonrpc: '2.0', id: nextUpstreamId++, method: 'tools/list', params: {} });
+    properties = list.result?.tools?.find((t) => t.name === params?.name)?.inputSchema?.properties ?? null;
+  } catch {}
+  if (!properties) return STALE_SCHEMA_HINT;
+  const unknown = Object.keys(params?.arguments ?? {}).filter((k) => !Object.hasOwn(properties, k));
+  return unknown.length ? ` (akimcp ${VERSION}: ${params.name} takes no ${unknown.join(', ')}; its arguments are ${Object.keys(properties).join(', ')})` : STALE_SCHEMA_HINT;
+}
 
 // The single internal session; null until the first external `initialize` boots it. Nothing in the
 // new in-process transport can independently die the way an upstream SSE socket could, so this only
@@ -196,9 +207,14 @@ export async function handleStreamableMcp(req, res) {
     response.id = origId;
     if (method === 'tools/call') {
       // The SDK reports invalid arguments either as a JSON-RPC error or as an isError result whose text starts with the code, depending on its version.
-      if (response.error?.code === -32602 && typeof response.error.message === 'string') response.error.message += STALE_SCHEMA_HINT;
       const first = response.result?.isError ? response.result.content?.[0] : null;
-      if (first?.type === 'text' && first.text.includes('-32602')) first.text += STALE_SCHEMA_HINT;
+      const asError = response.error?.code === -32602 && typeof response.error.message === 'string';
+      const asResult = first?.type === 'text' && first.text.includes('-32602');
+      if (asError || asResult) {
+        const hint = await invalidArgsHint(shared.session, message.params);
+        if (asError) response.error.message += hint;
+        else first.text += hint;
+      }
       if (isLoggedTool(message.params?.name)) logToolCall({ sessionId: externalSessionId, agent: req.headers['user-agent'], headerNames: Object.keys(req.headers), params: message.params, response, ms: Date.now() - started });
     }
     return jsonResponse(res, 200, response);

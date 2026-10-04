@@ -123,6 +123,12 @@ async function run() {
     ]);
     assert.equal(logged[1].port, 1);
     assert.ok(!JSON.stringify(logged).includes('SECRET_EXPRESSION_TEXT'), 'argument text is never logged');
+    // A wrong argument name is the caller's mistake, not a stale schema: the hint names the arguments the tool takes.
+    const misnamed = await callTool(6, { port: 1, exprssion: '1' });
+    const misnamedText = misnamed.error?.message ?? misnamed.result?.content?.[0]?.text ?? '';
+    assert.match(misnamedText, /-32602/);
+    assert.match(misnamedText, /aki__devtools_eval takes no exprssion; its arguments are .*expression/);
+    assert.doesNotMatch(misnamedText, /schema is stale/);
     // A cancel reaches only the caller's own request: the same request id sent by another client changes nothing, the caller's own cancel ends the wait at once.
     const post = (sessionId, body) => fetch(baseUrl, { method: 'POST', headers: { 'Content-Type': 'application/json', 'MCP-Session-Id': sessionId }, body: JSON.stringify(body) });
     const slowStarted = Date.now();

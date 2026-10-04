@@ -7,6 +7,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 ### Added
 - **`aki__aiobox_write op=new_chat window=<chatId>`: a fresh chat in the same tab**, through AIObox's `akipanel.newChat()` (the provider's new-chat URL, e.g. Notion `/ai`). AIObox's refusal (offline, still answering, a draft in the box) comes back verbatim; AkiMCP also refuses your own chat (`self_target`) and an AIObox without `newChat` (`no_new_chat`, use `op=new_window`). It returns once the new page's panel is online and shows an empty chat, with `chatId: null` and `previousChatId`, since the chat id exists only after the first `op=send`. The `op=state` guide (v3) says when to use `new_chat` and when `new_window`.
 
+### Changed
+- **`aki__aiobox_write op=send wait=<s>` also waits for a draft in the target's message box to clear**, when AIObox reports `draft` in its chat reader (`op=read` shows it too). On timeout it is refused with `busy` or `draft`, sends nothing, leaves the draft alone, and `next` says to write a `~/.aki/handoff/` letter and send a one-line pointer once the chat is free.
+- **The `op=state` guide is v4**: step 5 covers the draft wait and the letter; step 9 has a new chat compare `ops` with its own schema's op enum and reconnect AkiMCP (`run_macro macro=connect-akimcp option=reconnect`) when one is missing. The session-rotation hand-off message in `docs/plan/aiobox-control-ops.md` starts with that check.
+- **An invalid-arguments error (`-32602`) names the argument the tool does not take** (`scripts/streamable-bridge.js`): the bridge reads the tool's `inputSchema` and answers e.g. `takes no exprssion; its arguments are …`; the stale-schema hint (reconnect or open a new chat) is kept for errors where every argument is in the schema.
+
 ## [3.0.0] - 2026-10-03
 
 Major because `chrome_launch` no longer clones profiles and lost `refresh`: it opens only the clones AIObox keeps in `~/.aki/cdp/profiles/` (see Changed, Removed). A chat that cached AkiMCP's earlier tool list does not see the new AIObox ops: reconnect AkiMCP (AIObox macro Connect AkiMCP, option reconnect) or open a new chat.

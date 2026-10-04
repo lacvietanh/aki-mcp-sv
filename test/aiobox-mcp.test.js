@@ -194,7 +194,7 @@ pages['T-GPT'] = { akipanel: readonlyPanel({ capabilities: {} }), body: 'history
 const state = JSON.parse((await call('aiobox', { op: 'state' })).text);
 assert.equal(state.akimcp, VERSION);
 assert.deepEqual(state.ops, { aiobox: ['windows', 'state', 'whoami', 'read', 'wait_idle', 'text', 'screenshot'], aiobox_write: ['new_window', 'new_chat', 'compose', 'send', 'run_macro', 'eval'] });
-assert.match(state.guide, /^AIObox guide v3\./);
+assert.match(state.guide, /^AIObox guide v4\./);
 assert.ok(state.guide.length <= 1200, `guide is ${state.guide.length} chars`);
 const notionRow = state.tabs.find((t) => t.targetId === 'T-NOTION');
 assert.equal(notionRow.busy, true);
@@ -400,6 +400,18 @@ assert.deepEqual([sentOut.sent, sentOut.chatId, sent], [true, '123', ['go on']])
 assert.ok(sentOut.waitedMs >= 1000, 'it waited for the answer to end');
 assert.match((await call('aiobox_write', { op: 'send', window: '123', text: 'x', from: '123' })).text, /is your own chat \(123\) \(self_target/);
 assert.deepEqual(sent, ['go on'], 'refusals send nothing');
+// A draft in the box (AIObox reports draft) is waited on like busy; on timeout nothing is sent and the draft is left alone.
+let gptDraft = true;
+const drafted = [];
+pages['T-GPT'].akipanel = readonlyPanel({
+  capabilities: { chat: 1, send: 1 },
+  live: { chat: () => ({ ok: true, data: { messages: [], busy: false, draft: gptDraft } }), send: async (t) => (drafted.push(t), { ok: true, data: null }) },
+});
+assert.match((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'x', wait: 1 })).text, /P7·W2's message box still held a draft after 1s.*draft was left alone.*\(draft/);
+assert.deepEqual(drafted, [], 'a draft blocks the send');
+setTimeout(() => { gptDraft = false; }, 1200);
+assert.equal(JSON.parse((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'after draft', wait: 5 })).text).sent, true);
+assert.deepEqual(drafted, ['after draft']);
 pages['T-GPT'].akipanel = readonlyPanel({ capabilities: { send: 2 }, live: { send: async () => ({ ok: true }) } });
 assert.match((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'x' })).text, /send capability version 2 in P7·W2 is not supported \(expected 1\)/);
 // A page that can send but has no chat reader has no busy state to wait for: wait= is skipped, and a send that reports nothing is an error, never "sent".
