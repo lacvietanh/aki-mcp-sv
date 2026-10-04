@@ -178,6 +178,7 @@ const macroList = [{ id: 'connect-akimcp', label: 'Connect AkiMCP', icon: 'plug'
 const runs = {};
 const panelRuns = [];
 let notionBusy = true;
+let notionDraft;
 pages['T-NOTION'] = { body: 'notion body', akipanel: readonlyPanel({
   online: true,
   capabilities: { chat: 1 },
@@ -185,7 +186,7 @@ pages['T-NOTION'] = { body: 'notion body', akipanel: readonlyPanel({
   read: 'live',
   state: { macros: macroList },
   macroRuns: runs,
-  live: { chat: () => ({ ok: true, data: { messages: [{ role: 'user', text: 'please   compare the last two answers now' }, { role: 'assistant', text: 'working' }], busy: notionBusy } }) },
+  live: { chat: () => ({ ok: true, data: { messages: [{ role: 'user', text: 'please   compare the last two answers now' }, { role: 'assistant', text: 'working' }], busy: notionBusy, draft: notionDraft } }) },
   runMacro: (id, option) => {
     panelRuns.push([id, option]);
     runs[id] = { status: 'running', message: null, at: Date.now() };
@@ -231,6 +232,14 @@ assert.deepEqual([stillBusy.busy, stillBusy.timedOut], [true, true]);
 notionBusy = false;
 const idle = JSON.parse((await call('aiobox', { op: 'wait_idle', window: 'abc' })).text);
 assert.deepEqual([idle.busy, idle.messages], [false, [{ role: 'assistant', text: 'working' }]]);
+assert.equal(idle.draft, undefined, 'no draft: plain idle, no warning');
+// A draft makes Notion read busy false mid-answer: returned at once, flagged, not waited on.
+notionDraft = true;
+const drafted = JSON.parse((await call('aiobox', { op: 'wait_idle', window: 'abc' })).text);
+assert.deepEqual([drafted.busy, drafted.draft], [false, true]);
+assert.match(drafted.warning, /holds a draft, so busy may read false while it still answers/);
+assert.ok(drafted.waitedMs < 1000, `a draft is not waited on (${drafted.waitedMs} ms)`);
+notionDraft = undefined;
 
 // run_macro goes through akipanel.runMacro and waits for its outcome in macroRuns.
 assert.match((await call('aiobox_write', { op: 'run_macro', window: 'abc', macro: 'nope' })).text, /P1·W1 has no macro 'nope'; it has: connect-akimcp \(no_macro/);

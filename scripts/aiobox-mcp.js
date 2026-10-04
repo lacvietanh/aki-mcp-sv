@@ -333,6 +333,7 @@ function need(op, args, fields) {
 
 const WAIT_IDLE_DEFAULT_S = 120;
 const WAIT_IDLE_POLL_MS = 1_000;
+const DRAFT_WARNING = 'the message box holds a draft, so busy may read false while it still answers (Notion); read it again later with op=read, and never touch the draft';
 const renumberedOf = (map) => (map.renumbered ? { ...map.renumbered, warning: renumberWarning(map.renumbered) } : null);
 
 const READ_OPS = {
@@ -379,6 +380,7 @@ const READ_OPS = {
     return ok(JSON.stringify({ ...used, ...body }, null, 2));
   },
   // Until the chat stops answering, by AIObox's reader (busy); a page without one has no busy to read, so it is refused rather than guessed from the DOM.
+  // A draft in the box makes Notion read busy false even mid-answer (aiobox f18ca9c), so idle with a draft is returned at once with a warning, not trusted and not waited on: only the owner clears a draft.
   async wait_idle(args) {
     need('wait_idle', args, ['window']);
     const { tab, live: target, used } = await openTab(args);
@@ -389,6 +391,7 @@ const READ_OPS = {
       if (value?.source !== 'provider' || value.unsupported !== undefined) throw new Refusal('no_adapter', `${tab.handle} has no AIObox chat reader, so whether it is answering is unknown`, 'read it with op=read and judge from the text');
       if (value.error !== undefined) throw new Error(`AIObox chat reader in ${tab.handle}: ${value.error}`);
       const waitedMs = Date.now() - started;
+      if (!value.busy && value.draft) return ok(JSON.stringify({ ...used, busy: false, draft: true, warning: [used.warning, DRAFT_WARNING].filter(Boolean).join(' Also: '), waitedMs, messages: value.messages }, null, 2));
       if (!value.busy) return ok(JSON.stringify({ ...used, busy: false, waitedMs, messages: value.messages }, null, 2));
       if (waitedMs >= limitMs) return ok(JSON.stringify({ ...used, busy: true, timedOut: true, waitedMs }, null, 2));
       await sleep(WAIT_IDLE_POLL_MS);
