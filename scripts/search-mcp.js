@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process';
 import { opendirSync } from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
-import { resolveUnderRoot } from './roots.js';
+import { resolveUnderRoot, credentialFiles } from './roots.js';
 import { ok, fail } from './mcp-tool.js';
 
 const SKIP_DIRS = new Set([
@@ -61,14 +61,15 @@ function findPath(query, from, limit) {
   return `${found.length} result(s) under ${base}:\n${head.join('\n')}${note}`;
 }
 
-function searchContent(query, from, glob, limit) {
+export function searchContent(query, from, glob, limit) {
   const base = resolveUnderRoot(from);
   const args = ['-rniIE', '--binary-files=without-match', ...[...SKIP_DIRS].map((d) => `--exclude-dir=${d}`)];
   if (glob) args.push(`--include=${glob}`);
   args.push('-e', query, base);
   return new Promise((resolve) => {
     execFile('grep', args, { timeout: 30_000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
-      const lines = (stdout || '').split('\n').filter(Boolean);
+      const closed = credentialFiles().map((file) => `${file}:`);
+      const lines = (stdout || '').split('\n').filter((line) => line && !closed.some((prefix) => line.startsWith(prefix)));
       if (!lines.length) return resolve(err && stderr ? `error: ${stderr.trim()}` : `no lines matched "${query}" under ${base}`);
       const head = lines.slice(0, limit);
       const note = lines.length > head.length ? `\n… ${lines.length - head.length} more line(s)` : '';

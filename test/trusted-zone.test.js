@@ -26,6 +26,8 @@ writeFileSync(outside, 'print("x")\n');
 const { Shell } = await import('../scripts/shell-mcp.js');
 const { resolveRealWritable, resolveRealUnderRoot } = await import('../scripts/roots.js');
 const { loadAllowlistDirs } = await import('../scripts/allowlist.js');
+const { taskStart } = await import('../scripts/task-mcp.js');
+const { searchContent } = await import('../scripts/search-mcp.js');
 const shell = new Shell();
 
 assert.ok(loadAllowlistDirs().includes(zone), 'default zones include ~/.claude/skills');
@@ -46,12 +48,20 @@ await assert.rejects(() => resolveRealWritable(path.join(zone, 'new.py')), /trus
 await assert.rejects(() => resolveRealWritable(py), /trusted script directory/, 'file tools cannot overwrite a zone script');
 assert.equal(await resolveRealWritable(path.join(home, 'work', 'notes.md')), path.join(home, 'work', 'notes.md'), 'ordinary folders stay writable');
 
-// akimcp's own data dir: setting.json stays writable (owner decision), the credential files are read-only for the file tools, existing or not yet created.
-writeFileSync(path.join(dataDir, 'tokens.json'), '{}');
+// akimcp's own data dir: setting.json stays open (owner decision); the credential files are closed to every tool that takes a path, existing or not yet created.
+writeFileSync(path.join(dataDir, 'tokens.json'), '{"access":{"secret-token":{}}}');
 assert.equal(await resolveRealWritable(path.join(dataDir, 'setting.json')), path.join(dataDir, 'setting.json'), 'setting.json stays writable');
 for (const name of ['tokens.json', 'passphrase.txt', 'oauth-client.json', 'oauth-dcr-clients.json', 'cloudflared-cred.json']) {
   await assert.rejects(() => resolveRealWritable(path.join(dataDir, name)), /holds akimcp's credentials/, `${name} is not written by a file tool`);
+  await assert.rejects(() => resolveRealUnderRoot(path.join(dataDir, name)), /holds akimcp's credentials/, `${name} is not read by a file tool`);
 }
-assert.equal(await resolveRealUnderRoot(path.join(dataDir, 'tokens.json')), path.join(dataDir, 'tokens.json'), 'reading stays allowed');
+for (const command of ['cat tokens.json', `cat ${path.join(dataDir, 'tokens.json')}`]) {
+  const res = await shell.execute(command, dataDir);
+  assert.match(res.content[0].text, /holds akimcp's credentials/, `run_cmd refuses "${command}"`);
+}
+await assert.rejects(() => taskStart({ command: 'cat tokens.json', cwd: dataDir }), /holds akimcp's credentials/, 'task_start refuses it too');
+writeFileSync(path.join(dataDir, 'notes.txt'), 'secret-token is mentioned here\n');
+const hits = await searchContent('secret-token', dataDir, undefined, 50);
+assert.ok(hits.includes('notes.txt') && !hits.includes('tokens.json'), 'search_content leaves the credential files out of its results');
 
 console.log('PASS: trusted script zones — run by default, unwritable by the file tools');

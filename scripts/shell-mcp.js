@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { loadAllowlist, loadAllowlistDirs } from './allowlist.js';
-import { resolveUnderRoot, containedIn } from './roots.js';
+import { resolveUnderRoot, containedIn, refuseCredentialArgs } from './roots.js';
 import { ok, err, fail } from './mcp-tool.js';
 import { shapeForModel } from './output-shape.js';
 
@@ -164,6 +164,7 @@ export class Shell {
       ({ bin, args } = this.parse(command));
       this.checkPermission(bin, args);
       dir = resolveUnderRoot(cwd);
+      refuseCredentialArgs(args, dir);
     } catch (e) {
       return fail(e);
     }

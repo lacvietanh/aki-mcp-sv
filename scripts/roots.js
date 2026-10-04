@@ -1,4 +1,5 @@
 // Path containment shared by every MCP tool that touches the filesystem — one implementation, because a second copy of a security boundary is a second chance to get it subtly wrong.
+import fs from 'node:fs';
 import { realpath } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -59,6 +60,7 @@ export async function resolveRealUnderRoot(target) {
     if (!getRoots().some((root) => containedIn(real, root))) {
       throw new Error(`symlink target escapes the allowed roots: ${real}`);
     }
+    refuseCredentialFile(real);
     return real;
   } catch (e) {
     if (e.code !== 'ENOENT') throw e;
@@ -72,6 +74,7 @@ export async function resolveRealUnderRoot(target) {
     if (!getRoots().some((root) => containedIn(realParent, root))) {
       throw new Error(`parent directory escapes the allowed roots: ${realParent}`);
     }
+    refuseCredentialFile(abs);
     return abs;
   }
 }
@@ -83,18 +86,27 @@ async function refuseTrustedZone(real) {
   if (zone) throw new Error(`read-only for file tools: ${zone} is a trusted script directory`);
 }
 
-// The server's own credential files stay readable like any file under an allowed folder, but a file tool never writes them: the panel does (Roll passphrase, Roll token). setting.json is left writable on purpose (owner decision), so an AI can adjust folders and the allowlist when asked.
+// The server's own credential files are closed to every tool that takes a path, so a token never lands in a chat by accident; the panel is where they are shown and rolled. setting.json stays open on purpose (owner decision), so an AI can adjust folders and the allowlist when asked.
 const CREDENTIAL_FILES = [TOKENS_PATH, PASSPHRASE_PATH, CLIENT_PATH, DCR_CLIENTS_PATH, CLOUDFLARED_CRED_PATH];
-async function refuseCredentialFile(real) {
-  const files = await Promise.all(CREDENTIAL_FILES.map(async (file) => path.join(await realpath(path.dirname(file)).catch(() => path.dirname(file)), path.basename(file))));
-  if (files.some((file) => containedIn(real, file))) throw new Error(`read-only for file tools: ${path.basename(real)} holds akimcp's credentials; change it from the control panel (section 1)`);
+// Both spellings of each file, because a root can reach the data dir through a symlink.
+export function credentialFiles() {
+  return CREDENTIAL_FILES.flatMap((file) => {
+    let dir = path.dirname(file);
+    try { dir = fs.realpathSync(dir); } catch {}
+    return [file, path.join(dir, path.basename(file))];
+  });
+}
+function refuseCredentialFile(abs) {
+  if (credentialFiles().some((file) => containedIn(abs, file))) throw new Error(`${path.basename(abs)} holds akimcp's credentials and is closed to the tools; view or roll it in the control panel (section 1)`);
+}
+export function refuseCredentialArgs(args, cwd) {
+  for (const arg of args) refuseCredentialFile(path.resolve(cwd, arg));
 }
 
 // Write variant for a single file/dir whose immediate parent already exists.
 export async function resolveRealWritable(target) {
   const real = await resolveRealUnderRoot(target);
   await refuseTrustedZone(real);
-  await refuseCredentialFile(real);
   return real;
 }
 

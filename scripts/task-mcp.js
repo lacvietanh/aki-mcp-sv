@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { USER_DIR } from './userdata.js';
-import { resolveUnderRoot } from './roots.js';
+import { resolveUnderRoot, refuseCredentialArgs } from './roots.js';
 import { Shell } from './shell-mcp.js';
 import { ok, fail } from './mcp-tool.js';
 
@@ -128,6 +128,7 @@ export async function taskStart({ command, cwd, taskId: requestedId }) {
   const { bin, args } = shell.parse(command);
   shell.checkPermission(bin, args);
   const dir = resolveUnderRoot(cwd);
+  refuseCredentialArgs(args, dir);
 
   fs.mkdirSync(TASK_LOGS_DIR, { recursive: true, mode: 0o700 });
   const logFile = path.join(TASK_LOGS_DIR, `${taskId}.log`);
