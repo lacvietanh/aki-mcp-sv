@@ -293,10 +293,6 @@ export async function resolvePort(explicitPort) {
   return p;
 }
 
-export function getActiveSession() {
-  return activeSession;
-}
-
 export const NO_CDP_PORT_MESSAGE =
   'No CDP port specified and no active Chrome session. Open a shared profile with aki__chrome_launch, or attach to a window already running with a remote-debugging port: find the port with aki__port_status (a Chrome process listening on 127.0.0.1), run aki__devtools_targets on it, match the tab by title or url, then pass that port and targetId explicitly.';
 
@@ -326,6 +322,8 @@ export async function launchChrome(profile = 'Default', {
 } = {}) {
   const { id, dir, browser: key } = resolveSharedProfile(profile, browser);
   const { binary, name: browserName } = getBrowserInfo(key);
+  // The url becomes a Chrome argument on a new launch; one starting with a dash would be read as a flag (--gpu-launcher=<command> runs a program).
+  if (url && String(url).trim().startsWith('-')) throw new Error(`url must be a web address, got "${String(url).slice(0, 80)}"`);
   const profileDir = profileSubdir(dir);
   const owner = readOwner(dir);
 
@@ -364,10 +362,12 @@ export async function launchChrome(profile = 'Default', {
   if (url) args.push(url);
 
   const child = spawn(binaryOverride || binary, args, { detached: true, stdio: 'ignore' });
-  child.on('error', () => {});
+  const spawnFailed = new Promise((_, reject) => {
+    child.on('error', (e) => reject(new Error(`Could not start ${browserName} at ${binaryOverride || binary}: ${e.message}`)));
+  });
   child.unref();
 
-  const { port, wsPath } = await waitForDevToolsActivePort(dir, timeoutMs);
+  const { port, wsPath } = await Promise.race([waitForDevToolsActivePort(dir, timeoutMs), spawnFailed]);
   setSession({ port, wsPath, pid: child.pid, owned: true, profileId: id, browser: browserName, targetDir: dir, launchedAt: new Date().toISOString() });
   return { status: 'ready', owned: true, port, wsPath, pid: child.pid, profileId: id, browser: browserName, url: url || 'about:blank' };
 }

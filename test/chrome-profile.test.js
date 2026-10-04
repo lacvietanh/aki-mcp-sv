@@ -173,6 +173,14 @@ s.listen(0, '127.0.0.1', () => fs.writeFileSync(dir + '/DevToolsActivePort', s.a
   assert.deepEqual(stopOwned, { stopped: true, owned: true, pid: launched.pid });
   for (let i = 0; i < 50 && isAlive(launched.pid); i++) await new Promise((r) => setTimeout(r, 100));
   assert.equal(isAlive(launched.pid), false);
+  // A url that Chrome would read as a flag is refused before anything is spawned.
+  await assert.rejects(launchChrome('Profile 14', { binary: fake, url: '--gpu-launcher=touch pwned' }), /url must be a web address/);
+
+  // A browser binary that cannot start fails at once with its path, not after the port wait.
+  const startedAt = Date.now();
+  await assert.rejects(launchChrome('Profile 14', { binary: path.join(tmp, 'no-such-browser'), timeoutMs: 5000 }), /Could not start .*no-such-browser/);
+  assert.ok(Date.now() - startedAt < 3000, 'no port wait when the spawn itself failed');
+
   assert.deepEqual(stopChrome(), { stopped: false, pid: null, detail: 'no active session' });
 
   console.log('chrome-profile.test.js: ok');
