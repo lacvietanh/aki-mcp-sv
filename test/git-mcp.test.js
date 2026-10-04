@@ -100,3 +100,4 @@ M  scripts/start.js
 }
 
 await testGitMcp();
+fs.rmSync(tmp, { recursive: true, force: true });

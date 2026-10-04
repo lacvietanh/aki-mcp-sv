@@ -43,5 +43,6 @@ if (process.platform !== 'win32') {
 }
 
 await client.close();
+fs.rmSync(tmp, { recursive: true, force: true });
 console.log('filesystem-mcp: ok');
 process.exit(0);

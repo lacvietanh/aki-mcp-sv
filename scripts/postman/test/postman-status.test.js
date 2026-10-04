@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -34,4 +34,5 @@ assert.equal(stale.running, true);
 assert.equal(stale.attached, false);
 assert.equal(stale.ownerTargetId, null);
 assert.equal(stale.attachedPageCount, 0);
+rmSync(runtimeDir, { recursive: true, force: true });
 console.log('postman-status.test.js: ok');

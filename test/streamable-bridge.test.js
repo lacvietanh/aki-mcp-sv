@@ -9,6 +9,8 @@ import path from 'node:path';
 // A temp data dir, so the call log written below never lands in the owner's ~/.aki/mcpsv.
 const dataDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'bridge-test-')));
 process.env.AKI_MCP_DATA_DIR = dataDir;
+// Removed at exit, not earlier: on Windows the folder is still in use while the bridge is up.
+process.on('exit', () => { try { fs.rmSync(dataDir, { recursive: true, force: true }); } catch (e) { console.error(`temp folder not removed: ${e.message}`); } });
 // `node` allowed whole, so the cancel test below has a command that runs long on every OS.
 fs.writeFileSync(path.join(dataDir, 'setting.json'), JSON.stringify({ folders: [dataDir], shell: { allowlist: { node: true } } }));
 const { handleStreamableMcp } = await import('../scripts/streamable-bridge.js');

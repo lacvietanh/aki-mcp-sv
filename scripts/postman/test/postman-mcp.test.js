@@ -60,5 +60,6 @@ assert.equal(idle.running, false);
 assert.equal(idle.pid, null);
 assert.equal(killCount, 1, 'quit when not running must not fake a kill');
 assert.equal(spawnMock.mock.calls.length, 1);
+fs.rmSync(process.env.AKI_MCP_DATA_DIR, { recursive: true, force: true });
 
 console.log('postman-mcp.test.js: ok');

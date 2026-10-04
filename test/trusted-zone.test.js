@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, realpathSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, chmodSync, realpathSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -63,5 +63,6 @@ await assert.rejects(() => taskStart({ command: 'cat tokens.json', cwd: dataDir 
 writeFileSync(path.join(dataDir, 'notes.txt'), 'secret-token is mentioned here\n');
 const hits = await searchContent('secret-token', dataDir, undefined, 50);
 assert.ok(hits.includes('notes.txt') && !hits.includes('tokens.json'), 'search_content leaves the credential files out of its results');
+rmSync(tmp, { recursive: true, force: true });
 
 console.log('PASS: trusted script zones — run by default, unwritable by the file tools');

@@ -6,6 +6,7 @@ import path from 'node:path';
 
 // userdata.js reads AKI_MCP_DATA_DIR at import: an empty dir means the DEFAULT allowlist, never the machine owner's edited one.
 process.env.AKI_MCP_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'shell-mcp-test-'));
+process.on('exit', () => fs.rmSync(process.env.AKI_MCP_DATA_DIR, { recursive: true, force: true }));
 const { Shell } = await import('../scripts/shell-mcp.js');
 
 async function run() {

@@ -54,5 +54,6 @@ for (const part of [emojiShaped[1], emojiShaped.at(-1)]) assert.ok(!/[\uD800-\uD
 // The spill directory keeps only the newest 20 files.
 for (let i = 0; i < 25; i++) shapeForModel(raw + i);
 assert.equal(fs.readdirSync(spillDir()).length, 20);
+fs.rmSync(process.env.AKI_MCP_DATA_DIR, { recursive: true, force: true });
 
 console.log('output-shape.test.js: ok');
