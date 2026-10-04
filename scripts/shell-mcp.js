@@ -7,6 +7,7 @@ import { loadAllowlist, loadAllowlistDirs } from './allowlist.js';
 import { resolveUnderRoot, containedIn, refuseCredentialArgs } from './roots.js';
 import { ok, err, fail } from './mcp-tool.js';
 import { shapeForModel } from './output-shape.js';
+import { launchOf } from './find-on-path.js';
 
 // Interpreters run a script file passed as an argument, so trust must follow the script's path, not the interpreter binary (which lives on PATH, outside the trusted zones). Shells (sh/bash/zsh) are excluded on purpose — their argument is arbitrary code, not a file to locate under a zone.
 const INTERPRETERS = new Set(['node', 'python', 'python3', 'bun', 'deno', 'tsx', 'ruby', 'perl', 'php']);
@@ -149,10 +150,10 @@ export class Shell {
 
   run(bin, args, cwd) {
     return new Promise((resolve) => {
-      execFile(bin, args, { cwd, timeout: COMMAND_TIMEOUT_MS, maxBuffer: MAX_CAPTURE_BYTES, windowsHide: true }, (error, stdout, stderr) => {
+      execFile(...launchOf(bin, args), { cwd, timeout: COMMAND_TIMEOUT_MS, maxBuffer: MAX_CAPTURE_BYTES, windowsHide: true }, (error, stdout, stderr) => {
         if (!error) return resolve(ok(shapeForModel(stdout) || '(no output)'));
         // A failing command's stdout is often the useful part (test failures, grep's partial hits), so it is returned with stderr and the reason.
-        const reason = error.killed ? `timed out after ${COMMAND_TIMEOUT_MS / 1000}s` : typeof error.code === 'number' ? `exit code ${error.code}` : error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' ? 'output exceeded the capture limit, the rest was dropped' : error.code === 'ENOENT' ? `"${bin}" is not an executable on PATH (on Windows a .cmd shim such as npm, or a PowerShell cmdlet, cannot be run by this tool)` : error.message;
+        const reason = error.killed ? `timed out after ${COMMAND_TIMEOUT_MS / 1000}s` : typeof error.code === 'number' ? `exit code ${error.code}` : error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' ? 'output exceeded the capture limit, the rest was dropped' : error.code === 'ENOENT' ? `"${bin}" is not an executable on PATH (on Windows: grep, tail and the other Unix tools come with Git for Windows; a PowerShell cmdlet or a .cmd shim other than npm and npx cannot be run by this tool)` : error.message;
         resolve(err(`[${reason}]\n${shapeForModel([stdout, stderr].filter(Boolean).map((s) => s.replace(/\n+$/, '')).join('\n'))}`.trimEnd()));
       });
     });

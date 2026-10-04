@@ -86,7 +86,7 @@ async function refuseTrustedZone(real) {
   if (zone) throw new Error(`read-only for file tools: ${zone} is a trusted script directory`);
 }
 
-// The server's own credential files are closed to every tool that takes a path, so a token never lands in a chat by accident; the panel is where they are shown and rolled. setting.json stays open on purpose (owner decision), so an AI can adjust folders and the allowlist when asked.
+// Closed to every tool that takes a path, so a token never lands in a chat by accident. setting.json stays open on purpose (owner decision).
 const CREDENTIAL_FILES = [TOKENS_PATH, PASSPHRASE_PATH, CLIENT_PATH, DCR_CLIENTS_PATH, CLOUDFLARED_CRED_PATH];
 // Both spellings of each file, because a root can reach the data dir through a symlink.
 export function credentialFiles() {

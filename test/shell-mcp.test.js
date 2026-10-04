@@ -65,7 +65,21 @@ async function run() {
 
   const missing = await shell.run('aki-no-such-binary-xyz', [], process.cwd());
   assert.equal(missing.isError, true);
-  assert.match(missing.content[0].text, /^\["aki-no-such-binary-xyz" is not an executable on PATH \(on Windows a \.cmd shim/, 'a binary that is not there says so, with the Windows cause');
+  assert.match(missing.content[0].text, /^\["aki-no-such-binary-xyz" is not an executable on PATH \(on Windows: grep, tail and the other Unix tools come with Git for Windows/, 'a binary that is not there says so, with the Windows cause');
+
+  // Windows rules, driven here through the platform argument: Git's usr/bin joins PATH once, at the end, and only when it exists.
+  const { extendPath, launchOf } = await import('../scripts/find-on-path.js');
+  const gitRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'git-for-windows-'));
+  for (const dir of ['cmd', 'usr/bin']) fs.mkdirSync(path.join(gitRoot, dir), { recursive: true });
+  for (const name of ['git', 'git.exe']) fs.writeFileSync(path.join(gitRoot, 'cmd', name), '', { mode: 0o755 });
+  const env = { PATH: ['/nowhere', path.join(gitRoot, 'cmd')].join(path.delimiter) };
+  assert.deepEqual(extendPath(env, 'win32'), [path.join(gitRoot, 'usr', 'bin')]);
+  assert.equal(env.PATH.split(path.delimiter).at(-1), path.join(gitRoot, 'usr', 'bin'), 'appended, so names that already resolve keep their program');
+  assert.deepEqual(extendPath(env, 'win32'), [], 'a second call adds nothing');
+  assert.deepEqual(extendPath({ PATH: '/nowhere' }, 'win32'), [], 'no Git for Windows, nothing added');
+  assert.deepEqual(extendPath({ ...env }, 'linux'), [], 'other platforms add nothing');
+  assert.deepEqual(launchOf('git', ['status'], 'win32'), ['git', ['status']], 'a real executable starts as itself');
+  fs.rmSync(gitRoot, { recursive: true, force: true });
 
   console.log('shell-mcp.test.js: ok');
 }

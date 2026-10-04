@@ -5,6 +5,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import { resolveUnderRoot, credentialFiles } from './roots.js';
 import { ok, fail } from './mcp-tool.js';
+import './find-on-path.js'; // on Windows this puts Git for Windows' grep on PATH
 
 const SKIP_DIRS = new Set([
   'node_modules', '.git', '.svn', '.hg', 'dist', 'build', '.next', '.nuxt', '.output', '.cache',
@@ -68,8 +69,10 @@ export function searchContent(query, from, glob, limit) {
   args.push('-e', query, base);
   return new Promise((resolve) => {
     execFile('grep', args, { timeout: 30_000, maxBuffer: 4 * 1024 * 1024 }, (err, stdout, stderr) => {
-      const closed = credentialFiles().map((file) => `${file}:`);
-      const lines = (stdout || '').split('\n').filter((line) => line && !closed.some((prefix) => line.startsWith(prefix)));
+      // grep on Windows joins the base and the rest with "/", so both sides are compared with one separator.
+      const slashed = (text) => text.split(path.sep).join('/');
+      const closed = credentialFiles().map((file) => `${slashed(file)}:`);
+      const lines = (stdout || '').split('\n').filter((line) => line && !closed.some((prefix) => slashed(line).startsWith(prefix)));
       if (!lines.length) return resolve(err && stderr ? `error: ${stderr.trim()}` : `no lines matched "${query}" under ${base}`);
       const head = lines.slice(0, limit);
       const note = lines.length > head.length ? `\n… ${lines.length - head.length} more line(s)` : '';

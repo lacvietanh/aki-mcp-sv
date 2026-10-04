@@ -6,7 +6,7 @@ import { SETTINGS_PATH } from './userdata.js';
 
 // Entry form: a bare string allows any subcommand; [bin, ...subs] restricts to those. Structure carries the level — no hand-written null.
 // find/sort/fd excluded on purpose: their flags escape read-only (find -exec/-delete, sort -o, fd -x) and the args[0] gate can't restrain a flag; aki__find_path/aki__search_content cover read-only lookup.
-// Unix tools work as-is on macOS/Linux and on Windows when Git for Windows usr\bin is on PATH.
+// Unix tools work as-is on macOS/Linux, and on Windows once Git for Windows is installed (find-on-path.js adds its usr\bin to PATH).
 const UNIX_DEFAULT = [
   'ls', 'cat', 'pwd', 'grep', 'head', 'tail', 'wc', 'file', 'stat', 'tree', 'ps', 'df', 'du',
   'whoami', 'uname', 'uniq', 'cut', 'diff', 'jq',
@@ -20,7 +20,7 @@ const UNIX_DEFAULT = [
 // Per-OS extras, selected as data by process.platform (never a business-logic branch). open/sips/ffmpeg are macOS media helpers — not read-only, unlike the rest of the set.
 const MAC_EXTRA = ['vm_stat', ['sysctl', '-n'], ['top', '-l'], ['diskutil', 'list', 'info'], 'ifconfig', ['netstat', '-an'], 'sw_vers', 'system_profiler', 'sips', 'open', 'ffmpeg'];
 const LINUX_EXTRA = ['free', ['top', '-b'], 'nproc', 'lsblk', ['ip', 'addr'], ['ss', '-tuln']];
-// Executables only: run_cmd starts a binary without a shell, so a PowerShell cmdlet (Get-Process) or a .cmd shim (npm) cannot run and has no place here.
+// Executables only: run_cmd starts a binary without a shell, so a PowerShell cmdlet (Get-Process) cannot run and has no place here.
 const WIN_EXTRA = ['where', 'findstr', 'tasklist', 'hostname', 'systeminfo'];
 
 const PLATFORM_EXTRA =

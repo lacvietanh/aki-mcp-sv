@@ -98,6 +98,9 @@ async function runTests() {
   await assert.rejects(launchChrome('Profile 99'), /not found .*Create it in AIObox/);
   assert.equal(exists(path.join(root, 'chrome-profile-99')), false);
 
+  // The rest drives Chrome's POSIX lock (a SingletonLock symlink) and a shebang script as the browser; Windows has neither, so its run ends here.
+  if (process.platform === 'win32') return console.log('chrome-profile.test.js: ok (lock and launch scenarios are POSIX-only, skipped on Windows)');
+
   // Unknown owner (lock from another host): fail closed, lock untouched.
   lock(dir, `other-host.invalid-${process.pid}`);
   assert.equal(readOwner(dir).state, 'unknown');

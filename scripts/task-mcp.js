@@ -10,6 +10,7 @@ import { USER_DIR } from './userdata.js';
 import { resolveUnderRoot, refuseCredentialArgs } from './roots.js';
 import { Shell } from './shell-mcp.js';
 import { ok, fail } from './mcp-tool.js';
+import { launchOf } from './find-on-path.js';
 
 const TASKS_FILE = path.join(USER_DIR, 'tasks.json');
 const TASK_LOGS_DIR = path.join(USER_DIR, 'task-logs');
@@ -136,7 +137,7 @@ export async function taskStart({ command, cwd, taskId: requestedId }) {
 
   let child;
   try {
-    child = spawn(bin, args, {
+    child = spawn(...launchOf(bin, args), {
       cwd: dir,
       detached: true,
       stdio: ['ignore', outFd, outFd],
