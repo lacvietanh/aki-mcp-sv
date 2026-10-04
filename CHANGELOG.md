@@ -4,7 +4,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 
 ## [Unreleased]
 
+### Added
+- **`aki__aiobox_write op=place_like` and `op=close_window`** (`scripts/aiobox-mcp.js`, AIObox guide v9 handoff): the new window takes the old one's place through `akipanel.placeLike(like)`, and the old window closes through `akipanel.closeWindow()`, never a CDP close; AIObox's refusal (busy, draft, offline) comes back verbatim. `op=state` also returns the `claims`, `flags` and `blocked` workspaces still in force from AIObox's agent files.
+
 ### Changed
+- **One `aiobox` call waits at most 50 s** (`wait_idle` `timeout`, `send` `wait`, `run_macro`): a client gives up on a tool call after about a minute and then gets nothing back, so `timeout=240` used to end in `-32001 Request timed out`. A longer wait is clamped, and a timed-out `wait_idle` says to call again (`next`). `wait_idle` defaults to 50 s instead of 120 s.
 - **A credential value never comes back in a tool result** (`scripts/roots.js` `redactResult`, applied to every tool in `scripts/provider-registry.js`): `grep -r` over the data dir, a task log or a spilled output file used to return the access token, the passphrase or a client secret even though the files themselves are closed to the tools; each token-shaped value in the credential files and the passphrase now read `[redacted]`, also before an oversized output is cut and in the message of a tool that throws. Covered by `test/credential-redaction.test.js`.
 - **A command the allowlist refuses says how to allow it without asking** (`scripts/shell-mcp.js`): the refusal of `run_cmd` and `task_start` names the entry to add (`"<bin>"`, `["<bin>", "<subcommand>", …]`, or bare `"git"` for a git write form), `shell.allowlist.added` in `~/.aki/mcpsv/setting.json` (read on every call, so it works on the next one) and panel section 6. A test holds that bare `git` in that file allows `git tag -f` and the other write forms at once.
 

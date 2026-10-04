@@ -331,8 +331,30 @@ function need(op, args, fields) {
   if (missing.length) throw new Error(`op=${op} needs ${missing.join(', ')}`);
 }
 
-const WAIT_IDLE_DEFAULT_S = 120;
+// A client gives up on a tool call after about a minute (-32001 Request timed out, seen 2026-10-04 with timeout=240), and a call it gave up on returns nothing at all. So one call waits at most CALL_WAIT_MAX_S; a longer wait is the caller's loop, told by `next`.
+export const CALL_WAIT_MAX_S = 50;
+export const waitLimitS = (asked, fallback) => Math.min(asked ?? fallback, CALL_WAIT_MAX_S);
+const WAIT_IDLE_DEFAULT_S = CALL_WAIT_MAX_S;
 const WAIT_IDLE_POLL_MS = 1_000;
+const WAIT_AGAIN = 'still answering: call op=wait_idle again (one call waits at most 50 s)';
+
+// Coordination files AIObox's agent tools write (contract: claims.json, flags.json, blocked-workspaces.json); AkiMCP only reads them. A missing or unreadable file is no entry, and an entry past its until is gone.
+function readList(name, key) {
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(aioboxDir(), name), 'utf8'));
+    const list = key ? raw?.[key] : raw;
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+const unexpired = (e, now) => Date.parse(e?.until) > now;
+const coordination = (now = Date.now()) => ({
+  claims: readList('claims.json').filter((e) => unexpired(e, now)),
+  flags: readList('flags.json').filter((e) => unexpired(e, now)),
+  // until null = blocked until the owner lifts it
+  blocked: readList('blocked-workspaces.json', 'list').filter((e) => e && (e.until === null || unexpired(e, now))),
+});
 const DRAFT_WARNING = 'the message box holds a draft, so busy may read false while it still answers (Notion); read it again later with op=read, and never touch the draft';
 const renumberedOf = (map) => (map.renumbered ? { ...map.renumbered, warning: renumberWarning(map.renumbered) } : null);
 
@@ -351,7 +373,7 @@ const READ_OPS = {
       if (p?.macros?.length && !macros[row.provider]) macros[row.provider] = p.macros;
       return p ? { ...row, busy: p.busy, account: p.account, ...(p.read === undefined ? {} : { read: p.read }) } : row;
     });
-    return ok(JSON.stringify({ akimcp: VERSION, ops: opsList(), ...readGuide(), run: map.run, renumbered: renumberedOf(map), macros, tabs }, null, 2));
+    return ok(JSON.stringify({ akimcp: VERSION, ops: opsList(), ...readGuide(), run: map.run, renumbered: renumberedOf(map), macros, ...coordination(), tabs }, null, 2));
   },
   // The caller's own window: the AI cannot see its tab, but it sees the user's latest message verbatim, and that text is in exactly one chat (the busy one, while it answers). Two chats showing it are returned as ambiguous, never guessed between.
   async whoami(args) {
@@ -384,7 +406,7 @@ const READ_OPS = {
   async wait_idle(args) {
     need('wait_idle', args, ['window']);
     const { tab, live: target, used } = await openTab(args);
-    const limitMs = (args.timeout ?? WAIT_IDLE_DEFAULT_S) * 1000;
+    const limitMs = waitLimitS(args.timeout, WAIT_IDLE_DEFAULT_S) * 1000;
     const started = Date.now();
     for (;;) {
       const { value } = await cdp.evaluate({ port: tab.port, target, expression: READ_JS(args.last ?? 1) });
@@ -393,7 +415,7 @@ const READ_OPS = {
       const waitedMs = Date.now() - started;
       if (!value.busy && value.draft) return ok(JSON.stringify({ ...used, busy: false, draft: true, warning: [used.warning, DRAFT_WARNING].filter(Boolean).join(' Also: '), waitedMs, messages: value.messages }, null, 2));
       if (!value.busy) return ok(JSON.stringify({ ...used, busy: false, waitedMs, messages: value.messages }, null, 2));
-      if (waitedMs >= limitMs) return ok(JSON.stringify({ ...used, busy: true, timedOut: true, waitedMs }, null, 2));
+      if (waitedMs >= limitMs) return ok(JSON.stringify({ ...used, busy: true, timedOut: true, waitedMs, next: WAIT_AGAIN }, null, 2));
       await sleep(WAIT_IDLE_POLL_MS);
     }
   },
@@ -478,11 +500,30 @@ const NEW_CHAT_READY_JS = `(() => {
   const r = panel.live.chat();
   return { ready: !!(r && r.ok && r.data.messages.length === 0), url: location.href };
 })()`;
+// akipanel.placeLike(like) moves the calling window onto the bounds of `like` (handle or targetId, any profile) and resolves with them; AIObox itself sets the bounds, never a CDP call from here (owner 2026-10-04).
+const PLACE_LIKE_JS = (like) => `(async () => {
+  const panel = window.akipanel;
+  if (!panel) return { error: 'this window has no AIObox panel' };
+  if (typeof panel.placeLike !== 'function') return { missing: true };
+  try {
+    return { ok: true, bounds: JSON.parse(JSON.stringify(await panel.placeLike(${JSON.stringify(like)}) ?? null)) };
+  } catch (e) {
+    return { error: String(e?.message ?? e) };
+  }
+})()`;
+// akipanel.closeWindow() closes the calling tab and refuses itself like newChat (offline, busy, draft, unreadable chat); the tab may be gone before the reply arrives.
+const CLOSE_WINDOW_JS = `(() => {
+  const panel = window.akipanel;
+  if (!panel) return { error: 'this window has no AIObox panel' };
+  if (typeof panel.closeWindow !== 'function') return { missing: true };
+  const r = panel.closeWindow();
+  return r && r.ok === true ? { ok: true } : { error: String(r?.error ?? 'closeWindow() returned no result') };
+})()`;
 const NAVIGATED = /context was destroyed|navigated or closed|Cannot find context/i;
 const NEW_CHAT_WAIT_MS = 15_000;
 const MACRO_RUN_JS = (id) => `(() => { const r = window.akipanel?.macroRuns?.[${JSON.stringify(id)}]; return r ? { status: r.status, message: r.message ?? null, at: r.at } : null; })()`;
 const MACRO_ENDED = new Set(['done', 'started', 'skipped', 'error']);
-const MACRO_WAIT_MS = 60_000;
+const MACRO_WAIT_MS = CALL_WAIT_MAX_S * 1000;
 const MACRO_POLL_MS = 500;
 const NEW_WINDOW_WAIT_MS = 15_000;
 const NEW_WINDOW_POLL_MS = 500;
@@ -547,6 +588,34 @@ const WRITE_OPS = {
     }
     throw new Error(`${tab.handle} did not show an empty chat within ${NEW_CHAT_WAIT_MS / 1000}s (now at ${last?.url ?? 'unknown'})`);
   },
+  // The new window of a handoff takes the old one's place; `like` may be a chatId too, sent to AIObox as that tab's targetId.
+  async place_like(args) {
+    need('place_like', args, ['window', 'like']);
+    const { tab, live: target, used } = await openTab(args);
+    let like = args.like;
+    try { like = resolveTab(readMap(), args.like).targetId; } catch {}
+    if (like === tab.targetId) throw new Refusal('same_window', `${tab.handle} cannot be placed like itself`, 'pass the old window as like and the new one as window');
+    const { value } = await cdp.evaluate({ port: tab.port, target, expression: PLACE_LIKE_JS(like), awaitPromise: true });
+    if (value?.missing) throw new Refusal('no_place_like', `${tab.handle} has no AIObox placeLike (an older AIObox build)`, 'rebuild AIObox, or leave the window where it is');
+    if (value?.error) throw new Error(`${tab.handle}: ${value.error}`);
+    return ok(JSON.stringify({ ...used, like, placed: true, bounds: value.bounds }, null, 2));
+  },
+  // Last step of a handoff: the old window closes itself through AIObox. A tool never closes a tab over CDP (owner 2026-10-04).
+  async close_window(args) {
+    need('close_window', args, ['window']);
+    const { tab, live: target, used } = await openTab(args);
+    if (args.from && args.from === used.chatId) throw new Refusal('self_target', `${tab.handle} is your own chat (${used.chatId})`, 'only a successor closes the window it took over');
+    let value;
+    try {
+      value = (await cdp.evaluate({ port: tab.port, target, expression: CLOSE_WINDOW_JS })).value;
+    } catch (e) {
+      if (!NAVIGATED.test(e.message)) throw e;
+      value = { ok: true };
+    }
+    if (value?.missing) throw new Refusal('no_close_window', `${tab.handle} has no AIObox closeWindow (an older AIObox build)`, 'ask the owner to close it; never close a tab over CDP');
+    if (value?.error) throw new Error(`${tab.handle}: ${value.error}`);
+    return ok(JSON.stringify({ ...used, closed: true }, null, 2));
+  },
   async compose(args) {
     need('compose', args, ['window', 'text']);
     const { tab, live: target, used } = await openTab(args);
@@ -562,10 +631,11 @@ const WRITE_OPS = {
     const { tab, live: target, used } = await openTab(args);
     if (args.from && args.from === used.chatId) throw new Refusal('self_target', `${tab.handle} is your own chat (${used.chatId})`, "send to the other session's window, found by its chatId in op=state");
     const started = Date.now();
-    for (const end = started + (args.wait ?? 0) * 1000; ; await sleep(WAIT_IDLE_POLL_MS)) {
+    const waitS = waitLimitS(args.wait, 0);
+    for (const end = started + waitS * 1000; ; await sleep(WAIT_IDLE_POLL_MS)) {
       const { value } = await cdp.evaluate({ port: tab.port, target, expression: READ_JS(1) });
       if (value?.source !== 'provider' || !value.busy || Date.now() >= end) {
-        if (value?.busy && args.wait) throw new Refusal('busy', `${tab.handle} was still answering after ${args.wait}s`, 'raise wait, or check it later with op=wait_idle');
+        if (value?.busy && waitS) throw new Refusal('busy', `${tab.handle} was still answering after ${waitS}s`, waitS < CALL_WAIT_MAX_S ? 'raise wait (at most 50), or check it later with op=wait_idle' : 'op=send wait=50 again, or aki__task_start the agent send-when-ready of the guide');
         break;
       }
     }
@@ -615,13 +685,13 @@ export function register(server) {
       title: 'AIObox: read windows by handle',
       annotations: { readOnlyHint: true, openWorldHint: false },
       description:
-        'Read AIObox Chrome windows. Start with op=state: every window (chatId, provider, account, busy), macros, and the guide for acting in AIObox. op=whoami quote=<20+ chars verbatim from the latest user message> finds your own window. Name a window by chatId (stable) or handle P#·W# (a label, renumbered on restart) or targetId; expect refuses a handle that now names another tab. op=windows: tabs only. op=read: last messages (last=N), else page text. op=wait_idle: waits until the chat stops answering (timeout s), returns its last messages. op=text: elements by selector. op=screenshot. Results name the tab used. Acting: aki__aiobox_write.',
+        'Read AIObox Chrome windows. Start with op=state: every window (chatId, provider, account, busy), macros, current claims, flags and blocked workspaces, and the guide for acting in AIObox. op=whoami quote=<20+ chars verbatim from the latest user message> finds your own window. Name a window by chatId (stable) or handle P#·W# (a label, renumbered on restart) or targetId; expect refuses a handle that now names another tab. op=windows: tabs only. op=read: last messages (last=N), else page text. op=wait_idle: waits until the chat stops answering (timeout s), returns its last messages. op=text: elements by selector. op=screenshot. Results name the tab used. Acting: aki__aiobox_write.',
       inputSchema: {
         op: z.enum(Object.keys(READ_OPS)).describe(Object.keys(READ_OPS).join(' | ')),
         window: windowArg,
         expect: expectArg,
         quote: z.string().optional().describe('whoami: 20+ characters copied verbatim from the latest user message'),
-        timeout: z.number().int().min(1).max(300).optional().describe('wait_idle: seconds (default 120)'),
+        timeout: z.number().int().min(1).max(300).optional().describe('wait_idle: seconds (default and most 50 per call; call again while next says so)'),
         last: z.number().int().min(1).max(50).optional().describe('read, wait_idle: messages from the end (default 1)'),
         selector: z.string().optional().describe('text: CSS selector'),
         format: z.enum(['png', 'jpeg']).optional().describe('screenshot: default png'),
@@ -642,16 +712,17 @@ export function register(server) {
       title: 'AIObox: open a window, send or fill a chat, run JS',
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description:
-        'Act in an AIObox window (chatId, handle or targetId; rules: aki__aiobox op=state). Pass expect to refuse a renumbered handle and from=<your chatId> so your own chat is refused. op=new_window: a new chat of the same profile and provider, as the panel button; returns handle, chatId, targetId. op=new_chat: a fresh chat in that tab, chatId after the first send. op=send: sends text as a message (wait=s first waits for the chat to go idle); op=compose only fills the chat box. op=run_macro: runs one of the window\'s AIObox macros (macro, option) and returns its status. op=eval: expression runs in the page, result returned; awaitPromise (default true). It can click, type and change the page.',
+        'Act in an AIObox window (chatId, handle or targetId; rules: aki__aiobox op=state). expect refuses a renumbered handle, from=<your chatId> your own chat. op=new_window: a new chat of the same profile and provider; returns handle, chatId, targetId. op=new_chat: a fresh chat in that tab. op=send: sends text (wait=s waits for idle first); op=compose only fills the box. op=run_macro: runs a window macro (macro, option), returns its status. op=place_like: moves window onto the bounds of like. op=close_window: closes the tab through AIObox (refused while busy or with a draft). op=eval: expression runs in the page, result returned (awaitPromise default true); it can click, type and change the page.',
       inputSchema: {
         op: z.enum(Object.keys(WRITE_OPS)).describe(Object.keys(WRITE_OPS).join(' | ')),
         window: windowArg,
         expect: expectArg,
-        from: z.string().optional().describe('your own chatId (aki__aiobox op=whoami); send, compose and new_chat refuse it'),
+        from: z.string().optional().describe('your own chatId (aki__aiobox op=whoami); send, compose, new_chat and close_window refuse it'),
+        like: z.string().optional().describe('place_like: the window to copy the place of (handle, chatId or targetId)'),
         macro: z.string().optional().describe('run_macro: macro id (op=state macros)'),
         option: z.string().optional().describe('run_macro: option id (default: the first)'),
         text: z.string().optional().describe('send, compose: the text'),
-        wait: z.number().int().min(0).max(300).optional().describe('send: seconds to wait for a busy chat (default 0)'),
+        wait: z.number().int().min(0).max(300).optional().describe('send: seconds to wait for a busy chat (default 0, at most 50 per call)'),
         expression: z.string().optional().describe('eval: JS evaluated in the page; the last expression is returned'),
         awaitPromise: z.boolean().optional().describe('eval: await a returned Promise (default true)'),
       },

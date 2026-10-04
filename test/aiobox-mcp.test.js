@@ -15,7 +15,7 @@ process.env.USERPROFILE = home;
 // userdata.js fixes the data dir at import, so the env goes first and the modules after.
 process.env.AKI_MCP_DATA_DIR = path.join(home, 'mcpsv');
 const { default: cdp } = await import('../scripts/cdp-engine.js');
-const { register, provider, parseHandle, formatHandle, stripHandle, chatIdOf } = await import('../scripts/aiobox-mcp.js');
+const { register, provider, parseHandle, formatHandle, stripHandle, chatIdOf, waitLimitS, CALL_WAIT_MAX_S } = await import('../scripts/aiobox-mcp.js');
 const mapFile = path.join(home, '.aki', 'aiobox', 'cdp', 'windows.json');
 const seenFile = path.join(home, 'mcpsv', 'aiobox-seen.json');
 
@@ -196,7 +196,8 @@ pages['T-NOTION'] = { body: 'notion body', akipanel: readonlyPanel({
 pages['T-GPT'] = { akipanel: readonlyPanel({ capabilities: {} }), body: 'history: please compare the last two answers now, then more' };
 const state = JSON.parse((await call('aiobox', { op: 'state' })).text);
 assert.equal(state.akimcp, VERSION);
-assert.deepEqual(state.ops, { aiobox: ['windows', 'state', 'whoami', 'read', 'wait_idle', 'text', 'screenshot'], aiobox_write: ['new_window', 'new_chat', 'compose', 'send', 'run_macro', 'eval'] });
+assert.deepEqual(state.ops, { aiobox: ['windows', 'state', 'whoami', 'read', 'wait_idle', 'text', 'screenshot'], aiobox_write: ['new_window', 'new_chat', 'place_like', 'close_window', 'compose', 'send', 'run_macro', 'eval'] });
+assert.deepEqual([state.claims, state.flags, state.blocked], [[], [], []], 'no coordination files yet: empty lists');
 // No ~/.aki/aiobox/guide.md yet: the short fallback, pointing at the web guide.
 assert.match(state.guide, /^AIObox guide \(short fallback.*https:\/\/aiobox\.app\/guide\/aiobox\.md/);
 assert.equal(state.guideVersion, null);
@@ -210,6 +211,20 @@ assert.deepEqual([withFile.guide, withFile.guideVersion], [guideText, 5]);
 fs.writeFileSync(guidePath, '# AIObox guide\nno frontmatter\n');
 assert.equal(JSON.parse((await call('aiobox', { op: 'state' })).text).guideVersion, null, 'a malformed head falls back');
 fs.rmSync(guidePath);
+// Claims, flags and blocked workspaces come from AIObox's agent files, only the ones still in force.
+const soon = new Date(Date.now() + 3_600_000).toISOString();
+const gone = new Date(Date.now() - 1_000).toISOString();
+const aioboxHome = path.join(home, '.aki', 'aiobox');
+fs.writeFileSync(path.join(aioboxHome, 'claims.json'), JSON.stringify([{ chatId: 'abc', repo: '/r', paths: ['a.js'], task: 't', since: gone, until: soon }, { chatId: 'old', repo: '/r', paths: ['b.js'], task: 't', since: gone, until: gone }]));
+fs.writeFileSync(path.join(aioboxHome, 'flags.json'), JSON.stringify([{ account: 'x@y', profileId: 'p', reason: 'interrupted', flaggedAt: gone, until: gone }]));
+fs.writeFileSync(path.join(aioboxHome, 'blocked-workspaces.json'), JSON.stringify({ list: [{ workspace: 'dldn.1', provider: 'notion', reason: 'owner', blockedAt: gone, until: null }] }));
+const coordinated = JSON.parse((await call('aiobox', { op: 'state' })).text);
+assert.deepEqual(coordinated.claims.map((c) => c.chatId), ['abc'], 'an expired claim is gone');
+assert.deepEqual(coordinated.flags, [], 'an expired flag is gone');
+assert.deepEqual(coordinated.blocked.map((b) => b.workspace), ['dldn.1'], 'until null stays blocked');
+fs.writeFileSync(path.join(aioboxHome, 'claims.json'), 'not json');
+assert.deepEqual(JSON.parse((await call('aiobox', { op: 'state' })).text).claims, [], 'an unreadable file is no claim');
+for (const name of ['claims.json', 'flags.json', 'blocked-workspaces.json']) fs.rmSync(path.join(aioboxHome, name));
 const notionRow = state.tabs.find((t) => t.targetId === 'T-NOTION');
 assert.equal(notionRow.busy, true);
 assert.deepEqual(notionRow.account, account);
@@ -229,6 +244,10 @@ assert.match((await call('aiobox', { op: 'whoami', quote: 'nothing like this any
 assert.match((await call('aiobox', { op: 'wait_idle', window: 'P7·W2' })).text, /P7·W2 has no AIObox chat reader.*\(no_adapter/);
 const stillBusy = JSON.parse((await call('aiobox', { op: 'wait_idle', window: 'abc', timeout: 1 })).text);
 assert.deepEqual([stillBusy.busy, stillBusy.timedOut], [true, true]);
+assert.match(stillBusy.next, /call op=wait_idle again/, 'a timed-out wait says how to go on');
+// One call never outlasts the client's own tool-call timeout (about a minute): a longer wait is clamped, the caller loops.
+assert.deepEqual([waitLimitS(240, 50), waitLimitS(undefined, 50), waitLimitS(5, 50), waitLimitS(undefined, 0)], [CALL_WAIT_MAX_S, CALL_WAIT_MAX_S, 5, 0]);
+assert.ok(CALL_WAIT_MAX_S <= 55);
 notionBusy = false;
 const idle = JSON.parse((await call('aiobox', { op: 'wait_idle', window: 'abc' })).text);
 assert.deepEqual([idle.busy, idle.messages], [false, [{ role: 'assistant', text: 'working' }]]);
@@ -394,6 +413,31 @@ for (const destroyContext of [false, true]) {
 }
 assert.deepEqual(newChats, ['https://chatgpt.com/c/123', 'https://chatgpt.com/c/123']);
 delete pages['T-GPT'].url;
+
+// place_like goes through akipanel.placeLike(like) in the new window; a chatId as like is sent as that tab's targetId; AIObox's rejection comes back verbatim.
+assert.equal((await call('aiobox_write', { op: 'place_like', window: 'P7·W2' })).text, 'rejected: op=place_like needs like');
+pages['T-GPT'].akipanel = readonlyPanel({ online: true });
+assert.match((await call('aiobox_write', { op: 'place_like', window: 'P7·W2', like: 'abc' })).text, /P7·W2 has no AIObox placeLike.*\(no_place_like/);
+assert.match((await call('aiobox_write', { op: 'place_like', window: 'P7·W2', like: '123' })).text, /cannot be placed like itself \(same_window/);
+const placed = [];
+pages['T-GPT'].akipanel = readonlyPanel({ online: true, placeLike: async (like) => { placed.push(like); if (like === 'P9·W9') throw new Error('no window P9·W9'); return { left: 10, top: 20, width: 800, height: 900 }; } });
+const placedOut = JSON.parse((await call('aiobox_write', { op: 'place_like', window: 'P7·W2', like: 'abc' })).text);
+delete placedOut.warning;
+assert.deepEqual(placedOut, { window: 'P7·W2', targetId: 'T-GPT', chatId: '123', url: 'https://chatgpt.com/c/123', like: 'T-NOTION', placed: true, bounds: { left: 10, top: 20, width: 800, height: 900 } });
+assert.equal((await call('aiobox_write', { op: 'place_like', window: 'P7·W2', like: 'P9·W9' })).text, 'rejected: P7·W2: no window P9·W9', 'a like the map does not know goes as given, its rejection verbatim');
+assert.deepEqual(placed, ['T-NOTION', 'P9·W9']);
+
+// close_window goes through akipanel.closeWindow() (sync Result): its refusal verbatim, the caller's own chat refused, never a CDP close.
+pages['T-GPT'].akipanel = readonlyPanel({ online: true });
+assert.match((await call('aiobox_write', { op: 'close_window', window: 'P7·W2' })).text, /no AIObox closeWindow.*\(no_close_window/);
+let closes = 0;
+let closeRefusal = 'the chat holds a draft';
+pages['T-GPT'].akipanel = readonlyPanel({ online: true, closeWindow: () => (closes += 1, closeRefusal ? { ok: false, error: closeRefusal } : { ok: true, data: null }) });
+assert.equal((await call('aiobox_write', { op: 'close_window', window: 'P7·W2' })).text, 'rejected: P7·W2: the chat holds a draft');
+assert.match((await call('aiobox_write', { op: 'close_window', window: '123', from: '123' })).text, /is your own chat \(123\) \(self_target/);
+closeRefusal = null;
+assert.equal(JSON.parse((await call('aiobox_write', { op: 'close_window', window: 'P7·W2' })).text).closed, true);
+assert.equal(closes, 2, 'the self refusal never reached the panel');
 
 // compose goes through akipanel.live.compose (v2, async), never sends, and names a page or version it cannot use.
 assert.equal((await call('aiobox_write', { op: 'compose', window: 'P7·W2' })).text, 'rejected: op=compose needs text');
