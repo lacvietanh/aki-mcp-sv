@@ -9,7 +9,7 @@ import { renderPanel, AGY_SERVER_KEY } from './config-page.js';
 import { getOrIssueAccessToken, rotateAccessToken, rotatePassphrase, loadOrCreatePassphrase, listClients, removeClient } from './oauth.js';
 import { logSecurity, readSecurityLog } from './security-log.js';
 import { listCallers } from './callers.js';
-import { loadAllowlist, loadAllowlistDirs, readSettings, DEFAULT_ALLOWLIST } from './allowlist.js';
+import { loadAllowlist, loadAllowlistDirs, readSettings, writeSettings, DEFAULT_ALLOWLIST } from './allowlist.js';
 import { getRoots } from './roots.js';
 import { funnelStatus } from './tailscale.js';
 import { SETTINGS_PATH, USER_DIR, INGRESS_CONFIG_PATH, CLOUDFLARED_CRED_PATH, readIngressConfig } from './userdata.js';
@@ -34,18 +34,17 @@ function writeJsonAtomic(file, data) {
   renameSync(tmp, file);
 }
 
-// Folders are a containment boundary (coding.C4): written atomically so a partial write can never transiently widen it. Mirrors setShellAllowlist below, but folders are security-load-bearing enough to warrant the extra step.
+// Every setting.json write goes through writeSettings (atomic): a partial file reads back as empty, which means defaults, i.e. a wider folder list or allowlist than the owner saved.
 function setFolders(paths) {
   const settings = readSettings();
   settings.folders = paths;
-  writeJsonAtomic(SETTINGS_PATH, settings);
+  writeSettings(settings);
 }
 
-// Connection limits are a security setting like folders: written atomically so a partial write cannot read back as "no limit".
 function setRateLimit(limits) {
   const settings = readSettings();
   settings.rateLimit = limits;
-  writeJsonAtomic(SETTINGS_PATH, settings);
+  writeSettings(settings);
 }
 
 // Whatever lands here becomes the gate shell-mcp checks, and a wrong type reads as "no restriction", not as an error.
@@ -82,7 +81,7 @@ function toStored(effective) {
 function setShellAllowlist(allowlist) {
   const settings = readSettings();
   settings.shell = { ...settings.shell, allowlist: toStored(allowlist) };
-  writeFileSync(SETTINGS_PATH, `${JSON.stringify(settings, null, 2)}\n`);
+  writeSettings(settings);
 }
 
 function validateTrustedDirs(dirs) {
@@ -95,7 +94,7 @@ function validateTrustedDirs(dirs) {
 function setTrustedDirs(dirs) {
   const settings = readSettings();
   settings.shell = { ...settings.shell, allowlistDirs: dirs };
-  writeFileSync(SETTINGS_PATH, `${JSON.stringify(settings, null, 2)}\n`);
+  writeSettings(settings);
 }
 
 // Mirrors the same TunnelID check start.js does at boot (spawnCloudflared), so a bad file is caught here instead of silently tearing down the stack on next `npm start`.
@@ -334,7 +333,7 @@ export function startPanel({ port, token, origin, ingress, client, passphrase, u
 
     const handler = ROUTES[route];
     if (!handler) return json(res, 404, { error: 'not found' });
-    if (req.headers['x-panel-token'] !== token) return json(res, 403, { error: 'sai token' });
+    if (req.headers['x-panel-token'] !== token) return json(res, 403, { error: 'wrong panel token: reload the panel from the URL printed in the terminal' });
 
     try {
       json(res, 200, await handler(JSON.parse((await readBody(req)) || '{}'), { updateInfo }));
