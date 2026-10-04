@@ -1,6 +1,7 @@
 // The one list of what the tools server hosts: each module's `provider` descriptor, whether it is installed on this machine (detect), and the owner's on/off switch in setting.json (`providers.<id>.enabled`). Contract: docs/arch/provider-toolkit.md.
 // Every provider is always registered, so warmToolsServer still catches a schema error in any of them at boot; one that is not installed or is switched off is only disabled, which hides it from tools/list and makes a call fail.
 import { readSettings, writeSettings } from './allowlist.js';
+import { redactResult } from './roots.js';
 import { provider as rule } from './rule-context-mcp.js';
 import { provider as shell } from './shell-mcp.js';
 import { provider as agy } from './agy-mcp.js';
@@ -71,8 +72,8 @@ export function mountProviders(server, prefix) {
     p.register(new Proxy(server, {
       get(target, prop, receiver) {
         if (prop !== 'registerTool') return Reflect.get(target, prop, receiver);
-        return (name, ...rest) => {
-          const handle = target.registerTool(`${prefix}${name}`, ...rest);
+        return (name, config, handler) => {
+          const handle = target.registerTool(`${prefix}${name}`, config, async (...args) => redactResult(await handler(...args)));
           own.push([`${prefix}${name}`, handle]);
           return handle;
         };

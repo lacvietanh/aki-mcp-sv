@@ -103,6 +103,45 @@ export function refuseCredentialArgs(args, cwd) {
   for (const arg of args) refuseCredentialFile(path.resolve(cwd, arg));
 }
 
+// A path check sees only a file named directly; a directory search (grep -r over the data dir), a spilled output file or a task log reaches the same bytes. Every tool result leaves through provider-registry.js, which passes it here, so a credential value never reaches a chat whatever the route.
+const SECRET_SHAPE = /^[A-Za-z0-9+/=_-]{20,}$/;
+function credentialSecrets() {
+  const found = new Set();
+  const collect = (v) => {
+    if (typeof v === 'string') {
+      if (SECRET_SHAPE.test(v)) found.add(v);
+    } else if (v && typeof v === 'object') {
+      for (const [key, value] of Object.entries(v)) {
+        collect(key);
+        collect(value);
+      }
+    }
+  };
+  for (const file of CREDENTIAL_FILES) {
+    let text;
+    try {
+      text = fs.readFileSync(file, 'utf8');
+    } catch {
+      continue;
+    }
+    if (file === PASSPHRASE_PATH) {
+      if (text.trim().length >= 8) found.add(text.trim());
+      continue;
+    }
+    try {
+      collect(JSON.parse(text));
+    } catch {}
+  }
+  return [...found];
+}
+export function redactResult(result) {
+  if (!Array.isArray(result?.content)) return result;
+  const secrets = credentialSecrets();
+  if (!secrets.length) return result;
+  const redact = (text) => secrets.reduce((t, secret) => t.split(secret).join('[redacted]'), text);
+  return { ...result, content: result.content.map((c) => (c.type === 'text' && typeof c.text === 'string' ? { ...c, text: redact(c.text) } : c)) };
+}
+
 // Write variant for a single file/dir whose immediate parent already exists.
 export async function resolveRealWritable(target) {
   const real = await resolveRealUnderRoot(target);

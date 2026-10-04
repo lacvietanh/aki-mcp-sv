@@ -5,6 +5,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 ## [Unreleased]
 
 ### Changed
+- **A credential value never comes back in a tool result** (`scripts/roots.js` `redactResult`, applied to every tool in `scripts/provider-registry.js`): `grep -r` over the data dir, a task log or a spilled output file used to return the access token, the passphrase or a client secret even though the files themselves are closed to the tools; each token-shaped value in the credential files and the passphrase now read `[redacted]`. Covered by `test/credential-redaction.test.js`.
 - **A command the allowlist refuses says how to allow it without asking** (`scripts/shell-mcp.js`): the refusal of `run_cmd` and `task_start` names the entry to add (`"<bin>"`, `["<bin>", "<subcommand>", …]`, or bare `"git"` for a git write form), `shell.allowlist.added` in `~/.aki/mcpsv/setting.json` (read on every call, so it works on the next one) and panel section 6. A test holds that bare `git` in that file allows `git tag -f` and the other write forms at once.
 
 ## [3.0.0] - 2026-10-04
