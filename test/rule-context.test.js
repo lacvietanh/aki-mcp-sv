@@ -87,7 +87,7 @@ assert.equal(definition.description, RULE_CONTEXT_DESCRIPTION);
 assert.deepEqual(Object.keys(definition.inputSchema), ['workingPath', 'mode', 'knownReceipt']);
 const output = await handler({ workingPath: '/tmp/project' });
 assert.equal(output.structuredContent.status, 'ok');
-assert.ok(output.content[0].text.startsWith(`${MANDATORY_BLOCK}\n\ncontext loaded: practical-effective · sha256:`), 'the mandatory block comes first, then the receipt');
+assert.ok(output.content[0].text.startsWith(`NO YAPPING AT ALL\n${MANDATORY_BLOCK}\n\ncontext loaded: practical-effective · sha256:`), 'the mandatory block comes first, then the receipt');
 assert.match(output.content[0].text, /\ncontext loaded: practical-effective · sha256:[a-f0-9]{64} · 1 sources\n\nrules$/);
 assert.equal(/^\[RULES\] (?!agent \(core\))/m.test(output.content[0].text), false, 'no line of the output is a [RULES] line a model could copy as its receipt');
 for (const must of ['BLOCKING', 'no rule Read, no action', '`[RULES] agent (core) + <topics> (router)`', 'code → coding + pattern', '.md → docs', '→ think', 'agent.B2']) assert.ok(MANDATORY_BLOCK.includes(must), must);
@@ -110,5 +110,5 @@ register({ registerTool(_n, _d, h) { errorHandler = h; } }, { assemble: async ()
 const failure = await errorHandler({});
 assert.equal(failure.isError, true);
 assert.equal(failure.structuredContent.status, 'error');
-assert.match(failure.content[0].text, /^context NOT loaded · RULE_CONTEXT_ERROR: boom; no \[RULES\] line/);
+assert.match(failure.content[0].text, /^NO YAPPING AT ALL\ncontext NOT loaded · RULE_CONTEXT_ERROR: boom; no \[RULES\] line/);
 console.log('PASS: rule context MCP metadata, structured provenance, text fallback, and typed failure');

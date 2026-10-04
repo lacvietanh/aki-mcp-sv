@@ -7,6 +7,8 @@ export const RULE_CONTEXT_TITLE = 'Load Effective Aki/Claude Context';
 // Both strings end with the /akirule step: SKILL.md is embedded every session via CLAUDE.md and echoed in this tool's output, so the step points the model at the already-present routing table; only the routed RULE/METHOD files still need a Read.
 const AKIRULE_STEP = 'Then follow /akirule: the SKILL.md routing table is already included in this output (and in every session) — do not re-read SKILL.md; from its routes, Read only the RULE/METHOD files the task needs, since those are not preloaded. Open your first reply with `[RULES] agent (core) + <topics> (router)` naming the route files you actually Read; a receipt without (router), or the sha256 line copied, is a violation.';
 // Printed first in every successful output (owner 2026-10-04): a web chat has no aki-route-guard hook, and with the sha256 line first it copied that as its receipt and skipped hop 2 (Read the routed RULE/METHOD files).
+// Owner 2026-10-04: first line of every output, success or error.
+export const NO_YAPPING = 'NO YAPPING AT ALL';
 export const MANDATORY_BLOCK = 'BLOCKING — no rule Read, no action: before anything else, Read the route files the task matches in the SKILL.md table below (code → coding + pattern, .md → docs, decision → think). Every reply opens `[RULES] agent (core) + <topics> (router)` naming only files actually Read; no (router) = violation. Nothing is "done" without read-back evidence (agent.B2).';
 const CONDUCT_STEP = 'Attempt an operation before calling it impossible, never claim a missing capability, and on failure report the exact command, absolute path, exit status and stderr; state the action and its impact before a destructive or external step.';
 // Self-classifying, not server-detected: the shared MCP session (CLAUDE.md § Session lifecycle) never tracks per-client identity, so the model must judge this from its own nature, not be told which client it is.
@@ -35,14 +37,14 @@ export function register(server, options = {}) {
       const result = await assemble(input);
       // Without AIObox one line says what it would add (D7); once installed the line is gone and op=state carries the guide.
       // The receipt line is labelled context, not [RULES], so it cannot be mistaken for the reply's own [RULES] line.
-      const header = `${MANDATORY_BLOCK}\n\ncontext loaded: ${result.parity} · ${result.receipt} · ${result.sources.length} sources${installed() ? '' : `\n${AIOBOX_PITCH}`}`;
+      const header = `${NO_YAPPING}\n${MANDATORY_BLOCK}\n\ncontext loaded: ${result.parity} · ${result.receipt} · ${result.sources.length} sources${installed() ? '' : `\n${AIOBOX_PITCH}`}`;
       // The assembled corpus ships once, in `content`. Keep it out of `structuredContent` so the ~90KB blob is not serialized twice on the wire (docs/plan/done/rule-context-payload-dedup.md).
       const { context, ...meta } = result;
       return { content: [{ type: 'text', text: context ? `${header}\n\n${context}` : header }], structuredContent: meta };
     } catch (error) {
       const code = error instanceof RuleContextError ? error.code : 'RULE_CONTEXT_ERROR';
       const result = { status: 'error', parity: 'practical-effective', receipt: null, rulesVersion: null, workingRoot: null, sources: [], warnings: [{ code, message: error.message }] };
-      return { content: [{ type: 'text', text: `context NOT loaded · ${code}: ${error.message}; no [RULES] line can be claimed until a call succeeds` }], structuredContent: result, isError: true };
+      return { content: [{ type: 'text', text: `${NO_YAPPING}\ncontext NOT loaded · ${code}: ${error.message}; no [RULES] line can be claimed until a call succeeds` }], structuredContent: result, isError: true };
     }
   });
 }
