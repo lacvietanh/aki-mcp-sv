@@ -354,22 +354,47 @@ const WAIT_IDLE_DEFAULT_S = CALL_WAIT_MAX_S;
 const WAIT_IDLE_POLL_MS = 1_000;
 const WAIT_AGAIN = 'still answering: call op=wait_idle again (one call waits at most 50 s)';
 
-// Coordination files AIObox's agent tools write (contract rows claims.json, flags.json); AkiMCP only reads them. A missing or unreadable file is no entry.
-// flags.json is the one "do not use X" list (guide v10): { list: [...] } or a bare array, scope account (the default) or workspace, no until = until `agent.mjs unflag`. A claim always has an until.
-function readList(name) {
+// flags.json, the one "do not use X" list every window sees (contract row flags.json, guide v10): { list: [...] } (a bare array still reads), scope account (account + profileId; the default) or workspace (its label), no until = until op=unflag. AkiMCP is its one writer (aiobox plan cleanup-ai-leftovers C1); AIObox and op=state read it.
+const flagsFile = () => path.join(aioboxDir(), 'flags.json');
+const listOf = (raw) => {
+  const list = Array.isArray(raw) ? raw : raw?.list;
+  return Array.isArray(list) ? list.filter((e) => e && typeof e === 'object') : [];
+};
+// For op=state a missing or unreadable file is no flag.
+function readFlags() {
   try {
-    const raw = JSON.parse(fs.readFileSync(path.join(aioboxDir(), name), 'utf8'));
-    const list = Array.isArray(raw) ? raw : raw?.list;
-    return Array.isArray(list) ? list.filter((e) => e && typeof e === 'object') : [];
+    return listOf(JSON.parse(fs.readFileSync(flagsFile(), 'utf8')));
   } catch {
     return [];
   }
 }
 const inForce = (e, now) => e.until === undefined || e.until === null || Date.parse(e.until) > now;
-const coordination = (now = Date.now()) => ({
-  claims: readList('claims.json').filter((e) => Date.parse(e.until) > now),
-  flags: readList('flags.json').filter((e) => inForce(e, now)).map((e) => ({ scope: 'account', ...e })),
-});
+const scopeOf = (f) => f.scope ?? 'account';
+const coordination = (now = Date.now()) => ({ flags: readFlags().filter((e) => inForce(e, now)).map((e) => ({ ...e, scope: scopeOf(e) })) });
+
+const HOUR_MS = 3_600_000;
+function flagTarget(op, args) {
+  if (args.workspace) return { scope: 'workspace', workspace: args.workspace };
+  if (!args.account || !args.profile) throw new Error(`op=${op} needs workspace, or account and profile`);
+  return { scope: 'account', account: args.account, profileId: args.profile };
+}
+const sameTarget = (f, t) => scopeOf(f) === t.scope && (t.scope === 'workspace' ? f.workspace === t.workspace : f.account === t.account && f.profileId === t.profileId);
+// Read, change and write back in one synchronous step (no await in between), whole file, tmp + rename, as { list }; entries no longer in force are dropped. A file that is there but not JSON is refused rather than overwritten.
+function changeFlags(change) {
+  let raw;
+  try {
+    raw = JSON.parse(fs.readFileSync(flagsFile(), 'utf8'));
+  } catch (e) {
+    if (e.code !== 'ENOENT') throw new Error(`${flagsFile()} is not readable JSON (${e.message}); fix or delete it first`);
+  }
+  const now = Date.now();
+  const list = change(listOf(raw).filter((e) => inForce(e, now)), now);
+  fs.mkdirSync(path.dirname(flagsFile()), { recursive: true });
+  const tmp = `${flagsFile()}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, `${JSON.stringify({ list }, null, 2)}\n`);
+  fs.renameSync(tmp, flagsFile());
+  return list.map((e) => ({ ...e, scope: scopeOf(e) }));
+}
 const DRAFT_WARNING = 'the message box holds a draft, so busy may read false while it still answers (Notion); read it again later with op=read, and never touch the draft';
 const renumberedOf = (map) => (map.renumbered ? { ...map.renumbered, warning: renumberWarning(map.renumbered) } : null);
 
@@ -631,6 +656,28 @@ const WRITE_OPS = {
     if (value?.error) throw new Error(`${tab.handle}: ${value.error}`);
     return ok(JSON.stringify({ ...used, closed: true }, null, 2));
   },
+  // No window: flags.json is AIObox-wide. Flagging the same account or workspace again replaces its entry.
+  async flag(args) {
+    const target = flagTarget('flag', args);
+    need('flag', args, ['reason']);
+    let entry;
+    const flags = changeFlags((list, now) => {
+      entry = { ...target, provider: 'notion', reason: args.reason, flaggedAt: new Date(now).toISOString() };
+      if (args.hours !== undefined) entry.until = new Date(now + args.hours * HOUR_MS).toISOString();
+      return [...list.filter((f) => !sameTarget(f, target)), entry];
+    });
+    return ok(JSON.stringify({ flagged: entry, flags }, null, 2));
+  },
+  async unflag(args) {
+    const target = flagTarget('unflag', args);
+    let removed = 0;
+    const flags = changeFlags((list) => {
+      const kept = list.filter((f) => !sameTarget(f, target));
+      removed = list.length - kept.length;
+      return kept;
+    });
+    return ok(JSON.stringify({ unflagged: target, removed, flags }, null, 2));
+  },
   async compose(args) {
     need('compose', args, ['window', 'text']);
     const { tab, live: target, used } = await openTab(args);
@@ -700,7 +747,7 @@ export function register(server) {
       title: 'AIObox: read windows by handle',
       annotations: { readOnlyHint: true, openWorldHint: false },
       description:
-        'Read AIObox Chrome windows. Start with op=state: every window (chatId, provider, account, busy), macros, current claims and flags, and the guide for acting in AIObox. op=whoami quote=<20+ chars verbatim from the latest user message> finds your own window. Name a window by handle P#·W# (lasting; a retired one leads to its successor), chatId (the chat open in it now) or targetId; expect refuses a window now showing another chat. op=windows: tabs only. op=read: last messages (last=N), else page text. op=wait_idle: waits until the chat stops answering (timeout s), returns its last messages. op=text: elements by selector. op=screenshot. Results name the tab used. Acting: aki__aiobox_write.',
+        'Read AIObox Chrome windows. Start with op=state: every window (chatId, provider, account, busy), macros, current flags, and the guide for acting in AIObox. op=whoami quote=<20+ chars verbatim from the latest user message> finds your own window. Name a window by handle P#·W# (lasting; a retired one leads to its successor), chatId (the chat open in it now) or targetId; expect refuses a window now showing another chat. op=windows: tabs only. op=read: last messages (last=N), else page text. op=wait_idle: waits until the chat stops answering (timeout s), returns its last messages. op=text: elements by selector. op=screenshot. Results name the tab used. Acting: aki__aiobox_write.',
       inputSchema: {
         op: z.enum(Object.keys(READ_OPS)).describe(Object.keys(READ_OPS).join(' | ')),
         window: windowArg,
@@ -727,7 +774,7 @@ export function register(server) {
       title: 'AIObox: open a window, send or fill a chat, run JS',
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description:
-        'Act in an AIObox window (chatId, handle or targetId; rules: aki__aiobox op=state). expect refuses another chat, from=<your chatId> your own chat. op=new_window: a new chat of the same profile and provider; returns handle, chatId, targetId. op=new_chat: a fresh chat in that tab. op=send: sends text (wait=s waits for idle first); op=compose only fills the box. op=run_macro: runs a window macro (macro, option), returns its status. op=place_like: moves window onto the bounds of like. op=close_window: closes the tab through AIObox (refused while busy or with a draft). op=eval: expression runs in the page, result returned (awaitPromise default true); it can click, type and change the page.',
+        'Act in an AIObox window (chatId, handle or targetId; rules: aki__aiobox op=state). expect refuses another chat, from=<your chatId> your own chat. op=new_window: a new chat of the same profile and provider. op=new_chat: a fresh chat in that tab. op=send: sends text (wait=s waits for idle first); op=compose only fills the box. op=run_macro: runs a window macro (macro, option), returns its status. op=place_like: moves window onto the bounds of like. op=close_window: closes the tab through AIObox (refused while busy or with a draft). op=flag / op=unflag: the do-not-use list (account+profile or workspace). op=eval: runs JS in the page, returns the result; it can click, type and change the page.',
       inputSchema: {
         op: z.enum(Object.keys(WRITE_OPS)).describe(Object.keys(WRITE_OPS).join(' | ')),
         window: windowArg,
@@ -740,6 +787,11 @@ export function register(server) {
         wait: z.number().int().min(0).max(300).optional().describe('send: seconds to wait for a busy chat (default 0, at most 50 per call)'),
         expression: z.string().optional().describe('eval: JS evaluated in the page; the last expression is returned'),
         awaitPromise: z.boolean().optional().describe('eval: await a returned Promise (default true)'),
+        account: z.string().optional().describe('flag, unflag: account label (op=state account)'),
+        profile: z.string().optional().describe('flag, unflag: its profileId'),
+        workspace: z.string().optional().describe('flag, unflag: a workspace label instead'),
+        reason: z.string().optional().describe('flag: why'),
+        hours: z.number().positive().max(720).optional().describe('flag: hours in force (none = until unflag)'),
       },
     },
     async ({ op, ...args }) => {

@@ -196,8 +196,9 @@ pages['T-NOTION'] = { body: 'notion body', akipanel: readonlyPanel({
 pages['T-GPT'] = { akipanel: readonlyPanel({ capabilities: {} }), body: 'history: please compare the last two answers now, then more' };
 const state = JSON.parse((await call('aiobox', { op: 'state' })).text);
 assert.equal(state.akimcp, VERSION);
-assert.deepEqual(state.ops, { aiobox: ['windows', 'state', 'whoami', 'read', 'wait_idle', 'text', 'screenshot'], aiobox_write: ['new_window', 'new_chat', 'place_like', 'close_window', 'compose', 'send', 'run_macro', 'eval'] });
-assert.deepEqual([state.claims, state.flags], [[], []], 'no coordination files yet: empty lists');
+assert.deepEqual(state.ops, { aiobox: ['windows', 'state', 'whoami', 'read', 'wait_idle', 'text', 'screenshot'], aiobox_write: ['new_window', 'new_chat', 'place_like', 'close_window', 'flag', 'unflag', 'compose', 'send', 'run_macro', 'eval'] });
+assert.deepEqual(state.flags, [], 'no flags.json yet: empty list');
+assert.equal('claims' in state, false, 'claims are gone (aiobox plan cleanup-ai-leftovers)');
 // No ~/.aki/aiobox/guide.md yet: the short fallback, pointing at the web guide.
 assert.match(state.guide, /^AIObox guide \(short fallback.*https:\/\/aiobox\.app\/guide\/aiobox\.md/);
 assert.equal(state.guideVersion, null);
@@ -211,24 +212,42 @@ assert.deepEqual([withFile.guide, withFile.guideVersion], [guideText, 5]);
 fs.writeFileSync(guidePath, '# AIObox guide\nno frontmatter\n');
 assert.equal(JSON.parse((await call('aiobox', { op: 'state' })).text).guideVersion, null, 'a malformed head falls back');
 fs.rmSync(guidePath);
-// Claims and flags come from AIObox's agent files, only the ones still in force; flags.json (guide v10) is { list } or a bare array, scope account or workspace, no until = until unflag.
+// Flags come from flags.json, only the ones still in force; it is { list } or a bare array (guide v10), scope account or workspace, no until = until unflag.
 const soon = new Date(Date.now() + 3_600_000).toISOString();
 const gone = new Date(Date.now() - 1_000).toISOString();
 const aioboxHome = path.join(home, '.aki', 'aiobox');
-fs.writeFileSync(path.join(aioboxHome, 'claims.json'), JSON.stringify([{ chatId: 'abc', repo: '/r', paths: ['a.js'], task: 't', since: gone, until: soon }, { chatId: 'old', repo: '/r', paths: ['b.js'], task: 't', since: gone, until: gone }]));
-fs.writeFileSync(path.join(aioboxHome, 'flags.json'), JSON.stringify({ list: [
+const flagsPath = path.join(aioboxHome, 'flags.json');
+fs.writeFileSync(flagsPath, JSON.stringify({ list: [
   { scope: 'account', account: 'x@y', profileId: 'p', provider: 'notion', reason: 'interrupted', flaggedAt: gone, until: gone },
   { scope: 'workspace', workspace: 'dldn.1', provider: 'notion', reason: 'usage policy', flaggedAt: gone },
   { scope: 'account', account: 'z@y', profileId: 'q', provider: 'notion', reason: 'interrupted', flaggedAt: gone, until: soon },
 ] }));
 const coordinated = JSON.parse((await call('aiobox', { op: 'state' })).text);
-assert.deepEqual(coordinated.claims.map((c) => c.chatId), ['abc'], 'an expired claim is gone');
 assert.deepEqual(coordinated.flags.map((f) => f.workspace ?? f.account), ['dldn.1', 'z@y'], 'an expired flag is gone, one without until stays');
 fs.writeFileSync(path.join(aioboxHome, 'flags.json'), JSON.stringify([{ account: 'old@v9', profileId: 'p', reason: 'interrupted', flaggedAt: gone, until: soon }]));
 assert.deepEqual(JSON.parse((await call('aiobox', { op: 'state' })).text).flags.map((f) => [f.scope, f.account]), [['account', 'old@v9']], 'a v9 bare array still reads, without scope = account');
-fs.writeFileSync(path.join(aioboxHome, 'claims.json'), 'not json');
-assert.deepEqual(JSON.parse((await call('aiobox', { op: 'state' })).text).claims, [], 'an unreadable file is no claim');
-for (const name of ['claims.json', 'flags.json']) fs.rmSync(path.join(aioboxHome, name));
+// op=flag / op=unflag are the one way to write it: whole file as { list }, entries no longer in force dropped, the same target replaced, no window needed.
+const flagged = JSON.parse((await call('aiobox_write', { op: 'flag', workspace: 'dldn.1', reason: 'usage policy' })).text);
+assert.deepEqual([flagged.flagged.scope, flagged.flagged.workspace, flagged.flagged.until], ['workspace', 'dldn.1', undefined], 'no hours: until unflagged');
+let onDisk = JSON.parse(fs.readFileSync(flagsPath, 'utf8'));
+assert.deepEqual(onDisk.list.map((f) => f.workspace ?? f.account), ['old@v9', 'dldn.1'], 'the v9 array is rewritten as { list }');
+const timed = JSON.parse((await call('aiobox_write', { op: 'flag', account: 'x@y', profile: 'p', reason: 'interrupted x2', hours: 8 })).text);
+assert.ok(Math.abs(Date.parse(timed.flagged.until) - Date.now() - 8 * 3_600_000) < 60_000, 'hours sets until');
+await call('aiobox_write', { op: 'flag', account: 'x@y', profile: 'p', reason: 'again', hours: 1 });
+onDisk = JSON.parse(fs.readFileSync(flagsPath, 'utf8'));
+assert.deepEqual(onDisk.list.map((f) => [f.account ?? f.workspace, f.reason]), [['old@v9', 'interrupted'], ['dldn.1', 'usage policy'], ['x@y', 'again']], 'flagging again replaces');
+assert.deepEqual(JSON.parse((await call('aiobox', { op: 'state' })).text).flags.map((f) => f.account ?? f.workspace), ['old@v9', 'dldn.1', 'x@y'], 'op=state reads what op=flag wrote');
+const un = JSON.parse((await call('aiobox_write', { op: 'unflag', workspace: 'dldn.1' })).text);
+assert.deepEqual([un.removed, un.flags.map((f) => f.account)], [1, ['old@v9', 'x@y']]);
+assert.equal(JSON.parse((await call('aiobox_write', { op: 'unflag', account: 'x@y', profile: 'other' })).text).removed, 0, 'an account is matched with its profile');
+assert.match((await call('aiobox_write', { op: 'flag', account: 'x@y', reason: 'r' })).text, /op=flag needs workspace, or account and profile/);
+assert.match((await call('aiobox_write', { op: 'flag', workspace: 'w' })).text, /op=flag needs reason/);
+assert.ok(!fs.readdirSync(aioboxHome).some((n) => n.endsWith('.tmp')), 'no temp file left behind');
+fs.writeFileSync(flagsPath, 'not json');
+assert.deepEqual(JSON.parse((await call('aiobox', { op: 'state' })).text).flags, [], 'an unreadable file is no flag');
+assert.match((await call('aiobox_write', { op: 'flag', workspace: 'w', reason: 'r' })).text, /flags\.json is not readable JSON.*fix or delete it first/);
+assert.equal(fs.readFileSync(flagsPath, 'utf8'), 'not json', 'and is never overwritten');
+fs.rmSync(flagsPath);
 const notionRow = state.tabs.find((t) => t.targetId === 'T-NOTION');
 assert.equal(notionRow.busy, true);
 assert.deepEqual(notionRow.account, account);
