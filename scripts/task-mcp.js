@@ -133,7 +133,8 @@ export async function taskStart({ command, cwd, taskId: requestedId }) {
 
   fs.mkdirSync(TASK_LOGS_DIR, { recursive: true, mode: 0o700 });
   const logFile = path.join(TASK_LOGS_DIR, `${taskId}.log`);
-  const outFd = fs.openSync(logFile, 'a');
+  // 'w', not 'a': Git for Windows' Unix tools cannot write to an append-only handle and exit at once with an empty log.
+  const outFd = fs.openSync(logFile, 'w');
 
   let child;
   try {
