@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { USER_DIR } from './userdata.js';
+import { redactText } from './roots.js';
 
 export const SHOWN_HEAD = 14_000;
 export const SHOWN_TAIL = 6_000;
@@ -64,7 +65,7 @@ function saveRaw(raw) {
 }
 
 export function shapeForModel(raw) {
-  const cleaned = cleanOutput(raw);
+  const cleaned = redactText(cleanOutput(raw)); // before the cut, which could split a secret (roots.js redactText)
   if (cleaned.length <= MAX_SHOWN) return cleaned;
   const head = cutHead(cleaned, SHOWN_HEAD);
   const tail = cutTail(cleaned, SHOWN_TAIL);

@@ -37,6 +37,15 @@ assert.equal(copy, 'token=[redacted] pass=[redacted]\n', 'a copy in an ordinary 
 const plain = await text('aki__read_text_file', { path: path.join(dataDir, 'setting.json') });
 assert.ok(plain.includes(tmp), 'text with no credential in it passes unchanged');
 
+// An oversized one-line output is cut at a code point; the cut must not split the token into halves the result pass misses.
+const { shapeForModel, SHOWN_HEAD } = await import('../scripts/output-shape.js');
+const cut = shapeForModel(`${'x'.repeat(SHOWN_HEAD - 10)}${token}${'y'.repeat(30_000)}`);
+assert.ok(cut.startsWith('[output cut:') && !cut.includes(token.slice(0, 10)), 'no half token survives the cut');
+
+// A handler that throws skips the result pass; its message is redacted before the SDK turns it into the error result.
+const { redactError } = await import('../scripts/roots.js');
+assert.equal(redactError(new Error(`Unexpected token in ${token}`)).message, 'Unexpected token in [redacted]');
+
 await client.close();
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log('PASS: credential values are redacted from every tool result');

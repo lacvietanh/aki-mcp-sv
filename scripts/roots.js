@@ -134,12 +134,19 @@ function credentialSecrets() {
   }
   return [...found];
 }
+const redactWith = (secrets, text) => secrets.reduce((t, secret) => t.split(secret).join('[redacted]'), text);
+// Also called before an output is cut (output-shape.js), so a cut cannot split a secret into halves the result pass no longer recognizes.
+export const redactText = (text) => redactWith(credentialSecrets(), text);
 export function redactResult(result) {
   if (!Array.isArray(result?.content)) return result;
   const secrets = credentialSecrets();
   if (!secrets.length) return result;
-  const redact = (text) => secrets.reduce((t, secret) => t.split(secret).join('[redacted]'), text);
-  return { ...result, content: result.content.map((c) => (c.type === 'text' && typeof c.text === 'string' ? { ...c, text: redact(c.text) } : c)) };
+  return { ...result, content: result.content.map((c) => (c.type === 'text' && typeof c.text === 'string' ? { ...c, text: redactWith(secrets, c.text) } : c)) };
+}
+// A handler that throws skips redactResult: the SDK builds the error result from the message, so the message is redacted and the same error rethrown.
+export function redactError(error) {
+  if (error && typeof error.message === 'string') error.message = redactText(error.message);
+  return error;
 }
 
 // Write variant for a single file/dir whose immediate parent already exists.
