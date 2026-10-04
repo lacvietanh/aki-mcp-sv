@@ -1,6 +1,6 @@
 # Plan — list `@akinet/akimcp` in the Official MCP Registry
 
-Status: active · not started
+Status: active · local part done 2026-10-04 (P1·W2, T5): `mcpName`, `server.json`, `akimcp --stdio`, `test/registry-listing.test.js`; publishing waits for the next release and the owner's `mcp-publisher login github`.
 
 ## Goal
 
@@ -8,9 +8,9 @@ Get akimcp a canonical, namespace-verified record in the Official MCP Registry s
 
 ## Current state
 
-- npm: `@akinet/akimcp` `2.1.0` is published, public access, MIT, Node `>=22`, `bin` = `akimcp`. `package.json` has no `mcpName` field.
+- npm: `@akinet/akimcp` latest published is `2.2.0` (registry.npmjs.org, 2026-10-04); the tree is `3.0.0`, unpublished. `package.json` carries `mcpName: io.github.lacvietanh/akimcp` from 3.0.0 on (published versions are immutable, so the first listable one is the next release).
 - GitHub: `https://github.com/lacvietanh/aki-mcp-sv`.
-- No `server.json` in the repo root.
+- `server.json` in the repo root (schema 2025-12-11): one npm package entry, `transport: stdio`, argument `--stdio`; not in the npm `files` list (the Registry reads it from the publisher, and `mcpName` from the tarball).
 - Shape: a per-user self-hosted gateway. Each user runs it on their own machine and exposes it through Tailscale Funnel or a Cloudflare tunnel with OAuth 2.1 (`package.json` description; ingress plans under `plan/done/`). There is no single production URL shared by all users.
 - Gemini and Grok already connect as custom OAuth+DCR connectors, not through a directory (`plan/done/integrate-gemini-grok.md`).
 - `docs/biz/` does not exist; the USP in the `package.json` description is falsifiable and is reused below.
@@ -26,16 +26,15 @@ Get akimcp a canonical, namespace-verified record in the Official MCP Registry s
 7. About a week later, check PulseMCP, Smithery and Glama; claim the Glama listing (GitHub OAuth) and, if PulseMCP has not picked it up, email the Registry name, GitHub URL, version and description to `hello@pulsemcp.com` (per a maintainer discussion, third-party).
 8. Follow-up, not part of this plan: automate registry publishing after the npm publish in `release.yml` (the docs have a GitHub Actions page, not yet read).
 
-## Decisions to make
+## Decisions
 
-| Decision | Options | Note |
-|---|---|---|
-| Registry name | `io.github.lacvietanh/akimcp` (GitHub auth, simplest) · a reverse-DNS name of an owned domain such as `top.akimcp/akimcp` (DNS auth) | Docs say DNS auth enables custom-domain prefixes; the exact TXT-record procedure is on the authentication page, not yet read. Pick deliberately, a name is the listing's identity. |
-| Version to carry it | next planned release · a patch release | Follow `release.A`; the version is minted at the release event, not ahead of it. |
+- **Name `io.github.lacvietanh/akimcp`.** Decided (P1·W2 2026-10-04, owner: no extra questions) · because the GitHub namespace is verified by the account that owns the repo, with no DNS key to keep, and `mcp-publisher login github` is the one owner step · rejected `top.akimcp/akimcp` (DNS TXT + key management for the same proof) · reopen if the repo moves to an organisation or the listing must carry the domain brand (a new name = a new listing).
+- **Transport `stdio` through `akimcp --stdio`.** Decided · because a registry client spawns the npm package; plain `npx @akinet/akimcp` starts the gateway and turns on Tailscale Funnel, which no installer should do, while `scripts/stdio.js` (AGY's entry) serves the same tools in-process with no network and no token · rejected a `streamable-http` package entry on `http://127.0.0.1:9999/mcp` (needs a running gateway and a pasted token), `remotes` (no shared URL) · reopen if the Registry or a major client stops spawning stdio packages.
+- **Version: the next normal release.** `server.json` `version` and `packages[0].version` move with `package.json` (the test fails otherwise); no release only for this (`release.A`).
 
 ## Open questions (read before step 3)
 
-- `server.json` `packages[].transport` for akimcp: the npm package launches a local gateway that serves Streamable HTTP, it is not a plain stdio server. Read the Registry pages `package-types` and `remote-servers` to pick between `stdio` and an HTTP transport entry, and how a per-user URL is expressed.
+- ~~`server.json` `packages[].transport`~~: resolved, `stdio` via `akimcp --stdio` (Decisions).
 - Whether `server.json` must ship inside the npm tarball: the quickstart validates `mcpName` in `package.json` only, so `files` in `package.json` is expected to stay unchanged; confirm at first publish.
 - Whether the same version can ever be re-published: a third-party source says no; the official docs were not found to state it. Treat each `publish` as final.
 
@@ -66,9 +65,9 @@ Reopen when a hosted multi-tenant or narrow-scope remote variant of akimcp exist
 - [ ] `package.json` `mcpName` equals `server.json` `name`; `server.json` versions equal the published npm version.
 - [ ] `npm view @akinet/akimcp@<version> mcpName` returns the chosen name.
 - [ ] The `curl` search against the Registry API returns the record.
-- [ ] Transport open question resolved and `server.json` matches what `npx @akinet/akimcp` actually starts.
+- [x] Transport open question resolved and `server.json` matches what `npx @akinet/akimcp --stdio` actually starts (`test/registry-listing.test.js` spawns it and reads `initialize`).
 - [ ] One week later: PulseMCP, Smithery, Glama listing state recorded in this doc or its successor.
 
 ## Scope
 
-This plan does not edit `package.json`, create `server.json`, publish to npm or the Registry, commit, or push. It schedules that later work.
+Local part (steps 1, 3 and 4, without `mcp-publisher init`) is in the tree. Left: the release carrying `mcpName`, then steps 5–8 by the owner.

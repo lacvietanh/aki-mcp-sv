@@ -187,6 +187,8 @@ claude mcp add --transport http aki-mcp http://127.0.0.1:9999/mcp --header "Auth
 
 The button also pre-allows the server for the CLI; the IDE asks for its own approval on the first tool call. Details: [`docs/ref/fact-agy-mcp-config.md`](docs/ref/fact-agy-mcp-config.md).
 
+Any other client that spawns MCP servers over stdio can run the package the same way, with no gateway, tunnel or token: `npx -y @akinet/akimcp --stdio`.
+
 **Codex CLI** — append to `~/.codex/config.toml` (don't overwrite; Codex reaches the local engine over streamable HTTP, token inlined so there's no env var to export):
 
 ```toml
