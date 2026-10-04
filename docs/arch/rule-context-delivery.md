@@ -1,6 +1,6 @@
 # Rule context delivery architecture
 
-> updated 2026-09-13 · v2.0.0
+> updated 2026-10-04 · v3.0.0
 
 ## Decision
 
@@ -62,7 +62,7 @@ All surfaces share one pure context-assembler module so path resolution, import 
 
 **Title:** `Load Effective Aki/Claude Context`
 
-**Description:** `Call once before the first substantive action in every chat to load the same effective default guidance Claude Code would receive. The server resolves global CLAUDE imports and the applicable project CLAUDE.local/AGENTS chain itself—do not search for or individually read bootstrap files. Pass an absolute workingPath when the task names a project; omit it for global-only context. Read-only.`
+**Description:** `Call once before the first substantive action in every chat to load the effective default guidance. The server resolves global imports and applicable project CLAUDE.local/AGENTS context itself; do not search for or individually read bootstrap files. Pass an absolute workingPath when known. Read-only.` followed by four steps, the same four that end the initialize instructions (`scripts/rule-context-mcp.js`, one constant each): follow `/akirule` (the `SKILL.md` routing table is already in the output; Read only the routed RULE/METHOD files; open with the `[RULES]` line); conduct (attempt before calling a thing impossible, report failures exactly, state impact before a destructive step); resume (a stateless web chat on a multi-step task keeps `$HOME/.aki/mcpsv/task/<slug>/working.md`); AIObox (a chat named by a handle like `P2·W1` calls `aki__aiobox op=whoami`, then `op=state`). The description is the one tool allowed past the 700-character cap of `test/tool-surface.test.js`.
 
 ### Input
 
@@ -95,7 +95,9 @@ The API accepts no arbitrary file list, glob, command, shell expression, or URL.
 }
 ```
 
-The text fallback begins with `[RULES] practical-effective · <receipt> · <source-count> sources`.
+The text fallback begins with `[RULES] practical-effective · <receipt> · <source-count> sources`. While `~/.aki/aiobox/` is missing, one more header line says what AIObox adds and links its web guide; once AIObox is installed the line is gone and `aki__aiobox op=state` carries the guide.
+
+The assembled `context` ships once, in the text `content`; `structuredContent` carries every other field but not `context`, so the ~90 KB corpus is not serialized twice (`docs/plan/done/rule-context-payload-dedup.md`).
 
 `knownReceipt` may return `unchanged` without the body only when the same chat demonstrably retains the prior tool result; a fresh chat always receives the full context.
 
