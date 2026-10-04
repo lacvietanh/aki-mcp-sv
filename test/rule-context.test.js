@@ -78,6 +78,7 @@ register({ registerTool(n, d, h) { name = n; definition = d; handler = h; } }, {
     status: 'ok', parity: 'practical-effective', receipt: `sha256:${'a'.repeat(64)}`, rulesVersion: '1.2.3', workingRoot: '/tmp/project',
     sources: [{ path: '/tmp/project/CLAUDE.md', kind: 'project', sha256: 'b'.repeat(64), bytes: 5 }], warnings: [], context: 'rules',
   }),
+  aioboxInstalled: () => true,
 });
 assert.equal(name, RULE_CONTEXT_TOOL);
 assert.equal(name, 'akidevrule_context');
@@ -90,6 +91,14 @@ assert.match(output.content[0].text, /^\[RULES\] practical-effective · sha256:[
 assert.equal(output.isError, undefined);
 assert.equal('context' in output.structuredContent, false, 'corpus must ship only in content, never duplicated into structuredContent');
 assert.equal(output.structuredContent.sources.length, 1, 'provenance is preserved in structuredContent');
+
+// Without ~/.aki/aiobox/ one line after the header says what AIObox adds and links the web guide (D7).
+let bareHandler;
+register({ registerTool(_n, _d, h) { bareHandler = h; } }, {
+  assemble: async () => ({ status: 'ok', parity: 'practical-effective', receipt: `sha256:${'a'.repeat(64)}`, rulesVersion: '1', workingRoot: null, sources: [], warnings: [], context: 'rules' }),
+  aioboxInstalled: () => false,
+});
+assert.match((await bareHandler({})).content[0].text, /^\[RULES\] [^\n]+\nAIObox \(not installed here\)[^\n]+https:\/\/aiobox\.app\/guide\/aiobox\.md\n\nrules$/);
 
 let errorHandler;
 register({ registerTool(_n, _d, h) { errorHandler = h; } }, { assemble: async () => { throw new Error('boom'); } });

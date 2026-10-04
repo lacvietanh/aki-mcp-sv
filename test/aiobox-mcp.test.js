@@ -44,6 +44,7 @@ assert.equal(stripHandle('p3w2 · Notes'), 'p3w2 · Notes');
 assert.equal(stripHandle('New Tab'), 'New Tab');
 
 assert.equal(provider.detect().available, false, 'no ~/.aki/aiobox/ = not installed');
+assert.match(provider.detect().reason, /AIObox \(not installed here\).*https:\/\/aiobox\.app\/guide\/aiobox\.md/, 'the not-installed reason says what AIObox adds (D7)');
 
 const mcp = new McpServer({ name: 't', version: '1' });
 register(mcp);
@@ -181,6 +182,7 @@ pages['T-NOTION'] = { body: 'notion body', akipanel: readonlyPanel({
   online: true,
   capabilities: { chat: 1 },
   account,
+  read: 'live',
   state: { macros: macroList },
   macroRuns: runs,
   live: { chat: () => ({ ok: true, data: { messages: [{ role: 'user', text: 'please   compare the last two answers now' }, { role: 'assistant', text: 'working' }], busy: notionBusy } }) },
@@ -194,12 +196,24 @@ pages['T-GPT'] = { akipanel: readonlyPanel({ capabilities: {} }), body: 'history
 const state = JSON.parse((await call('aiobox', { op: 'state' })).text);
 assert.equal(state.akimcp, VERSION);
 assert.deepEqual(state.ops, { aiobox: ['windows', 'state', 'whoami', 'read', 'wait_idle', 'text', 'screenshot'], aiobox_write: ['new_window', 'new_chat', 'compose', 'send', 'run_macro', 'eval'] });
-assert.match(state.guide, /^AIObox guide v4\./);
-assert.ok(state.guide.length <= 1200, `guide is ${state.guide.length} chars`);
+// No ~/.aki/aiobox/guide.md yet: the short fallback, pointing at the web guide.
+assert.match(state.guide, /^AIObox guide \(short fallback.*https:\/\/aiobox\.app\/guide\/aiobox\.md/);
+assert.equal(state.guideVersion, null);
+assert.ok(state.guide.length <= 900, `fallback is ${state.guide.length} chars`);
+// AIObox's copy is returned verbatim, frontmatter included; a file without the contract's head is not trusted.
+const guidePath = path.join(home, '.aki', 'aiobox', 'guide.md');
+const guideText = '---\nversion: 5\n---\n# AIObox guide\n\n1. Find yourself.\n';
+fs.writeFileSync(guidePath, guideText);
+const withFile = JSON.parse((await call('aiobox', { op: 'state' })).text);
+assert.deepEqual([withFile.guide, withFile.guideVersion], [guideText, 5]);
+fs.writeFileSync(guidePath, '# AIObox guide\nno frontmatter\n');
+assert.equal(JSON.parse((await call('aiobox', { op: 'state' })).text).guideVersion, null, 'a malformed head falls back');
+fs.rmSync(guidePath);
 const notionRow = state.tabs.find((t) => t.targetId === 'T-NOTION');
 assert.equal(notionRow.busy, true);
 assert.deepEqual(notionRow.account, account);
 assert.equal(state.tabs.find((t) => t.targetId === 'T-GPT').busy, null, 'no reader: busy is unknown, not guessed');
+assert.deepEqual([notionRow.read, state.tabs.find((t) => t.targetId === 'T-GPT').read], ['live', null], 'read comes from akipanel.read; a panel without it is null');
 assert.deepEqual(state.macros, { notion: [{ id: 'connect-akimcp', label: 'Connect AkiMCP', options: ['fast', 'full'] }] });
 
 assert.match((await call('aiobox', { op: 'whoami', quote: 'too short' })).text, /short_quote/);

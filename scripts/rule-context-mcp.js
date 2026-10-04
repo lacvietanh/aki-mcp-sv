@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { assembleRuleContext, RuleContextError } from './rule-context.js';
+import { aioboxInstalled, AIOBOX_PITCH } from './aiobox-guide.js';
 
 export const RULE_CONTEXT_TOOL = 'akidevrule_context';
 export const RULE_CONTEXT_TITLE = 'Load Effective Aki/Claude Context';
@@ -17,6 +18,7 @@ export const provider = { id: 'rule', title: 'Rule context', required: true, reg
 
 export function register(server, options = {}) {
   const assemble = options.assemble || assembleRuleContext;
+  const installed = options.aioboxInstalled || aioboxInstalled;
   server.registerTool(RULE_CONTEXT_TOOL, {
     title: RULE_CONTEXT_TITLE,
     annotations: { readOnlyHint: true, openWorldHint: false },
@@ -29,7 +31,8 @@ export function register(server, options = {}) {
   }, async (input) => {
     try {
       const result = await assemble(input);
-      const header = `[RULES] ${result.parity} · ${result.receipt} · ${result.sources.length} sources`;
+      // Without AIObox one line says what it would add (D7); once installed the line is gone and op=state carries the guide.
+      const header = `[RULES] ${result.parity} · ${result.receipt} · ${result.sources.length} sources${installed() ? '' : `\n${AIOBOX_PITCH}`}`;
       // The assembled corpus ships once, in `content`. Keep it out of `structuredContent` so the ~90KB blob is not serialized twice on the wire (docs/plan/done/rule-context-payload-dedup.md).
       const { context, ...meta } = result;
       return { content: [{ type: 'text', text: context ? `${header}\n\n${context}` : header }], structuredContent: meta };

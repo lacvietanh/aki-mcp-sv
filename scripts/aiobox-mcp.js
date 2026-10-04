@@ -8,9 +8,8 @@ import { ok, okImage, fail } from './mcp-tool.js';
 import cdp from './cdp-engine.js';
 import { USER_DIR } from './userdata.js';
 import { VERSION } from './version.js';
+import { aioboxDir, aioboxInstalled, readGuide, AIOBOX_PITCH } from './aiobox-guide.js';
 
-// Resolved per call, not at import: HOME is read when the tool runs, so a test (or a changed HOME) is honored.
-const aioboxDir = () => path.join(os.homedir(), '.aki', 'aiobox');
 const windowsFile = () => path.join(aioboxDir(), 'cdp', 'windows.json');
 // What this server last saw of the map, kept on disk so the renumbering check survives an AkiMCP restart too. AkiMCP's own data dir, never AIObox's.
 const seenFile = () => path.join(USER_DIR, 'aiobox-seen.json');
@@ -287,7 +286,7 @@ const READ_JS = (last) => `(() => {
 
 const TEXT_JS = (selector) => `[...document.querySelectorAll(${JSON.stringify(selector)})].slice(0, ${TEXT_ELEMENTS_CAP}).map((el) => ({ text: Array.from(el.innerText || '').slice(0, ${TEXT_ELEMENT_CAP}).join(''), ariaLabel: el.getAttribute('aria-label') }))`;
 
-// One short look at a chat tab for op=state and op=whoami: busy and account, the provider's macros, and whether the user's latest message (provider reader) or the page text (no reader) contains quote.
+// One short look at a chat tab for op=state and op=whoami: busy and account, the provider's macros, read (how its chat takes a message sent mid-answer: live | queued | blocked | null; no panel = no field), and whether the user's latest message (provider reader) or the page text (no reader) contains quote.
 const PROBE_JS = (quote) => `(() => {
   const norm = (s) => String(s || '').replace(/\\s+/g, ' ').trim();
   const panel = window.akipanel;
@@ -296,14 +295,15 @@ const PROBE_JS = (quote) => `(() => {
   const account = copy(panel?.account, null);
   const macros = copy(panel?.state?.macros, []).map((m) => ({ id: m.id, label: m.label, options: (m.options || []).map((o) => o.id) }));
   const quote = ${quote === undefined ? 'null' : `norm(${JSON.stringify(quote)})`};
+  const read = panel ? (['live', 'queued', 'blocked'].includes(panel.read) ? panel.read : null) : undefined;
   if (caps.chat === ${CHAT_VERSION} && typeof panel?.live?.chat === 'function') {
     const r = panel.live.chat();
     if (r && r.ok === true) {
       const lastUser = [...(r.data?.messages || [])].reverse().find((m) => m.role === 'user');
-      return { reader: true, busy: !!r.data?.busy, account, macros, match: quote ? norm(lastUser?.text).includes(quote) : null };
+      return { reader: true, busy: !!r.data?.busy, account, read, macros, match: quote ? norm(lastUser?.text).includes(quote) : null };
     }
   }
-  return { reader: false, busy: null, account, macros, match: quote ? norm(document.body?.innerText).includes(quote) : null };
+  return { reader: false, busy: null, account, read, macros, match: quote ? norm(document.body?.innerText).includes(quote) : null };
 })()`;
 const CHAT_PROVIDERS = new Set(['notion', 'gpt', 'claude', 'grok', 'gemini']);
 const PROBE_TIMEOUT_MS = 3_000;
@@ -325,20 +325,6 @@ async function probeTabs(map, quote) {
 const tabRow = (t) => ({ handle: t.handle, chatId: chatIdOf(t.url), targetId: t.targetId, profileId: t.profile.id ?? null, provider: providerOf(t.url), profile: t.profile.name, title: stripHandle(t.title), url: t.url });
 const opsList = () => ({ aiobox: Object.keys(READ_OPS), aiobox_write: Object.keys(WRITE_OPS) });
 
-// The rules for acting in AIObox, returned by op=state: a client gets the running server's copy here, while a tool description stays frozen in its cached schema. Plan: docs/plan/aiobox-control-ops.md § Guide.
-const GUIDE_VERSION = 4;
-const GUIDE = [
-  `AIObox guide v${GUIDE_VERSION}.`,
-  "1. Find yourself: aki__aiobox op=whoami quote=<20+ chars verbatim from the user's latest message>. Keep its chatId; a handle (P#·W#) is a label renumbered on restart.",
-  '2. op=state lists every window (chatId, provider, account, busy) and provider macros.',
-  '3. Name a window by its chatId, or pass expect=<chatId> with a handle.',
-  '4. New chat: aki__aiobox_write op=new_chat window=<chatId> (same tab; refused if busy, drafted or yours; chatId after the first send). Other window: op=new_window.',
-  '5. Message another chat: op=send window=<its chatId> from=<your chatId>. Check the target\'s read in op=state: live/queued: send at once, even while busy; blocked: wait until idle (wait=<s>). A draft in its box: never touch it. op=compose only fills the box. Never target your own chat.',
-  '6. Before reading an answer: op=wait_idle, then op=read.',
-  '7. Macros: op=run_macro macro=<id>.',
-  '8. eval is a last resort, never for sending. Never chrome_launch or devtools_* on an AIObox profile.',
-  '9. An op here missing from your schema = cached older AkiMCP: op=run_macro macro=connect-akimcp option=reconnect on your window, then a new chat.',
-].join('\n');
 
 function need(op, args, fields) {
   const missing = fields.filter((f) => args[f] === undefined || args[f] === '');
@@ -362,9 +348,9 @@ const READ_OPS = {
       const p = probed.get(t.targetId);
       const row = tabRow(t);
       if (p?.macros?.length && !macros[row.provider]) macros[row.provider] = p.macros;
-      return p ? { ...row, busy: p.busy, account: p.account } : row;
+      return p ? { ...row, busy: p.busy, account: p.account, ...(p.read === undefined ? {} : { read: p.read }) } : row;
     });
-    return ok(JSON.stringify({ akimcp: VERSION, ops: opsList(), guide: GUIDE, run: map.run, renumbered: renumberedOf(map), macros, tabs }, null, 2));
+    return ok(JSON.stringify({ akimcp: VERSION, ops: opsList(), ...readGuide(), run: map.run, renumbered: renumberedOf(map), macros, tabs }, null, 2));
   },
   // The caller's own window: the AI cannot see its tab, but it sees the user's latest message verbatim, and that text is in exactly one chat (the busy one, while it answers). Two chats showing it are returned as ambiguous, never guessed between.
   async whoami(args) {
@@ -612,7 +598,7 @@ const WRITE_OPS = {
 export const provider = {
   id: 'aiobox',
   title: 'AIObox windows',
-  detect: () => (fs.existsSync(aioboxDir()) ? { available: true } : { available: false, reason: 'AIObox is not installed (no ~/.aki/aiobox/)' }),
+  detect: () => (aioboxInstalled() ? { available: true } : { available: false, reason: `no ~/.aki/aiobox/. ${AIOBOX_PITCH}` }),
   register,
 };
 
