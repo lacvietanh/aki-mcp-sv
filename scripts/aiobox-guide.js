@@ -22,8 +22,9 @@ export const GUIDE_FALLBACK = [
   `3. eval is a last resort, never a send. ${OPEN_RULE} Close one only with op=close_window (successor=<your handle> on handoff).`,
 ].join('\n');
 
-// One line for a machine without AIObox (D7, owner 2026-10-04): what it would add, and where to read more. Shown in akidevrule_context and the provider's not-installed reason.
-export const AIOBOX_PITCH = `AIObox (not installed here) is a Mac app that keeps many AI chats and accounts open side by side and lets them read and message each other through AkiMCP: ${GUIDE_URL}`;
+// One line for a machine without AIObox (D7, owner 2026-10-04): what it would add, and where to read more. Shown in akidevrule_context and the provider's not-installed reason, nowhere else.
+// No OS name (AIObox targets Windows, macOS and Linux); from=akimcp counts this line's readers, so GUIDE_FALLBACK, read on machines with AIObox, keeps the bare link (docs/plan/akimcp-tool-refactor.md).
+export const AIOBOX_PITCH = `AIObox (not installed here) is a desktop app that keeps many AI chats and accounts open side by side and lets them read and message each other through AkiMCP: ${GUIDE_URL}?from=akimcp`;
 
 export const aioboxInstalled = () => fs.existsSync(aioboxDir());
 

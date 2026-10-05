@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { assembleRuleContext, RuleContextError } from '../scripts/rule-context.js';
 import { register, MANDATORY_BLOCK, SHARED_WORK, RULE_CONTEXT_DESCRIPTION, RULE_CONTEXT_TITLE, RULE_CONTEXT_TOOL } from '../scripts/rule-context-mcp.js';
+import { AIOBOX_PITCH, GUIDE_FALLBACK, GUIDE_URL } from '../scripts/aiobox-guide.js';
 
 const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'aki-rule-context-'));
 const home = path.join(temp, 'home');
@@ -106,7 +107,12 @@ register({ registerTool(_n, _d, h) { bareHandler = h; } }, {
   assemble: async () => ({ status: 'ok', parity: 'practical-effective', receipt: `sha256:${'a'.repeat(64)}`, rulesVersion: '1', workingRoot: null, sources: [], warnings: [], context: 'rules' }),
   aioboxInstalled: () => false,
 });
-assert.match((await bareHandler({})).content[0].text, /\ncontext loaded: [^\n]+\nEvery tool that acts needs receipt=sha256:[a-f0-9]{64}\nAIObox \(not installed here\)[^\n]+https:\/\/aiobox\.app\/guide\/aiobox\.md\n\nWorking beside other sessions[^]*\n\nrules$/);
+assert.match((await bareHandler({})).content[0].text, /\ncontext loaded: [^\n]+\nEvery tool that acts needs receipt=sha256:[a-f0-9]{64}\nAIObox \(not installed here\)[^\n]+https:\/\/aiobox\.app\/guide\/aiobox\.md\?from=akimcp\n\nWorking beside other sessions[^]*\n\nrules$/);
+// F6(a): the pitch names no OS (AIObox targets Windows, macOS and Linux) and only it carries from=akimcp; the fallback is read where AIObox is installed.
+assert.equal(/\b(Mac|macOS|Windows|Linux)\b/.test(AIOBOX_PITCH), false, `the pitch names an OS: ${AIOBOX_PITCH}`);
+assert.ok(AIOBOX_PITCH.endsWith(`${GUIDE_URL}?from=akimcp`), 'the pitch links the guide with from=akimcp');
+assert.equal(GUIDE_URL.includes('from='), false, 'GUIDE_URL stays bare');
+assert.equal(GUIDE_FALLBACK.includes('from=akimcp'), false, 'the fallback guide keeps the bare link');
 
 let errorHandler;
 register({ registerTool(_n, _d, h) { errorHandler = h; } }, { assemble: async () => { throw new Error('boom'); } });

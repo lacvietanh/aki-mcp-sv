@@ -44,7 +44,7 @@ assert.equal(stripHandle('p3w2 · Notes'), 'p3w2 · Notes');
 assert.equal(stripHandle('New Tab'), 'New Tab');
 
 assert.equal(provider.detect().available, false, 'no ~/.aki/aiobox/ = not installed');
-assert.match(provider.detect().reason, /AIObox \(not installed here\).*https:\/\/aiobox\.app\/guide\/aiobox\.md/, 'the not-installed reason says what AIObox adds (D7)');
+assert.match(provider.detect().reason, /AIObox \(not installed here\).*https:\/\/aiobox\.app\/guide\/aiobox\.md\?from=akimcp$/, 'the not-installed reason says what AIObox adds (D7)');
 
 const mcp = new McpServer({ name: 't', version: '1' });
 register(mcp);
@@ -207,6 +207,7 @@ assert.deepEqual(state.flags, [], 'no flags.json yet: empty list');
 assert.equal('claims' in state, false, 'claims are gone (aiobox plan cleanup-ai-leftovers)');
 // No ~/.aki/aiobox/guide.md yet: the short fallback, pointing at the web guide.
 assert.match(state.guide, /^AIObox guide \(short fallback.*https:\/\/aiobox\.app\/guide\/aiobox\.md/);
+assert.equal(state.guide.includes('from=akimcp'), false, 'from=akimcp is only on the pitch, never on the fallback');
 assert.equal(state.guideVersion, null);
 assert.ok(state.guide.length <= 900, `fallback is ${state.guide.length} chars`);
 // AIObox's copy is returned verbatim, frontmatter included; a file without the contract's head is not trusted.
