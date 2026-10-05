@@ -4,7 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { getRoots } from './roots.js';
 
-const PROJECT_FILES = ['CLAUDE.md', 'CLAUDE.local.md', 'AGENTS.md'];
+// The instruction files agent CLIs read beside the code (Claude Code, Codex, Gemini CLI), in the order they are loaded in one folder.
+export const PROJECT_FILES = ['CLAUDE.md', 'CLAUDE.local.md', 'AGENTS.md', 'GEMINI.md'];
 const DEFAULT_LIMITS = { maxDepth: 32, maxFileBytes: 1024 * 1024, maxTotalBytes: 4 * 1024 * 1024 };
 const defaultCache = new Map();
 
@@ -80,7 +81,21 @@ export async function assembleRuleContext(input = {}, suppliedDeps = {}) {
     if (!workingRoot) throw new RuleContextError('OUTSIDE_ALLOWED_ROOTS', 'workingPath is outside configured roots');
   }
 
-  const cacheKey = `${mode}\0${workingDir || ''}`;
+  // Project rule files a tool call touched (scripts/project-rules.js): absolute, each inside a root, loaded after the workingPath chain.
+  const extraFiles = [...new Set((Array.isArray(input.extraFiles) ? input.extraFiles : []).filter((f) => typeof f === 'string' && pathApi.isAbsolute(f)).map((f) => pathApi.resolve(f)))].sort();
+  const extraRoots = [];
+  if (extraFiles.length) {
+    const resolvedRoots = [];
+    for (const root of roots) {
+      try { resolvedRoots.push(await fsp.realpath(root)); } catch { /* unavailable roots authorize nothing */ }
+    }
+    for (const file of extraFiles) {
+      const root = resolvedRoots.filter((r) => contains(file, r, pathApi, platform)).sort((a, b) => b.length - a.length)[0];
+      if (root && !extraRoots.includes(root)) extraRoots.push(root);
+    }
+  }
+
+  const cacheKey = `${mode}\0${workingDir || ''}\0${extraFiles.join('\0')}`;
   const cached = cache.get(cacheKey);
   if (cached) {
     let valid = true;
@@ -121,7 +136,8 @@ export async function assembleRuleContext(input = {}, suppliedDeps = {}) {
     catch (error) { dependencies.set(file, `missing:${error.code || 'ERR'}`); throw error; }
   };
   const authorized = (file) => globalZones.some((zone) => contains(file, zone, pathApi, platform))
-    || (!!workingRoot && contains(file, workingRoot, pathApi, platform));
+    || (!!workingRoot && contains(file, workingRoot, pathApi, platform))
+    || extraRoots.some((root) => contains(file, root, pathApi, platform));
 
   async function load(file, kind, depth, requiredSource = false) {
     if (depth > limits.maxDepth) { warnings.push({ code: 'IMPORT_DEPTH_LIMIT', path: file }); return; }
@@ -180,6 +196,11 @@ export async function assembleRuleContext(input = {}, suppliedDeps = {}) {
       catch { /* optional candidate */ }
     }
   } else warnings.push({ code: 'PROJECT_CONTEXT_NOT_LOADED', message: 'No workingPath given; project CLAUDE/AGENTS chain skipped (normal for global-only work).' });
+  for (const file of extraFiles) {
+    candidates.push(file);
+    try { await remember(file); await load(file, pathApi.basename(file) === 'CLAUDE.local.md' ? 'local' : 'project', 0, false); }
+    catch { /* a touched rule file that vanished: the receipt no longer covers it */ }
+  }
 
   const context = chunks.join('').trimEnd();
   const canonical = JSON.stringify({ mode, workingRoot, sources, context });

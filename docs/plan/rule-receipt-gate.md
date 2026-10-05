@@ -38,9 +38,12 @@ Every tool that acts refuses a call that does not carry the receipt of the rules
 
 - An AI could copy a receipt another chat printed; it is still the receipt of the rules in force. The gate stops forgetting, not a deliberate forger.
 - A client holding an old tool schema has no `receipt` argument: it is told to reconnect AkiMCP (guide step 9).
+- A receipt proves the rules were issued, not that they are still in the AI's context: after a compaction it still passes. The refusal text says to reload without `knownReceipt` (F4/F5 of D23).
+- Project rule files are trusted as the owner's: any `CLAUDE.md`/`AGENTS.md` inside a root is shown as rules. A trust list for them (prompt injection from a cloned repo) is open, not done.
 
 ## Done
 
 - [x] `scripts/rule-gate.js` (check, schema, wrapper), wired in `scripts/provider-registry.js`; `scripts/rule-context-mcp.js` records issued receipts and names the argument.
 - [x] `test/rule-gate.test.js`: every code, the same-call re-check, schema only on gated tools, a refused write writes nothing, a read needs no receipt, a project `CLAUDE.md` edit makes the receipt stale and a reload passes; `credential-redaction` and `streamable-bridge` tests carry a receipt; `tool-surface` budget raised for the argument.
 - [x] Live (2026-10-04, after the owner's restart): a write without receipt is refused with the step, and one with the receipt passes.
+- [x] D23 project context JIT (`docs/plan/akimcp-tool-refactor.md` D23, 2026-10-05): `scripts/project-rules.js` finds `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `GEMINI.md` from each absolute path a call touches up to the root holding it. A gated call touching rule files its receipt does not cover is not run (not an error, no `RULE_*` code): it returns their text (32 KiB cap, past it path + sha) and a new receipt covering old ∪ new files (`recordIssued` keeps `extraFiles`, the check re-assembles the same list). The read-tool line naming the files (`withRules`, wired in `scripts/provider-registry.js`) and the CHANGELOG entry are D23b, branch `wt-p8w15-d23` (ad53519). Tested in `test/rule-gate.test.js`. Live check after restart: pending.

@@ -26,11 +26,11 @@ assert.equal((await checkReceipt('sha256:xyz')).code, 'RULE_RECEIPT_INVALID');
 assert.equal((await checkReceipt(A)).code, 'RULE_RECEIPT_UNKNOWN', 'a well-formed receipt this server never issued is refused');
 recordIssued(A, { workingPath: '/w', mode: 'effective' });
 assert.equal(await checkReceipt(A), null, 'an issued receipt the rules still produce passes');
-assert.deepEqual(asked.at(-1), { mode: 'effective', workingPath: '/w' }, 'the check makes the same call that issued the receipt');
+assert.deepEqual(asked.at(-1), { mode: 'effective', workingPath: '/w', extraFiles: [] }, 'the check makes the same call that issued the receipt');
 current = B;
 const stale = await checkReceipt(A);
 assert.equal(stale.code, 'RULE_RECEIPT_STALE', 'once the rules change the old receipt is refused');
-for (const r of [await checkReceipt(undefined), stale]) assert.match(r.message, /call aki__akidevrule_context, then call this tool again with receipt=/);
+for (const r of [await checkReceipt(undefined), stale]) assert.match(r.message, /call aki__akidevrule_context \(without knownReceipt if the rules are no longer in your context\), then call this tool again with receipt=/);
 setAssembler(async () => { throw new Error('disk gone'); });
 recordIssued(A);
 assert.equal((await checkReceipt(A)).code, 'RULE_RECEIPT_UNCHECKED', 'rules that cannot be read never let a call through');
@@ -76,7 +76,7 @@ assert.ok(!props('aki__read_text_file').includes('receipt') && !props('aki__akid
 const target = path.join(tmp, 'out.txt');
 const refused = await client.callTool({ name: 'aki__write_file', arguments: { path: target, content: 'x' } });
 assert.equal(refused.isError, true);
-assert.match(text(refused), /^RULE_RECEIPT_MISSING: .*call aki__akidevrule_context, then call this tool again with receipt=/);
+assert.match(text(refused), /^RULE_RECEIPT_MISSING: .*call aki__akidevrule_context .*then call this tool again with receipt=/);
 assert.ok(!fs.existsSync(target), 'a refused write writes nothing');
 
 const loaded = await client.callTool({ name: 'aki__akidevrule_context', arguments: { workingPath: tmp } });
@@ -101,6 +101,53 @@ assert.equal(fs.readFileSync(target, 'utf8'), 'x');
 const reloaded = (await client.callTool({ name: 'aki__akidevrule_context', arguments: { workingPath: tmp } })).structuredContent.receipt;
 assert.notEqual(reloaded, receipt);
 assert.ok(!(await client.callTool({ name: 'aki__write_file', arguments: { path: target, content: 'z', receipt: reloaded } })).isError);
+
+// D23: a call touching a project whose rule files the receipt does not cover gets those rules and a new receipt first.
+const { rulesFor, rulesBlock } = await import('../scripts/project-rules.js');
+const r1 = path.join(tmp, 'r1');
+const r2 = path.join(tmp, 'r2');
+fs.mkdirSync(path.join(r1, 'src'), { recursive: true });
+fs.mkdirSync(r2);
+fs.writeFileSync(path.join(r1, 'AGENTS.md'), '# r1 rule\n');
+fs.writeFileSync(path.join(r2, 'CLAUDE.md'), '# r2 rule\n');
+const write = (p, receipt) => client.callTool({ name: 'aki__write_file', arguments: { path: p, content: 'w', receipt } });
+const newReceipt = (r) => text(r).match(/Call again with receipt=(sha256:[a-f0-9]{64})\.$/)?.[1];
+
+const first = await write(path.join(r1, 'src', 'a.txt'), reloaded);
+assert.ok(!first.isError, 'not run yet is not an error');
+assert.doesNotMatch(text(first), /RULE_/);
+assert.equal(first.content.length, 2);
+assert.match(first.content[0].text, /# r1 rule/);
+assert.doesNotMatch(first.content[0].text, /a new project rule/, 'rules already covered are not shown again');
+assert.match(first.content[1].text, /^Not run yet: rules for this path are above\. Call again with receipt=sha256:/);
+assert.ok(!fs.existsSync(path.join(r1, 'src', 'a.txt')), 'the first call writes nothing');
+const rec1 = newReceipt(first);
+const retry = await write(path.join(r1, 'src', 'a.txt'), rec1);
+assert.ok(!retry.isError && !newReceipt(retry), text(retry));
+assert.equal(fs.readFileSync(path.join(r1, 'src', 'a.txt'), 'utf8'), 'w', 'the retry runs (not STALE)');
+
+const other = await write(path.join(r2, 'b.txt'), rec1);
+assert.match(other.content[0].text, /# r2 rule/);
+assert.doesNotMatch(other.content[0].text, /# r1 rule/);
+const rec2 = newReceipt(other);
+for (const p of [path.join(r2, 'b.txt'), path.join(r1, 'c.txt'), path.join(r2, 'd.txt')]) {
+  const r = await write(p, rec2);
+  assert.ok(!r.isError && !newReceipt(r), `alternating repos never asks again: ${text(r)}`);
+}
+
+const covering = (await client.callTool({ name: 'aki__akidevrule_context', arguments: { workingPath: r1 } })).structuredContent.receipt;
+assert.ok(!newReceipt(await write(path.join(r1, 'e.txt'), covering)), 'a receipt already covering the path runs at once');
+assert.ok(fs.existsSync(path.join(r1, 'e.txt')));
+
+assert.deepEqual(await rulesFor([path.join(path.dirname(tmp), 'elsewhere', 'x.txt')], [r1]), [], 'a path outside every root has no rules');
+assert.deepEqual(await rulesFor([], [tmp]), [], 'no path, no rules');
+assert.deepEqual(await rulesFor([path.join(r1, 'src', 'new', 'deep.txt')], [tmp]), [path.join(tmp, 'CLAUDE.md'), path.join(r1, 'AGENTS.md')], 'a path not created yet walks up from its nearest folder, top-down');
+const big = path.join(tmp, 'big', 'CLAUDE.md');
+fs.mkdirSync(path.dirname(big));
+fs.writeFileSync(big, `# big\n${'x'.repeat(40 * 1024)}\n`);
+const capped = await rulesBlock([big]);
+assert.match(capped, /over the 32 KiB cap: read it with aki__read_text_file/);
+assert.ok(capped.length < 2048, 'a file over the cap is named, not inlined');
 
 await client.close();
 fs.rmSync(tmp, { recursive: true, force: true });
