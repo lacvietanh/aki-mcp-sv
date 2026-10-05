@@ -1028,8 +1028,10 @@ const WRITE_OPS = {
     const profileId = args.profile === undefined ? null : registeredProfile(args.profile);
     const request = await sendRequest('open_url', { url, ...(profileId ? { profileId } : {}) });
     const out = requestOutcome('open_url', request, await awaitRequestRun(request, waitLimitS(args.wait, CALL_WAIT_MAX_S) * 1000));
-    if (out.outcome === 'ok') writeOpened([...readOpened(), { url: urlKey(url), profileId, at: new Date().toISOString() }]);
-    const next = out.outcome === 'ok' ? { next: 'once checked, close the tab it opened: op=close_window window=<its handle in aki__aiobox op=windows>' } : {};
+    // Without profile the system's browser has it: no tab in op=windows, nothing AkiMCP can close (P4·W18 review of 25fd6ef).
+    const inProfile = out.outcome === 'ok' && profileId;
+    if (inProfile) writeOpened([...readOpened(), { url: urlKey(url), profileId, at: new Date().toISOString() }]);
+    const next = inProfile ? { next: 'once checked, close the tab it opened: op=close_window window=<its handle in aki__aiobox op=windows>' } : {};
     return ok(JSON.stringify({ url, profileId, opened: out.result?.opened ?? null, ...out, ...next }, null, 2));
   },
   // Same tab, fresh chat: the chat id is only in the URL after the first message, so the result has none.
