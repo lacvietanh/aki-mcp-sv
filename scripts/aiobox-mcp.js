@@ -861,7 +861,8 @@ const SEND_JS = (text) => `(async () => {
   if (!panel) return { error: 'this window has no AIObox panel' };
   let caps = {};
   try { caps = JSON.parse(JSON.stringify(panel.capabilities ?? {})) || {}; } catch {}
-  if (caps.send === undefined || typeof panel.live?.send !== 'function') return { missing: true };
+  // A panel AIObox has not given its first state yet (a window just opened) has no provider module, so no send: held, so wait= tries again (S5, 2026-10-05).
+  if (caps.send === undefined || typeof panel.live?.send !== 'function') return panel.state === null ? { held: 'loading' } : { missing: true };
   if (caps.send !== ${SEND_VERSION} && caps.send !== ${SEND_V1}) return { unsupported: String(caps.send) };
   const reader = caps.chat === ${CHAT_VERSION} && typeof panel.live.chat === 'function';
   const now = reader ? panel.live.chat() : null;
@@ -1215,8 +1216,9 @@ const WRITE_OPS = {
     }
     const retry = waitS < CALL_WAIT_MAX_S ? 'op=send wait=50 in this turn' : 'op=send wait=50 again in this turn';
     if (value?.held === 'draft') throw new Refusal('draft', `${tab.handle} holds a draft in its message box${waitS ? ` after ${Math.round((Date.now() - started) / 1000)}s` : ''}; it is left untouched`, `${retry}; still there: ask another window to relay it, or report "not sent: ${tab.handle} draft"`);
+    if (value?.held === 'loading') throw new Refusal('loading', `${tab.handle} is still loading: AIObox has not given its panel a state yet${waitS ? `, still after ${Math.round((Date.now() - started) / 1000)}s` : ''}, so it has no send`, 'op=send wait=20 in this turn; still loading: op=state, or tell the owner');
     if (value?.held) throw new Refusal('busy', `${tab.handle} is answering and its provider takes no message mid-answer (read=blocked)${waitS ? `, still after ${Math.round((Date.now() - started) / 1000)}s` : ''}`, `${retry}; still busy: report "not sent: ${tab.handle} busy", never promise a later send`);
-    if (value?.missing) throw new Refusal('no_send', `${tab.handle} has no AIObox send capability (an older AIObox build, or not a chat page)`, 'use op=compose and ask the owner to press Enter, or rebuild AIObox');
+    if (value?.missing) throw new Refusal('no_send', `${tab.handle} has no AIObox send capability (not a chat page AIObox knows, or an AIObox build without send)`, 'use op=compose and ask the owner to press Enter, or rebuild AIObox');
     if (value?.unsupported !== undefined) throw new Error(`AIObox send capability version ${value.unsupported} in ${tab.handle} is not supported (expected ${SEND_VERSION} or ${SEND_V1}); update AkiMCP or AIObox`);
     if (!value?.ok) throw new Error(`${tab.handle}: ${value?.error ?? 'send returned no result'}`);
     const how = { ...(value.midAnswer ? { midAnswer: true } : {}), ...(value.draft ? { draft: value.draft } : {}) };

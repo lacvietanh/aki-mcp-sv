@@ -600,6 +600,24 @@ assert.match((await call('aiobox_write', { op: 'compose', window: 'P7·W2', text
 
 // send v1 (AIObox before L0): a chat answering that takes no message mid-answer, or a draft in the box, holds the message back untouched; wait= retries; delivered only once the text shows as a new user message.
 assert.match((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'x' })).text, /P7·W2 has no AIObox send capability.*\(no_send/);
+// S5: a panel AIObox has not given its first state yet (a window just opened) is loading, not without send: wait= tries again until it can send.
+{
+  let loaded = false;
+  const loadSent = [];
+  const loadMsgs = [];
+  pages['T-GPT'].akipanel = readonlyPanel({
+    get state() { return loaded ? { provider: 'gpt' } : null; },
+    get capabilities() { return loaded ? { chat: 1, send: 1 } : {}; },
+    get live() { return loaded ? { chat: () => ({ ok: true, data: { messages: loadMsgs, busy: false } }), send: async (t) => (loadSent.push(t), loadMsgs.push({ role: 'user', text: t }), { ok: true, data: null }) } : {}; },
+  });
+  const stillLoading = (await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'x' })).text;
+  assert.match(stillLoading, /P7·W2 is still loading.*\(loading/);
+  assert.match(stillLoading, /op=send wait=20/);
+  assert.doesNotMatch(stillLoading, /no_send/);
+  setTimeout(() => { loaded = true; }, 1200);
+  const loadOut = JSON.parse((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'hi', wait: 5 })).text);
+  assert.deepEqual([loadOut.sent, loadOut.delivered, loadSent], [true, true, ['hi']], 'sent once the panel has its state');
+}
 let gptBusy = true;
 const sent = [];
 const gptMsgs = [];
