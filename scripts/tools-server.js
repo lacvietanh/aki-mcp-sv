@@ -4,14 +4,16 @@
 // its own register(server) module behind a stable contract; which modules are hosted, and whether each
 // is installed and switched on, lives in provider-registry.js.
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { RULE_CONTEXT_INSTRUCTIONS } from './rule-context-mcp.js';
-import { mountProviders } from './provider-registry.js';
+import { ruleContextInstructions } from './rule-context-mcp.js';
+import { mountProviders, listProviders } from './provider-registry.js';
 import { VERSION } from './version.js';
 
 export function createToolsServer() {
+  // The AIObox step names aki__aiobox, so it rides along only while that tool is served (installed and switched on).
+  const aiobox = listProviders().find((p) => p.id === 'aiobox');
   const server = new McpServer(
     { name: 'aki-mcp', version: VERSION, title: 'Aki MCP' },
-    { instructions: RULE_CONTEXT_INSTRUCTIONS },
+    { instructions: ruleContextInstructions(Boolean(aiobox?.available && aiobox?.enabled)) },
   );
   return mountProviders(server, 'aki__');
 }

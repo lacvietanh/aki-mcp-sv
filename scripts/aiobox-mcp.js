@@ -672,7 +672,7 @@ function requestOutcome(op, request, run) {
     const said = at === -1 ? 'refused' : detail.slice(0, at);
     const code = said === 'budget' ? 'hourly_limit' : said === 'flagged' || said === 'workspace_flagged' ? 'chat_paused' : said;
     const why = at === -1 ? detail : detail.slice(at + 2);
-    const next = code === 'hourly_limit' ? `AIObox's hourly limit for AI ${op} is reached (a safety brake shared by every AI): do not ask again now; tell the user "not opened: hourly limit" and when it frees up` : code === 'chat_paused' ? `pick another profile or workspace with canTakeChat from aki__aiobox op=profiles. ${PAUSE_SCOPE}` : code === 'url_not_allowed' ? 'pass a plain http:// or https:// address with a host' : code === 'invalid' || code === 'unknown_op' ? 'update AkiMCP or AIObox so they speak the same request version, or report it' : 'read aki__aiobox op=profiles and pick a profile with canTakeChat, or report it';
+    const next = code === 'hourly_limit' ? `AIObox's hourly limit for AI ${op} is reached (a safety brake shared by every AI): do not ask again now; tell the user "not opened: hourly limit" and when it frees up` : code === 'chat_paused' ? `pick another profile or workspace with canTakeChat from aki__aiobox op=profiles. ${PAUSE_SCOPE}` : code === 'url_not_allowed' ? 'pass a plain http:// or https:// address with a host' : code === 'not_idle' ? 'wait for it (aki__aiobox op=wait_idle), or pass successor=<the window that took over>' : code === 'no_panel' ? 'pass successor=<the window that took over> if one did, else ask the owner to close it' : code === 'no_window' ? 'check aki__aiobox op=windows; a successor must be another open window' : op === 'close_window' && code === 'invalid' ? 'pass an open window other than this one as successor, or leave it out' : code === 'invalid' || code === 'unknown_op' ? 'update AkiMCP or AIObox so they speak the same request version, or report it' : 'read aki__aiobox op=profiles and pick a profile with canTakeChat, or report it';
     throw new Refusal(code, `AIObox refused ${op} (run ${run.id}): ${why}`, next);
   }
   const base = { request, runId: run.id, done: !run.running, steps: run.steps ?? [] };
@@ -898,14 +898,6 @@ const PLACE_LIKE_JS = (like) => `(async () => {
     return { error: String(e?.message ?? e) };
   }
 })()`;
-// akipanel.closeWindow({ successor }) closes the calling tab and refuses itself like newChat (offline, busy, draft, unreadable chat); the tab may be gone before the reply arrives. successor (a live handle, contract row closeWindow) is the one handoff edge AIObox writes to retired[]: it no longer infers one from placeLike (audit P1-2: any page can call placeLike).
-const CLOSE_WINDOW_JS = (successor) => `(() => {
-  const panel = window.akipanel;
-  if (!panel) return { noPanel: true };
-  if (typeof panel.closeWindow !== 'function') return { missing: true };
-  const r = panel.closeWindow(${successor ? JSON.stringify({ successor }) : ''});
-  return r && r.ok === true ? { ok: true } : { error: String(r?.error ?? 'closeWindow() returned no result') };
-})()`;
 // akipanel.switchWorkspace(idOrLabel) (aiobox plan aio-control-gaps G2): Notion only, refused like newChat (busy, draft); AIObox then navigates the tab there (app.notion.com/<domain>, then Notion AI's home), so the old page is still there right after the call.
 const WORKSPACES_JS = `(() => {
   const panel = window.akipanel;
@@ -937,7 +929,7 @@ const findWorkspace = (scopes, wanted) => {
   return scopes.find((s) => spaceKey(s.id) === spaceKey(w) || String(s.label ?? '').trim().toLowerCase() === w) || null;
 };
 const NAVIGATED = /context was destroyed|navigated or closed|Cannot find context/i;
-// closeWindow is one-way to AIObox (P8·W1 a81d28d): the app refuses a successor not open, the same window or a loop only in its log, so a close counts once the tab is gone.
+// A link tab AkiMCP closes over CDP counts as closed once it leaves the target list.
 const CLOSE_WAIT_MS = 3_000;
 const CLOSE_POLL_MS = 250;
 const tabGone = async (tab) => {
@@ -947,12 +939,14 @@ const tabGone = async (tab) => {
     if (Date.now() >= end) return false;
   }
 };
-// A tab without a panel closes only when op=open_url opened its address (openedFile); any other stays the owner's.
-async function closeOpenedLink(tab, target, used, successor) {
-  if (successor) throw new Refusal('no_panel', `${tab.handle} has no AIObox panel, so it succeeds nothing`, 'close it without successor');
+// A tab still showing an address op=open_url opened (openedFile) is AkiMCP's to close over CDP (owner 2026-10-05); every other tab closes through AIObox.
+const openedLinkOf = (tab, target) => {
   const key = urlKey(target.url ?? tab.url);
+  return key && readOpened().some((o) => o.url === key) ? key : null;
+};
+async function closeOpenedLink(tab, used, key, successor) {
+  if (successor) throw new Refusal('no_panel', `${tab.handle} is a link tab op=open_url opened, so it succeeds nothing`, 'close it without successor');
   const opened = readOpened();
-  if (!key || !opened.some((o) => o.url === key)) throw new Refusal('no_panel', `${tab.handle} has no AIObox panel and is no link op=open_url opened (${String(target.url ?? tab.url).slice(0, 120)})`, 'ask the owner to close it');
   await cdp.closeTab({ port: tab.port, targetId: tab.targetId });
   if (!(await tabGone(tab))) throw new Error(`${tab.handle} is still open ${CLOSE_WAIT_MS / 1000}s after closing the link tab`);
   writeOpened(opened.filter((o) => o.url !== key));
@@ -1116,20 +1110,16 @@ const WRITE_OPS = {
     need('close_window', args, ['window']);
     const { tab, live: target, used } = await openTab(args);
     if (args.from && args.from === used.chatId) throw new Refusal('self_target', `${tab.handle} is your own chat (${used.chatId})`, 'only a successor closes the window it took over');
-    const successor = args.successor ? resolveTab(readMap(), args.successor).handle : undefined;
+    const successor = args.successor ? resolveTab(readMap(), args.successor).handle : null;
     if (successor === tab.handle) throw new Refusal('same_window', `${tab.handle} cannot succeed itself`, 'pass the window that took over as successor, or leave it out');
-    let value;
-    try {
-      value = (await cdp.evaluate({ port: tab.port, target, expression: CLOSE_WINDOW_JS(successor) })).value;
-    } catch (e) {
-      if (!NAVIGATED.test(e.message)) throw e;
-      value = { ok: true };
-    }
-    if (value?.noPanel) return closeOpenedLink(tab, target, used, successor);
-    if (value?.missing) throw new Refusal('no_close_window', `${tab.handle} has no AIObox closeWindow (an older AIObox build)`, 'ask the owner to close it; never close a tab over CDP');
-    if (value?.error) throw new Error(`${tab.handle}: ${value.error}`);
-    if (!(await tabGone(tab))) throw new Error(`${tab.handle} is still open ${CLOSE_WAIT_MS / 1000}s after closeWindow: AIObox refused it${successor ? ` (successor ${successor} closed, the same window, or a loop)` : ''}; nothing was retired. Check op=windows, then try again`);
-    return ok(JSON.stringify({ ...used, closed: true, ...(successor && { successor }) }, null, 2));
+    const link = openedLinkOf(tab, target);
+    if (link) return closeOpenedLink(tab, used, link, successor);
+    // One way only (lead P8·W20, contract with P1·W37): a request AIObox runs from outside the page, so a hung tab or one without a panel still closes. With successor AIObox saves the chat (≤10 s), retires the handle to it and closes even mid-answer; without, it refuses not_idle or no_panel.
+    const request = await sendRequest('close_window', { window: tab.targetId, successor });
+    const out = requestOutcome('close_window', request, await awaitRequestRun(request, waitLimitS(args.wait, CALL_WAIT_MAX_S) * 1000));
+    const { result, ...run } = out;
+    // AIObox's detail first, so its handle: null never hides the window AkiMCP resolved.
+    return ok(JSON.stringify({ ...(result && typeof result === 'object' ? result : result === undefined ? {} : { result }), ...used, ...run }, null, 2));
   },
   // No window: a chat pause is AIObox-wide. AIObox owns the file and writes it (D18c); this only asks, and a request AIObox took counts as in force here at once (c').
   async pause_chat(args) {
@@ -1231,7 +1221,8 @@ export function register(server) {
       title: 'AIObox: read windows by handle',
       annotations: { readOnlyHint: true, openWorldHint: false },
       description:
-        'Read AIObox (AIO) windows P#·W#. op=state: every window (chatId, provider, account, busy, workspace, usage), macros, chatPauses, guide. op=whoami quote=<20+ chars verbatim of the latest user message>: your window. window= handle (a retired one leads to its successor, kế nhiệm), chatId or targetId; expect refuses another chat. op=windows: tabs. op=profiles: where a new window can open. op=read last=N, or the saved copy of a closed chat. op=wait_idle: until it stops answering. op=text. op=screenshot. op=runs: id= or request=. Quota ≥95% or Interrupted twice: AIObox does the handoff to another account (Interrupted: 8h flag); never resend. Also: loop, macro, akipanel. Acting: aki__aiobox_write.',
+        // The handle step lives here, not in akidevrule_context: only a server with AIObox serves this tool (P3, D-L2a).
+        'Read AIObox (AIO) windows P#·W#. Page title starts with a handle like P2·W1? You run in AIObox: op=whoami first. op=state: every window (chatId, provider, account, busy, workspace, usage), macros, chatPauses, guide. op=whoami quote=<20+ chars verbatim of the latest user message>: your window. window= handle (a retired one leads to its successor), chatId or targetId; expect refuses another chat. op=windows: tabs. op=profiles: where to open one. op=read last=N (closed chat: saved copy). op=wait_idle. op=text. op=screenshot. op=runs: id= or request=. Quota ≥95% or Interrupted twice: AIObox hands off to another account; never resend. Also: loop, macro, akipanel. Acting: aki__aiobox_write.',
       inputSchema: {
         op: z.enum(Object.keys(READ_OPS)).describe(Object.keys(READ_OPS).join(' | ')),
         window: windowArg,
@@ -1262,7 +1253,7 @@ export function register(server) {
       title: 'AIObox: open a window, send or fill a chat, run JS',
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description:
-        `Act in an AIObox (AIO) window P#·W# (guide: aki__aiobox op=state); from=<your chatId>. op=new_window: profile+provider. op=handoff_open: profile, provider, like, text. ${OPEN_RULE} op=open_url: url, profile?. op=send: even mid-answer. op=compose: fills only. op=run_macro: macro, option; macro surface: op=eval akipanel.<method>(). op=close_window: idle; successor= retires; close what you opened. op=pause_chat/resume_chat: no new AI chat work there; join, reconnect, usage still go. New account/workspace: first check AkiMCP tool count, else run_macro connect-akimcp option=reconnect.`,
+        `Act in an AIObox (AIO) window P#·W# (guide: aki__aiobox op=state); from=<your chatId>. op=new_window: profile+provider. op=handoff_open: profile, provider, like, text. ${OPEN_RULE} op=open_url: url, profile?. op=send: even mid-answer. op=compose: fills only. op=run_macro: macro, option; macro surface: op=eval akipanel.<method>(). op=close_window: idle, or successor= (even busy/hung); close what you opened. op=pause_chat/resume_chat: no new AI chat work there; join, reconnect, usage go. New account/workspace: first check AkiMCP tool count, else run_macro connect-akimcp option=reconnect.`,
       inputSchema: {
         op: z.enum(Object.keys(WRITE_OPS)).describe(Object.keys(WRITE_OPS).join(' | ')),
         window: windowArg,
@@ -1270,11 +1261,11 @@ export function register(server) {
         from: z.string().optional().describe('your own chatId (aki__aiobox op=whoami); send, compose, new_chat, switch_workspace, close_window refuse it'),
         like: z.string().optional().describe('place_like, handoff_open: the window to copy the place of (handle, chatId or targetId)'),
         provider: z.string().optional().describe('new_window, handoff_open, pause_chat, resume_chat: notion, claude, gpt or grok (pause default notion)'),
-        successor: z.string().optional().describe('close_window: the window that took over (handle, chatId or targetId); the closed handle then leads to it'),
+        successor: z.string().optional().describe('close_window: the window that took over (handle, chatId or targetId); AIObox saves the chat, the closed handle then leads to it, and it closes even mid-answer'),
         macro: z.string().optional().describe('run_macro: macro id (op=state macros)'),
         option: z.string().optional().describe('run_macro: option id (default: the first)'),
         text: z.string().optional().describe('send, compose, handoff_open: the text (handoff_open ≤8 KB)'),
-        wait: z.number().int().min(0).max(300).optional().describe('send: seconds to retry a draft or blocked chat (default 0); new_window, handoff_open, open_url, pause_chat, resume_chat: run wait (default 50); max 50 per call'),
+        wait: z.number().int().min(0).max(300).optional().describe('send: seconds to retry a draft or blocked chat (default 0); new_window, handoff_open, open_url, close_window, pause_chat, resume_chat: run wait (default 50); max 50 per call'),
         url: z.string().optional().describe('open_url: http(s) link for the user; system browser, or profile\'s new window'),
         expression: z.string().optional().describe('eval: JS evaluated in the page; the last expression is returned'),
         awaitPromise: z.boolean().optional().describe('eval: await a returned Promise (default true)'),

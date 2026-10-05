@@ -553,35 +553,11 @@ assert.deepEqual(placedOut, { window: 'P7·W2', targetId: 'T-GPT', chatId: '123'
 assert.equal((await call('aiobox_write', { op: 'place_like', window: 'P7·W2', like: 'P9·W9' })).text, 'rejected: P7·W2: no window P9·W9', 'a like the map does not know goes as given, its rejection verbatim');
 assert.deepEqual(placed, ['T-NOTION', 'P9·W9']);
 
-// close_window goes through akipanel.closeWindow() (sync Result): its refusal verbatim, the caller's own chat refused, never a CDP close; successor goes to AIObox as the live handle it names (audit P1-2: AIObox writes no inferred edge).
-pages['T-GPT'].akipanel = readonlyPanel({ online: true });
-assert.match((await call('aiobox_write', { op: 'close_window', window: 'P7·W2' })).text, /no AIObox closeWindow.*\(no_close_window/);
-let closes = 0;
-let closeRefusal = 'the chat holds a draft';
-let closeArgs = [];
-// The tab counts as closed once it leaves the target list; AIObox refusing a successor leaves it open with { ok: true } (one-way call).
-let closedTab = null;
-let stayOpen = false;
-const listBeforeClose = cdp.listTargets;
-cdp.listTargets = async (a) => (await listBeforeClose(a)).filter((t) => t.id !== closedTab);
-pages['T-GPT'].akipanel = readonlyPanel({ online: true, closeWindow: (...a) => (closes += 1, closeArgs = a, closeRefusal ? { ok: false, error: closeRefusal } : (stayOpen || (closedTab = 'T-GPT'), { ok: true, data: null })) });
-assert.equal((await call('aiobox_write', { op: 'close_window', window: 'P7·W2' })).text, 'rejected: P7·W2: the chat holds a draft');
+// close_window is one request AIObox runs (lead P8·W20, contract with P1·W37), tested against the fake AIObox below; what AkiMCP refuses first needs no AIObox and writes no request.
 assert.match((await call('aiobox_write', { op: 'close_window', window: '123', from: '123' })).text, /is your own chat \(123\) \(self_target/);
-closeRefusal = null;
-assert.equal(JSON.parse((await call('aiobox_write', { op: 'close_window', window: 'P7·W2' })).text).closed, true);
-assert.equal(closes, 2, 'the self refusal never reached the panel');
-assert.deepEqual(closeArgs, [], 'no successor, no argument');
-closedTab = null;
-const handedOff = JSON.parse((await call('aiobox_write', { op: 'close_window', window: 'P7·W2', successor: 'abc' })).text);
-assert.deepEqual([handedOff.closed, handedOff.successor, closeArgs].map((x) => JSON.stringify(x)), [true, 'P1·W1', [{ successor: 'P1·W1' }]].map((x) => JSON.stringify(x)));
-closedTab = null;
-stayOpen = true;
-assert.match((await call('aiobox_write', { op: 'close_window', window: 'P7·W2', successor: 'abc' })).text, /P7·W2 is still open 3s after closeWindow: AIObox refused it \(successor P1·W1 closed, the same window, or a loop\); nothing was retired/);
-stayOpen = false;
 assert.match((await call('aiobox_write', { op: 'close_window', window: 'P7·W2', successor: '123' })).text, /cannot succeed itself \(same_window/);
 assert.match((await call('aiobox_write', { op: 'close_window', window: 'P7·W2', successor: 'P9·W9' })).text, /no window 'P9·W9'.*\(no_window/);
-assert.equal(closes, 4, 'a bad successor never reached the panel');
-cdp.listTargets = listBeforeClose;
+assert.equal(fs.existsSync(path.join(aioboxHome, 'requests')), false, 'a close refused by AkiMCP writes no request');
 
 // compose goes through akipanel.live.compose (v2, async), never sends, and names a page or version it cannot use.
 assert.equal((await call('aiobox_write', { op: 'compose', window: 'P7·W2' })).text, 'rejected: op=compose needs text');
@@ -695,7 +671,9 @@ assert.deepEqual(JSON.parse((await call('aiobox', { op: 'runs', since: '2026-10-
   assert.ok(mcp._registeredTools.aiobox_write.description.includes(OPEN_RULE), 'D5: aiobox_write carries it too');
   const chromeServer = new McpServer({ name: 'c', version: '1' });
   (await import('../scripts/chrome-mcp.js')).register(chromeServer);
-  assert.match(chromeServer._registeredTools.chrome_launch.description, /chat windows open only via aki__aiobox_write op=new_window or op=handoff_open/);
+  // P3 (D-L2a): chrome_launch is served without AIObox too, so its description names no aiobox tool; aiobox_write (above) and the runtime warning carry the rule.
+  assert.doesNotMatch(chromeServer._registeredTools.chrome_launch.description, /aki__aiobox/);
+  assert.match(mcp._registeredTools.aiobox_write.description, /never by eval, devtools or chrome_launch/);
   assert.doesNotMatch(GUIDE_FALLBACK, /never launches a profile/i);
 
   const profilesPath = path.join(aioboxHome, 'profiles.json');
@@ -734,6 +712,7 @@ assert.deepEqual(JSON.parse((await call('aiobox', { op: 'runs', since: '2026-10-
   db.exec('ALTER TABLE runs ADD COLUMN request TEXT; ALTER TABLE runs ADD COLUMN steps TEXT');
   const addRun = db.prepare('INSERT INTO runs (automation_id, trigger, handle, started_at, ended_at, outcome, detail, request, steps) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
   const seen = [];
+  let closeAnswer = () => ['refused', 'no_panel: no AIObox panel to ask'];
   const app = setInterval(() => {
     for (const name of fs.readdirSync(requestsPath).filter((n) => n.endsWith('.json'))) {
       const file = path.join(requestsPath, name);
@@ -743,6 +722,7 @@ assert.deepEqual(JSON.parse((await call('aiobox', { op: 'runs', since: '2026-10-
       const at = new Date().toISOString();
       const step = (s, status = 'ok') => ({ step: s, status, at, info: null });
       if (req.op === 'open_url') addRun.run('ai-open-url', 'request', null, at, at, req.args.url.includes('refuse') ? 'refused' : 'ok', req.args.url.includes('refuse') ? 'url_not_allowed: an address with a user@ before its host' : JSON.stringify({ opened: req.args.profileId ?? 'system' }), req.id, JSON.stringify([step('scope'), step('open')]));
+      else if (req.op === 'close_window') addRun.run('ai-close-window', 'request', null, at, at, ...closeAnswer(req.args), req.id, JSON.stringify([step('window'), step('save'), step('close')]));
       else if (req.op === 'new_window') addRun.run('ai-new-window', 'request', null, at, at, 'ok', JSON.stringify({ handle: 'P2·W1', targetId: 'T-NEW' }), req.id, JSON.stringify(['scope', 'launch', 'open', 'panel'].map((s) => step(s))));
       else if (req.op === 'pause_chat' || req.op === 'resume_chat') {
         if (req.args.reason === 'slow') continue; // taken, no run yet
@@ -771,6 +751,16 @@ assert.deepEqual(JSON.parse((await call('aiobox', { op: 'runs', since: '2026-10-
   assert.deepEqual([handed.window, handed.chatId, handed.like, handed.done, handed.steps.length], ['P2·W2', 'c-1', 'P1·W1', true, 8], 'like is passed on as the handle it names');
   assert.equal(seen.at(-1).args.text, 'take over: read working.md');
   assert.match(handed.next, /op=close_window window=P1·W1 successor=P2·W2/);
+  // close_window: the targetId AkiMCP resolved and the successor's live handle (or null) go to AIObox, which closes from outside the page (a hung or panel-less tab too); its refusal keeps its code.
+  closeAnswer = () => ['refused', 'not_idle: P7·W2 is answering'];
+  assert.match((await call('aiobox_write', { op: 'close_window', window: 'P7·W2' })).text, /AIObox refused close_window \(run \d+\): P7·W2 is answering \(not_idle; next: wait for it/);
+  assert.deepEqual([seen.at(-1).op, seen.at(-1).args], ['close_window', { window: 'T-GPT', successor: null }]);
+  closeAnswer = (a) => ['ok', JSON.stringify({ closed: true, handle: 'P7·W2', targetId: a.window, successor: a.successor, saved: { messages: 4 }, unsavedWhy: null })];
+  const closedOut = JSON.parse((await call('aiobox_write', { op: 'close_window', window: 'P7·W2', successor: 'abc' })).text);
+  assert.deepEqual([seen.at(-1).args, closedOut.window, closedOut.closed, closedOut.successor, closedOut.saved, closedOut.done], [{ window: 'T-GPT', successor: 'P1·W1' }, 'P7·W2', true, 'P1·W1', { messages: 4 }, true]);
+  closeAnswer = () => ['error', 'close: Target.closeTarget timed out'];
+  assert.match((await call('aiobox_write', { op: 'close_window', window: 'P7·W2', successor: 'abc' })).text, /close_window run \d+ ended error: close: Target\.closeTarget timed out/);
+  closeAnswer = () => ['refused', 'no_panel: no AIObox panel to ask'];
   assert.match((await call('aiobox_write', { op: 'handoff_open', profile: 'P2', provider: 'claude', like: 'P1·W1', text: 'over budget' })).text, /^rejected: AIObox refused handoff_open \(run \d+\): 6 new windows in the last hour \(hourly_limit; next: AIObox's hourly limit for AI handoff_open is reached/, "an old AIObox's budget reads as hourly_limit");
   assert.match((await call('aiobox_write', { op: 'handoff_open', profile: 'P2', provider: 'claude', like: 'P1·W1', text: 'over limit' })).text, /used 12 of 12 handoffs; the next frees up at 14:52 \(hourly_limit; next: .*tell the user "not opened: hourly limit"/, 'the new code and its used/limit/nextFreeAt text come through');
   assert.match((await call('aiobox_write', { op: 'handoff_open', profile: 'P2', provider: 'claude', like: 'P1·W1', text: 'old flag' })).text, /\(chat_paused; next: pick another profile or workspace with canTakeChat/, "an old AIObox's workspace_flagged reads as chat_paused");
@@ -819,15 +809,15 @@ assert.deepEqual(JSON.parse((await call('aiobox', { op: 'runs', since: '2026-10-
   assert.match((await call('aiobox_write', { op: 'open_url', url: 'https://refuse.example/' })).text, /AIObox refused open_url \(run \d+\): an address with a user@ before its host \(url_not_allowed;/);
   assert.match(inProfile.next, /close the tab it opened: op=close_window/, 'open_url in a profile says to clean up after the check');
   assert.equal(link.next, undefined, "the system's browser has no tab AkiMCP sees, so no clean-up next");
-  // A link tab op=open_url opened has no panel: close_window closes it over CDP; any other panel-less tab stays the owner's (owner 2026-10-05).
+  // A link tab op=open_url opened has no panel: close_window closes it over CDP; any other tab goes to AIObox, which refuses a panel-less one without successor (owner 2026-10-05).
   const linkTarget = live[7777].find((t) => t.id === 'T-CLAUDE');
   const [keptUrl, keptTitle, keptPage] = [linkTarget.url, linkTarget.title, pages['T-CLAUDE']];
   pages['T-CLAUDE'] = { body: '' };
   linkTarget.title = 'P7·W2·T2 · Example Domain';
   linkTarget.url = 'https://other.example/';
-  assert.match((await call('aiobox_write', { op: 'close_window', window: 'T-CLAUDE' })).text, /is no link op=open_url opened.*\(no_panel/);
+  assert.match((await call('aiobox_write', { op: 'close_window', window: 'T-CLAUDE' })).text, /AIObox refused close_window .*\(no_panel; next: pass successor/);
   linkTarget.url = 'https://example.com/a?b#c';
-  assert.match((await call('aiobox_write', { op: 'close_window', window: 'T-CLAUDE' })).text, /is no link op=open_url opened.*\(no_panel/, "a link the system's browser opened is not recorded");
+  assert.match((await call('aiobox_write', { op: 'close_window', window: 'T-CLAUDE' })).text, /AIObox refused close_window .*\(no_panel/, "a link the system's browser opened is not recorded: AIObox's to answer");
   linkTarget.url = 'http://[::1]:8443/';
   assert.match((await call('aiobox_write', { op: 'close_window', window: 'T-CLAUDE', successor: 'abc' })).text, /succeeds nothing \(no_panel/);
   const closedTabs = [];

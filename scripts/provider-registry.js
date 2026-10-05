@@ -79,7 +79,10 @@ export function mountProviders(server, prefix) {
           const hasSchema = config.inputSchema !== undefined;
           // A read tool always runs; one that touched a project with rule files appends a line naming them (D23). The rule tool itself is left as it is.
           const call = gated ? gate(handler, hasSchema) : (p === rule ? handler : withRules(handler, hasSchema));
-          const served = gated ? { ...config, inputSchema: withReceipt(config.inputSchema) } : config;
+          // Claude requires both readOnlyHint and destructiveHint on every tool (A12), and the MCP default for a missing destructiveHint is true: a read-only tool states false here, once.
+          const a = config.annotations;
+          const declared = a?.readOnlyHint === true && a.destructiveHint === undefined ? { ...config, annotations: { ...a, destructiveHint: false } } : config;
+          const served = gated ? { ...declared, inputSchema: withReceipt(declared.inputSchema) } : declared;
           const handle = target.registerTool(`${prefix}${name}`, served, async (...args) => {
             try {
               return redactResult(await call(...args));

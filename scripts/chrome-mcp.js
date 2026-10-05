@@ -61,7 +61,7 @@ export function register(server) {
       title: 'Chromium: open shared profile on a CDP port',
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
       description:
-        'Opens a shared profile clone made by AIObox (logins kept). If another process runs it, attaches to its CDP port (owned false) and opens url as a new tab; else launches stealth Chrome on --remote-debugging-port=0 (owned true). Never clones. While AIObox runs, chat windows open only via aki__aiobox_write op=new_window or op=handoff_open.',
+        'Opens a shared profile clone made by AIObox (logins kept). If another process runs it, attaches to its CDP port (owned false) and opens url as a new tab; else launches stealth Chrome on --remote-debugging-port=0 (owned true). Never clones.',
       inputSchema: {
         profile: z.string().optional().describe('Profile 14 or shared id chrome-profile-14 (default Default)'),
         browser: z.string().optional().describe('chrome, brave, or edge (default chrome)'),

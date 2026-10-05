@@ -54,7 +54,9 @@ const registered = Object.entries(server._registeredTools).map(([name, t]) => ({
 // readOnlyHint only where the tool cannot write by mechanism; every non-read-only tool also states whether it destroys.
 for (const t of registered) {
   assert.equal(typeof t.annotations?.readOnlyHint, 'boolean', `${t.name} lacks annotations.readOnlyHint`);
-  if (!t.annotations.readOnlyHint) assert.equal(typeof t.annotations.destructiveHint, 'boolean', `${t.name} is not read-only but lacks destructiveHint`);
+  // Claude requires both hints on every tool (A12); the registry fills destructiveHint:false for a read-only one.
+  assert.equal(typeof t.annotations.destructiveHint, 'boolean', `${t.name} lacks destructiveHint`);
+  if (t.annotations.readOnlyHint) assert.equal(t.annotations.destructiveHint, false, `${t.name} is read-only yet destructive`);
 }
 const readOnly = registered.filter((t) => t.annotations.readOnlyHint).map((t) => t.name);
 assert.ok(readOnly.includes('aki__agy_run'), "agy_run is read-only while 'plan' is its only allowed mode");

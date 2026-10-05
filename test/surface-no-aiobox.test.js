@@ -63,14 +63,11 @@ mock.restoreAll();
 assert.ok(!pointsAtAiobox(textOf(notified)), `notify_user failure: ${textOf(notified)}`);
 if (!notified.isError) assert.equal(JSON.parse(textOf(notified)).notified, false, 'a failed notifier never reports notified:true');
 
-// 3. Descriptions and instructions that still name a hidden aiobox tool: exactly the texts P3 rewrites (NO_SESSION_HINT, AIOBOX_STEP,
-// chrome_launch's clone note). P3 empties this list; a new entry here is a fresh dead pointer and fails the test.
-const KNOWN_P3 = ['aki__akidevrule_context', 'aki__chrome_launch', 'aki__devtools_eval', 'aki__devtools_screenshot', 'aki__devtools_targets', 'instructions'];
-const listed = (await client.listTools()).tools;
-const pointing = [['instructions', client.getInstructions() || ''], ...listed.map((t) => [t.name, t.description || ''])]
-  .filter(([, text]) => pointsAtAiobox(text)).map(([owner]) => owner).sort();
-assert.ok(pointing.every((o) => KNOWN_P3.includes(o)), `new text points at AIObox while it is hidden: ${pointing.filter((o) => !KNOWN_P3.includes(o))}`);
-console.log(`surface-no-aiobox: still pointing (P3): ${pointing.join(', ') || 'none'}`);
+// 3. No description and no server instruction names a hidden aiobox tool (P3 emptied the KNOWN_P3 list L2 left: NO_SESSION_HINT, AIOBOX_STEP, chrome_launch).
+const pointingAt = async (c) => [['instructions', c.getInstructions() || ''], ...(await c.listTools()).tools.map((t) => [t.name, t.description || ''])]
+  .filter(([, text]) => pointsAtAiobox(text)).map(([owner]) => owner);
+assert.deepEqual(await pointingAt(client), [], 'nothing served points at AIObox while it is hidden');
+const describedBare = new Map((await client.listTools()).tools.map((t) => [t.name, JSON.stringify(t)]));
 
 // 4. Installing AIObox and re-detecting adds exactly its two tools, nothing else.
 fs.mkdirSync(path.join(tmp, 'home', '.aki', 'aiobox'), { recursive: true });
@@ -78,6 +75,20 @@ redetect();
 const withAiobox = await servedNames();
 assert.deepEqual(withAiobox.filter((n) => !bare.includes(n)).sort(), AIOBOX_TOOLS);
 assert.ok(bare.every((n) => withAiobox.includes(n)), 'nothing served before is lost');
+// The handle step reaches a client that connects once AIObox is served: in the instructions and in aki__aiobox itself.
+const { AIOBOX_STEP } = await import('../scripts/rule-context-mcp.js');
+const later = createToolsServer();
+const [laterClient, laterServer] = InMemoryTransport.createLinkedPair();
+await later.connect(laterServer);
+const client2 = new Client({ name: 'surface-with-aiobox-test', version: '1' });
+await client2.connect(laterClient);
+assert.ok(client2.getInstructions().endsWith(AIOBOX_STEP), 'instructions carry the AIObox step once it is served');
+const toolsWithAiobox = (await client2.listTools()).tools;
+assert.match(toolsWithAiobox.find((t) => t.name === 'aki__aiobox').description, /handle like P2·W1\? You run in AIObox: op=whoami first/);
+// Installing AIObox changes no other tool's definition, so a client's Always allow on them holds (A12); aki__aiobox/aki__aiobox_write are new, so not in describedBare.
+assert.ok(toolsWithAiobox.filter((t) => describedBare.has(t.name)).length > 10, 'the served-with-AIObox list is compared, not the bare one again');
+for (const t of toolsWithAiobox) if (describedBare.has(t.name)) assert.equal(JSON.stringify(t), describedBare.get(t.name), `${t.name} definition changed with AIObox installed`);
+await client2.close();
 
 await client.close();
 fs.rmSync(tmp, { recursive: true, force: true });

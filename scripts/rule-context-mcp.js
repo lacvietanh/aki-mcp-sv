@@ -25,9 +25,13 @@ export const SHARED_WORK = [
 ].join('\n');
 // The gate (scripts/rule-gate.js): every tool that acts refuses a call without the current receipt.
 const RECEIPT_STEP = 'Every tool that acts (not read-only) takes receipt=<the sha256:… receipt this returns> and refuses without it, with an unknown one, or once the rules change; then call this again and pass the new receipt.';
-const AIOBOX_STEP = 'If you are named by a handle like P2·W1 (AIObox puts it at the start of your page title), you run in an AIObox window: aki__aiobox op=whoami finds your own window, then op=state lists every window and returns the rules for acting in AIObox.';
-export const RULE_CONTEXT_DESCRIPTION = `Call once before the first substantive action in every chat to load the effective default guidance. The server resolves global imports and applicable project CLAUDE.local/AGENTS context itself; do not search for or individually read bootstrap files. Pass an absolute workingPath when known. Read-only. ${RECEIPT_STEP} ${AKIRULE_STEP} ${CONDUCT_STEP} ${RESUME_STEP} ${AIOBOX_STEP}`;
-export const RULE_CONTEXT_INSTRUCTIONS = `Before the first substantive action, call aki__akidevrule_context once; pass an absolute workingPath when known. Do not discover or read bootstrap files individually. A returned receipt is the only success signal. ${RECEIPT_STEP} ${AKIRULE_STEP} ${CONDUCT_STEP} ${RESUME_STEP} ${AIOBOX_STEP}`;
+// Names aki__aiobox, so it ships only where AIObox is installed: in the instructions of a server that serves aki__aiobox (tools-server.js), and in aki__aiobox's own description (P3, D-L2a).
+// The tool description stays the same on every machine, so installing AIObox changes no existing tool definition.
+export const AIOBOX_STEP = 'If you are named by a handle like P2·W1 (AIObox puts it at the start of your page title), you run in an AIObox window: aki__aiobox op=whoami finds your own window, then op=state lists every window and returns the rules for acting in AIObox.';
+export const RULE_CONTEXT_DESCRIPTION = `Call once before the first substantive action in every chat to load the effective default guidance. The server resolves global imports and applicable project CLAUDE.local/AGENTS context itself; do not search for or individually read bootstrap files. Pass an absolute workingPath when known. Read-only. ${RECEIPT_STEP} ${AKIRULE_STEP} ${CONDUCT_STEP} ${RESUME_STEP}`;
+const BASE_INSTRUCTIONS = `Before the first substantive action, call aki__akidevrule_context once; pass an absolute workingPath when known. Do not discover or read bootstrap files individually. A returned receipt is the only success signal. ${RECEIPT_STEP} ${AKIRULE_STEP} ${CONDUCT_STEP} ${RESUME_STEP}`;
+// Read once per server (per client session): an install after boot reaches a client at its next connect.
+export const ruleContextInstructions = (aioboxServed) => (aioboxServed ? `${BASE_INSTRUCTIONS} ${AIOBOX_STEP}` : BASE_INSTRUCTIONS);
 
 // Required: the aiobox prompt and WEB_PROMPT call aki__akidevrule_context by name.
 export const provider = { id: 'rule', title: 'Rule context', required: true, register };
