@@ -56,6 +56,20 @@ async function runTests() {
   const script = process.platform === 'win32' ? args : args.slice(0, -2);
   assert.ok(script.every((a) => !a.includes('aki-pwned')), 'no script or flag contains the text');
 
+  // 4b. A failed notifier never reads as delivered (A15): linux throws with a next step, win32 beep says notified:false.
+  const enoent = Object.assign(new Error('spawn notify-send ENOENT'), { code: 'ENOENT' });
+  cp.execFile.mock.mockImplementation((file, args, options, cb) => cb(enoent));
+  await assert.rejects(notifyUser({ message: 'hi' }, 'linux'), /notify-send failed: .*\(no_notifier; next: install libnotify .*give the message in chat\)/);
+  let calls = 0;
+  cp.execFile.mock.mockImplementation((file, args, options, cb) => (calls++ === 0 ? cb(enoent) : cb(null, '', '')));
+  const beeped = await notifyUser({ message: 'hi' }, 'win32');
+  assert.equal(calls, 2, 'toast tried, then the beep');
+  assert.equal(beeped.notified, false);
+  assert.equal(beeped.fallback, 'beep');
+  assert.match(beeped.next, /give the message in chat/);
+  cp.execFile.mock.mockImplementation((file, args, options, cb) => cb(null, '', ''));
+  for (const os of ['darwin', 'win32', 'linux']) assert.equal((await notifyUser({ message: 'hi' }, os)).notified, true, `${os} success stays notified:true`);
+
   // 5. Test McpServer tool registration
   const server = new McpServer({ name: 'test-system', version: '2.0.0' });
   register(server);

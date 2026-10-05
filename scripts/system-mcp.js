@@ -23,28 +23,36 @@ const WINDOWS_TOAST = `
 `.replace(/\n\s+/g, ' ');
 
 // Title and message travel as data on every platform (script arguments, environment, argv), never inside a script or command line.
-export async function notifyUser({ message, title = 'Aki MCP', sound = true } = {}) {
+// notified is true only when a banner was shown: a beep alone or a missing notifier must not read as delivered (A15).
+export async function notifyUser({ message, title = 'Aki MCP', sound = true } = {}, platform = process.platform) {
   if (!message) throw new Error('message is required');
   const text = String(message);
   const heading = String(title);
-  const result = { notified: true, platform: process.platform === 'darwin' || process.platform === 'win32' ? process.platform : 'linux', title: heading, message: text };
+  const result = { notified: true, platform: platform === 'darwin' || platform === 'win32' ? platform : 'linux', title: heading, message: text };
 
-  if (process.platform === 'darwin') {
+  if (platform === 'darwin') {
     const display = `display notification (item 1 of argv) with title (item 2 of argv)${sound ? ' sound name "Glass"' : ''}`;
     await run('osascript', ['-e', 'on run argv', '-e', display, '-e', 'end run', '--', text, heading]);
     return result;
   }
 
-  if (process.platform === 'win32') {
+  if (platform === 'win32') {
     const env = { ...process.env, AKI_NOTIFY_TITLE: heading, AKI_NOTIFY_MESSAGE: text };
-    await run('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', WINDOWS_TOAST], { env }).catch(() => {
-      // Fallback to simpler balloon/beep if Toast API fails on older Windows
-      return run('powershell', ['-NoProfile', '-Command', '[console]::beep(800,200)']);
-    });
-    return result;
+    try {
+      await run('powershell', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', WINDOWS_TOAST], { env });
+      return result;
+    } catch {
+      // Toast API missing on older Windows: a beep still reaches the user, but no text does.
+      await run('powershell', ['-NoProfile', '-Command', '[console]::beep(800,200)']);
+      return { ...result, notified: false, fallback: 'beep', next: 'only a beep sounded (Windows Toast failed): give the message in chat' };
+    }
   }
 
-  await run('notify-send', ['--', heading, text]).catch(() => {});
+  try {
+    await run('notify-send', ['--', heading, text]);
+  } catch (e) {
+    throw new Error(`notify-send failed: ${e.message} (no_notifier; next: install libnotify (notify-send) or give the message in chat)`);
+  }
   return result;
 }
 

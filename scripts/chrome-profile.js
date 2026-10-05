@@ -160,7 +160,10 @@ export function resolveSharedProfile(profile = 'Default', browser) {
   const id = canonical ? raw : `${key}-${slug(raw)}`;
   const dir = path.join(profilesRoot(), id);
   if (!fs.existsSync(path.join(dir, 'Local State'))) {
-    throw new Error(`Profile "${id}" not found in ${profilesRoot()}. Create it in AIObox first; AkiMCP opens shared profiles but no longer clones them.`);
+    // States the fact and the next step that works without AIObox; no install pitch (REQ-15 H1).
+    const shared = listSharedProfiles();
+    const open = shared.length ? `open one of ${shared.join(', ')}, or ` : '';
+    throw new Error(`Profile "${id}" not found in ${profilesRoot()}. Create it in AIObox first; AkiMCP opens shared profiles but no longer clones them. (no_profile; next: ${open}${ATTACH_PATH})`);
   }
   return { id, dir, browser: key };
 }
@@ -293,8 +296,10 @@ export async function resolvePort(explicitPort) {
   return p;
 }
 
+// The path that needs no shared profile: also the next step when chrome_launch finds none.
+const ATTACH_PATH = 'attach to a window already running with a remote-debugging port: find the port with aki__port_status (a Chrome process listening on 127.0.0.1), run aki__devtools_targets on it, match the tab by title or url, then pass that port and targetId explicitly.';
 export const NO_CDP_PORT_MESSAGE =
-  'No CDP port specified and no active Chrome session. Open a shared profile with aki__chrome_launch, or attach to a window already running with a remote-debugging port: find the port with aki__port_status (a Chrome process listening on 127.0.0.1), run aki__devtools_targets on it, match the tab by title or url, then pass that port and targetId explicitly.';
+  `No CDP port specified and no active Chrome session. Open a shared profile with aki__chrome_launch, or ${ATTACH_PATH}`;
 
 async function openUrl(port, url) {
   if (!url) return null;

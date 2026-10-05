@@ -96,6 +96,9 @@ async function runTests() {
 
   // Missing clone: pointed at AIObox, nothing created.
   await assert.rejects(launchChrome('Profile 99'), /not found .*Create it in AIObox/);
+  // The miss names a code and a next step that works without AIObox: the clones on disk, then attach by port (REQ-15 H1, no pitch).
+  await assert.rejects(launchChrome('Profile 99'), (e) => /\(no_profile; next: open one of chrome-profile-14, or attach .*aki__port_status.*\)$/.test(e.message)
+    && !/aki__aiobox|aiobox\.app|https?:/i.test(e.message));
   assert.equal(exists(path.join(root, 'chrome-profile-99')), false);
 
   // The rest drives Chrome's POSIX lock (a SingletonLock symlink) and a shebang script as the browser; Windows has neither, so its run ends here.
