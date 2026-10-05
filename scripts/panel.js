@@ -8,6 +8,7 @@ import path from 'node:path';
 import { renderPanel, AGY_SERVER_KEY } from './config-page.js';
 import { getOrIssueAccessToken, rotateAccessToken, rotatePassphrase, loadOrCreatePassphrase, listClients, removeClient } from './oauth.js';
 import { logSecurity, readSecurityLog } from './security-log.js';
+import { LOG_DEFAULTS, loadLogSettings, normalizeLogSettings } from './tool-call-log.js';
 import { listCallers } from './callers.js';
 import { loadAllowlist, loadAllowlistDirs, readSettings, writeSettings, DEFAULT_ALLOWLIST } from './allowlist.js';
 import { getRoots } from './roots.js';
@@ -275,6 +276,13 @@ export const ROUTES = {
     return listProviders();
   },
   // AIObox reads clients[] and callers[] here with x-panel-token (docs/plan/IMPORTANT-akimcp-aiobox-contract.md).
+  'GET /api/log': async () => ({ settings: loadLogSettings(), defaults: LOG_DEFAULTS }),
+  'POST /api/log': async (body) => {
+    const settings = readSettings();
+    settings.log = normalizeLogSettings(body.log, { strict: true });
+    writeSettings(settings);
+    return { ok: true, message: 'saved — the next logged call uses it; past lines keep their shape' };
+  },
   'GET /api/security': async () => ({ limits: readLimits(), defaults: LIMIT_DEFAULTS, blocked: failures.blockedList(), clients: listClients(), callers: listCallers(), log: readSecurityLog() }),
   'POST /api/clients/remove': async (body) => ({ ok: true, message: removeClient(typeof body.clientId === 'string' ? body.clientId : '') }),
   'POST /api/rate-limit': async (body) => {

@@ -5,11 +5,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { datedLogFiles } from './tool-call-log.js';
 
 const WRITE_TOOL = 'aki__aiobox_write';
 const ORIENT_OPS = new Set(['state', 'whoami']);
 const REFUSAL = /\((\w+); next: /;
 const pct = (n, d) => (d ? `${Math.round((n / d) * 1000) / 10}%` : '-');
+const errText = (e) => (typeof e.error === 'string' ? e.error : typeof e.errorCode === 'string' ? e.errorCode : '');
 
 export function report(entries, { aioboxPorts = new Set(), version } = {}) {
   const aiobox = entries.filter((e) => e.tool === 'aki__aiobox' || e.tool === WRITE_TOOL);
@@ -25,11 +27,11 @@ export function report(entries, { aioboxPorts = new Set(), version } = {}) {
     if (e.tool === 'aki__aiobox' && ORIENT_OPS.has(e.op)) oriented.add(e.client);
     else if (e.tool === WRITE_TOOL && !oriented.has(e.client)) unoriented += 1;
   }
-  const stale = entries.filter((e) => typeof e.error === 'string' && e.error.includes('-32602'));
+  const stale = entries.filter((e) => errText(e).includes('-32602'));
   const older = version ? entries.filter((e) => e.version && e.version !== version) : [];
   const codes = {};
   for (const e of entries) {
-    const code = typeof e.error === 'string' ? REFUSAL.exec(e.error)?.[1] : null;
+    const code = typeof e.errorCode === 'string' && e.errorCode !== '-32602' ? e.errorCode : REFUSAL.exec(e.error ?? '')?.[1];
     if (code) codes[code] = (codes[code] || 0) + 1;
   }
   const typed = writes.filter((e) => e.op !== 'eval').concat(aiobox.filter((e) => e.tool === 'aki__aiobox'));
@@ -48,7 +50,7 @@ export function report(entries, { aioboxPorts = new Set(), version } = {}) {
 }
 
 export function readEntries(file, { sinceMs } = {}) {
-  const files = [`${file}.1`, file].filter((f) => fs.existsSync(f));
+  const files = [...datedLogFiles(path.dirname(file)), `${file}.1`, file].filter((f) => fs.existsSync(f));
   return files.flatMap((f) => fs.readFileSync(f, 'utf8').split('\n')).flatMap((line) => {
     if (!line.trim()) return [];
     try {
@@ -81,7 +83,7 @@ if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
   }
   const file = args.find((a, i) => !a.startsWith('--') && (daysAt === -1 || i !== daysAt + 1)) || TOOL_CALLS_PATH;
   if (!fs.existsSync(file)) {
-    console.error(`no call log at ${file} yet: it is written once an AI calls aki__aiobox, aki__aiobox_write, aki__chrome_* or aki__devtools_* on AkiMCP ${VERSION}+`);
+    console.error(`no call log at ${file} yet: it is written once an AI calls a tool on AkiMCP ${VERSION}+`);
     process.exit(1);
   }
   const entries = readEntries(file, { sinceMs: days ? Date.now() - days * 86_400_000 : undefined });

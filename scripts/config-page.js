@@ -494,6 +494,22 @@ ${field('Widen command', WIDEN_SNIPPET)}
 </div>
 </section>
 
+<section id="s9"><h2>9 · Call log</h2>
+<p class="helptext">Every tool call is written to <span class="mono">${esc(path.join(userDir, 'tool-calls.jsonl'))}</span> as one JSON line: when, which tool and op, ok or not, how long, which client. No prompt, expression or argument text is ever written.</p>
+<p class="helptext"><strong>Basic</strong> (the default) keeps a short error code; <strong>Detail</strong> adds the full error text, the chat it acted on (from), the macro it ran and a hash of eval expressions. Keep days is how long past day-files stay before being deleted; the MB cap rolls the current file over to a dated one when it grows.</p>
+<label class="chk"><input type="checkbox" data-log="enabled"> Logging on</label>
+<div class="limits">
+  <label>Detail level<select data-log="level"><option value="basic">basic — enough</option><option value="detail">detail</option></select></label>
+  <label>Keep logs for (days)<input type="number" min="1" data-log="days"></label>
+  <label>Current file cap (MB)<input type="number" min="1" data-log="maxMB"></label>
+</div>
+<div class="acts">
+  <button class="primary" data-act="saveLog">Save log settings</button>
+  <button data-act="resetLog">Reset to defaults</button>
+  <span class="msg" id="msgLogSettings"></span>
+</div>
+</section>
+
 <footer>
   <div class="foot-grid">
     <div class="foot-brand">

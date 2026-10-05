@@ -460,12 +460,33 @@ async function loadProviders() {
   renderProviders(await api('GET', '/api/providers'));
 }
 
+let logDefaults = {};
+const logInputs = () => [...document.querySelectorAll('[data-log]')];
+function fillLog(s) {
+  for (const el of logInputs()) {
+    const v = s[el.dataset.log];
+    if (el.type === 'checkbox') el.checked = v; else el.value = v;
+  }
+}
+function readLogInputs() {
+  const s = {};
+  for (const el of logInputs()) s[el.dataset.log] = el.type === 'checkbox' ? el.checked : el.type === 'number' ? Number(el.value) : el.value;
+  return s;
+}
+async function loadLog() {
+  const { settings, defaults } = await api('GET', '/api/log');
+  logDefaults = defaults;
+  fillLog(settings);
+}
+
 const ACTIONS = {
   redetectProviders: (btn) => act(btn, 'msgProviders', async () => {
     renderProviders(await api('POST', '/api/providers', { redetect: true }));
     return 'detected again';
   }),
   saveLimits: (btn) => act(btn, 'msgLimits', async () => (await api('POST', '/api/rate-limit', { limits: readLimitInputs() })).message),
+  saveLog: (btn) => act(btn, 'msgLogSettings', async () => (await api('POST', '/api/log', { log: readLogInputs() })).message),
+  resetLog: () => { fillLog(logDefaults); say('msgLogSettings', 'defaults filled in — press Save to apply', true); },
   resetLimits: () => { fillLimits(limitDefaults); say('msgLimits', 'defaults filled in — press Save to apply', true); },
   refreshBlocked: (btn) => act(btn, 'msgBlocked', async () => { await loadSecurity(); return 'refreshed'; }),
   refreshLog: (btn) => act(btn, 'msgLog', async () => { await loadSecurity(); return 'refreshed'; }),
@@ -603,4 +624,5 @@ loadState().catch((e) => ['msgPaths', 'msgAllow', 'msgTrusted', 'msgRules'].forE
 loadTailscale().then((m) => say('msgTs', m, m.startsWith('ready'))).catch((e) => say('msgTs', e.message, false));
 loadSecurity().catch((e) => say('msgLimits', e.message, false));
 loadProviders().catch((e) => say('msgProviders', e.message, false));
+loadLog().catch((e) => say('msgLogSettings', e.message, false));
 loadPostmanDaemon().catch((e) => { document.getElementById('msgPmDaemon').textContent = e.message; });
