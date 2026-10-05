@@ -31,6 +31,23 @@ Signature: `npm start` is healthy, funnel status says "on", but client reports "
 - **Prerequisites over fallbacks**: Windows runs Unix binaries via Git for Windows (`grep`, `find`). Do not add pure-JS reimplementations.
 - **Permanently removed**: `scripts/chrome.js` stays deleted (Chrome 136 blocks remote debugging on default profile) and native folder picker stays removed.
 
+## Stable core — AIObox never drives an AkiMCP change (ABSOLUTE)
+
+Owner 2026-10-05, verbatim (full text: aiobox `docs/arch/akimcp-boundary.md` § 0a): "tôi k thích akimcp phải thay đổi chỉ vì aiobox. cần nó ổn định bất kể aiobox phát triển thế nào đi nữa. muốn tinh gọn hiệu quả nhất chỉ 1 lần v3 này thôi, rồi hanj chế thay đổi nó." · "chứ tôi thấy động tí là edit akimcp là không đúng nguyên tắc".
+
+- **3.x is the last reshaping for AIObox.** After it, AkiMCP changes only for a core need or security. An edit here whose reason is an AIObox feature is refused: the feature belongs in AIObox (code, `akipanel`, its guide).
+- **AIObox internals live only in the AIObox adapter tool.** No other file names AIObox ops, handles, files or rules (funnel and bootstrap lines excepted, aiobox `docs/arch/akimcp-boundary.md` BR-1, BR-9). The adapter forwards generically, so AIObox can add ops without an AkiMCP release; the target is one tool (today two).
+
+## Native command, then guide, then tool
+
+Pick the first rung that works; a higher rung needs the lower one to have failed, with the evidence in the PR.
+
+1. **Native command.** The OS, the browser or the app already exposes the control (`osascript`/System Events, CDP `Browser.setWindowBounds`, an app's global shortcut, a CLI). Use it through the generic tools already served (`run_cmd`, `devtools_eval`, `task_start`). No code.
+2. **Guide line.** The native path works but an AI does not find it, or calls it wrong. Write one line where that AI already reads (`docs/feat/tools.md`, a tool's result `next`, or the AIObox guide for AIObox). No new tool.
+3. **Tool or op.** Only when the job is needed mid-task AND the cheapest native path costs 3+ calls or keeps failing in the log (aiobox `akimcp-boundary.md` T5′), AND it is generic: useful without AIObox. AIObox-only jobs become AIObox ops, never AkiMCP code.
+
+Example (2026-10-05): moving the AIObox window took six probes because no rung-2 line existed; the fix is a guide line pointing at the F1 shortcut and `Browser.setWindowBounds`, not a new tool.
+
 ## Session lifecycle
 
 - **Single shared session**: `scripts/streamable-bridge.js` maintains exactly **one** internal session for the process, held over an in-process `InMemoryTransport` pair (no child process, no SSE). External clients multiplex onto it via JSON-RPC ID remapping; `initialize` is answered locally from cache.
