@@ -139,6 +139,11 @@ const covering = (await client.callTool({ name: 'aki__akidevrule_context', argum
 assert.ok(!newReceipt(await write(path.join(r1, 'e.txt'), covering)), 'a receipt already covering the path runs at once');
 assert.ok(fs.existsSync(path.join(r1, 'e.txt')));
 
+const readR1 = await client.callTool({ name: 'aki__read_text_file', arguments: { path: path.join(r1, 'src', 'a.txt') } });
+assert.equal(readR1.content.length, 2, 'a read tool always runs and appends one line');
+assert.equal(readR1.content[0].text, 'w');
+assert.match(readR1.content[1].text, /^Rules for this path \(same rank as aki__akidevrule_context; .*AGENTS\.md \(sha256 [a-f0-9]{12}\).*Not in your context\? Read them and follow them\.$/);
+
 assert.deepEqual(await rulesFor([path.join(path.dirname(tmp), 'elsewhere', 'x.txt')], [r1]), [], 'a path outside every root has no rules');
 assert.deepEqual(await rulesFor([], [tmp]), [], 'no path, no rules');
 assert.deepEqual(await rulesFor([path.join(r1, 'src', 'new', 'deep.txt')], [tmp]), [path.join(tmp, 'CLAUDE.md'), path.join(r1, 'AGENTS.md')], 'a path not created yet walks up from its nearest folder, top-down');

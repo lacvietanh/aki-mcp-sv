@@ -88,3 +88,13 @@ export async function rulesBlock(files) {
   }
   return `Project rules for the path this call touches (${LABEL}):\n\n${parts.join('\n\n')}`;
 }
+
+// One line a read tool appends: which rule files govern the path, by sha, without their text.
+export async function rulesLine(files) {
+  const listed = [];
+  for (const file of files) {
+    try { listed.push(`${file} (sha256 ${shortSha(await fs.readFile(file))})`); } catch { /* vanished */ }
+  }
+  if (!listed.length) return null;
+  return `Rules for this path (same rank as aki__akidevrule_context; ${LABEL}): ${listed.join(', ')}. Not in your context? Read them and follow them.`;
+}

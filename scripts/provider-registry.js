@@ -2,7 +2,7 @@
 // Every provider is always registered, so warmToolsServer still catches a schema error in any of them at boot; one that is not installed or is switched off is only disabled, which hides it from tools/list and makes a call fail.
 import { readSettings, writeSettings } from './allowlist.js';
 import { redactResult, redactError } from './roots.js';
-import { isGated, withReceipt, gate } from './rule-gate.js';
+import { isGated, withReceipt, gate, withRules } from './rule-gate.js';
 import { provider as rule } from './rule-context-mcp.js';
 import { provider as shell } from './shell-mcp.js';
 import { provider as agy } from './agy-mcp.js';
@@ -76,7 +76,9 @@ export function mountProviders(server, prefix) {
         if (prop !== 'registerTool') return Reflect.get(target, prop, receiver);
         return (name, config, handler) => {
           const gated = isGated(config);
-          const call = gated ? gate(handler, config.inputSchema !== undefined) : handler;
+          const hasSchema = config.inputSchema !== undefined;
+          // A read tool always runs; one that touched a project with rule files appends a line naming them (D23). The rule tool itself is left as it is.
+          const call = gated ? gate(handler, hasSchema) : (p === rule ? handler : withRules(handler, hasSchema));
           const served = gated ? { ...config, inputSchema: withReceipt(config.inputSchema) } : config;
           const handle = target.registerTool(`${prefix}${name}`, served, async (...args) => {
             try {

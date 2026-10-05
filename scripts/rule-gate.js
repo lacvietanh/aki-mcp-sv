@@ -1,9 +1,9 @@
 // Every tool that acts refuses a call without the receipt of the rules in force (docs/plan/rule-receipt-gate.md): an AI that skipped aki__akidevrule_context cannot write until it loads the rules. A receipt proves the rules were issued, not that they are still in the AI's context: after a compaction it still passes, so the refusal text tells the AI to reload without knownReceipt.
-// A gated call that touches a project whose rule files the receipt does not cover is not run: the result carries those rules and a new receipt (D23 in docs/plan/akimcp-tool-refactor.md).
+// A gated call that touches a project whose rule files the receipt does not cover is not run: the result carries those rules and a new receipt (D23 in docs/plan/akimcp-tool-refactor.md). Read tools always run and append one line naming the rule files.
 // A receipt counts only when this server issued it (aki__akidevrule_context records it here, in memory) and the same call made now still returns it: a changed rule file changes the receipt, so the old one is refused.
 import { z } from 'zod';
 import { assembleRuleContext } from './rule-context.js';
-import { pathsOf, rulesFor, rulesBlock } from './project-rules.js';
+import { pathsOf, rulesFor, rulesBlock, rulesLine } from './project-rules.js';
 
 export const RECEIPT_ARG = 'receipt';
 const RECEIPT_RE = /^sha256:[a-f0-9]{64}$/;
@@ -93,5 +93,19 @@ export function gate(handler, hadSchema) {
       ] };
     }
     return hadSchema ? handler(own, ...rest) : handler(...rest);
+  };
+}
+
+// Wraps a read tool's handler: it always runs; when it touched a project with rule files, one line naming them is appended (structuredContent stays as the tool made it).
+export function withRules(handler, hadSchema) {
+  return async (...args) => {
+    const result = await handler(...args);
+    if (!hadSchema || !Array.isArray(result?.content) || result.isError) return result;
+    try {
+      const line = await rulesLine(await rulesFor(pathsOf(args[0])));
+      return line ? { ...result, content: [...result.content, { type: 'text', text: line }] } : result;
+    } catch {
+      return result; // a rule lookup never breaks a read
+    }
   };
 }
