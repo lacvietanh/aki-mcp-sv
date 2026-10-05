@@ -12,11 +12,21 @@ export const receiptSchema = z.string().optional().describe('required: the sha25
 
 let assemble = assembleRuleContext;
 const issued = new Map(); // receipt → { mode, workingPath, extraFiles }, oldest first
+// S9: calls made together with the same receipt into a project it does not cover each held the whole rule file; the first result carries it, the others for SHOWN_MS only point at it.
+const shown = new Map(); // `${receipt}|${rule file sha256}` → ms its text went out in a result, oldest first
+const SHOWN_MS = 10_000;
+let now = () => Date.now();
 
 // Tests swap the assembler; the issued list starts empty again.
 export function setAssembler(fn) {
   assemble = fn || assembleRuleContext;
   issued.clear();
+  shown.clear();
+}
+
+// Tests move the clock the shown window is measured on.
+export function setNow(fn) {
+  now = fn || (() => Date.now());
 }
 
 // Called by aki__akidevrule_context with the receipt it returned and the input that produced it, so a check can make the same call again.
@@ -56,7 +66,14 @@ async function uncovered(own, entry, current) {
   const known = new Set((current.sources || []).map((s) => s.path));
   const knownSha = new Set((current.sources || []).map((s) => s.sha256).filter(Boolean));
   const missing = [];
-  for (const f of await rulesFor(pathsOf(own))) if (!known.has(f) && !knownSha.has(await contentSha(f))) missing.push(f);
+  const shaOf = new Map();
+  for (const f of await rulesFor(pathsOf(own))) {
+    if (known.has(f)) continue;
+    const sha = await contentSha(f);
+    if (knownSha.has(sha)) continue;
+    missing.push(f);
+    if (sha) shaOf.set(f, sha);
+  }
   if (!missing.length) return null;
   const extraFiles = [...new Set([...entry.extraFiles, ...missing])].sort();
   let next;
@@ -64,7 +81,22 @@ async function uncovered(own, entry, current) {
   const paths = (next?.sources || []).map((s) => s.path);
   if (!next?.receipt || !missing.every((f) => paths.includes(f))) return null; // could not load them (size limit, unreadable): run rather than loop
   recordIssued(next.receipt, { mode: entry.mode, workingPath: entry.workingPath, extraFiles });
-  return { receipt: next.receipt, files: paths.filter((p) => !known.has(p)) };
+  return { receipt: next.receipt, files: paths.filter((p) => !known.has(p)), shaOf };
+}
+
+// Splits the files to show into those no result showed with this receipt in the last SHOWN_MS (marked shown now) and those one just did. Synchronous, so of calls made together the first to get here shows them.
+function claimShown(receipt, files, shaOf) {
+  const t = now();
+  const fresh = [];
+  const recent = [];
+  for (const f of files) {
+    const key = shaOf.has(f) ? `${receipt}|${shaOf.get(f)}` : null;
+    if (key && t - (shown.get(key) ?? -Infinity) < SHOWN_MS) { recent.push(f); continue; }
+    fresh.push(f);
+    if (key) { shown.delete(key); shown.set(key, t); }
+  }
+  while (shown.size > MAX_ISSUED) shown.delete(shown.keys().next().value);
+  return { fresh, recent };
 }
 
 // A tool is gated unless it declares it cannot write (readOnlyHint true, the same flag clients use to skip confirmation).
@@ -89,9 +121,13 @@ export function gate(handler, hadSchema) {
     if (refused) return { content: [{ type: 'text', text: `${refused.code}: ${refused.message}` }], isError: true };
     const pending = hadSchema ? await uncovered(own, entry, current) : null;
     if (pending) {
+      const { fresh, recent } = claimShown(receipt, pending.files, pending.shaOf);
+      const again = `Call again with receipt=${pending.receipt}.`;
+      const elsewhere = recent.length ? `${recent.map((f) => `${f} (sha256 ${pending.shaOf.get(f).slice(0, 12)})`).join(', ')} went with another call a moment ago; if no result in this turn shows ${recent.length > 1 ? 'them' : 'it'}, read ${recent.length > 1 ? 'them' : 'it'} with aki__read_text_file first. ` : '';
+      if (!fresh.length) return { content: [{ type: 'text', text: `Not run yet: the rules for this path, ${elsewhere}${again}` }] };
       return { content: [
-        { type: 'text', text: await rulesBlock(pending.files) },
-        { type: 'text', text: `Not run yet: rules for this path are above. Call again with receipt=${pending.receipt}.` },
+        { type: 'text', text: await rulesBlock(fresh) },
+        { type: 'text', text: `Not run yet: rules for this path are above. ${elsewhere}${again}` },
       ] };
     }
     return hadSchema ? handler(own, ...rest) : handler(...rest);

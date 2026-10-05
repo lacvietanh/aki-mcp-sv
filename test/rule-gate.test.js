@@ -12,7 +12,7 @@ fs.mkdirSync(path.join(tmp, 'data'));
 fs.writeFileSync(path.join(tmp, 'data', 'setting.json'), JSON.stringify({ folders: [tmp] }));
 process.env.AKI_MCP_DATA_DIR = path.join(tmp, 'data');
 const gateMod = await import('../scripts/rule-gate.js');
-const { checkReceipt, recordIssued, setAssembler, isGated, withReceipt, gate } = gateMod;
+const { checkReceipt, recordIssued, setAssembler, setNow, isGated, withReceipt, gate } = gateMod;
 
 // The check alone, against a fake assembler whose receipt the test controls.
 const A = `sha256:${'a'.repeat(64)}`;
@@ -161,6 +161,36 @@ const coveringR1 = (await client.callTool({ name: 'aki__akidevrule_context', arg
 const wtWrite = await write(path.join(wt, 'src', 'y.txt'), coveringR1);
 assert.ok(!newReceipt(wtWrite), `a receipt covering the repo's CLAUDE.md covers the worktree's copy: ${text(wtWrite)}`);
 assert.ok(fs.existsSync(path.join(wt, 'src', 'y.txt')));
+// S9: calls made together with one receipt into a project it does not cover: one result carries the rule file, the others point at it with the same new receipt.
+const r3 = path.join(tmp, 'r3');
+fs.mkdirSync(path.join(r3, 'deep'), { recursive: true });
+fs.writeFileSync(path.join(r3, 'CLAUDE.md'), '# r3 rule\n');
+fs.writeFileSync(path.join(r3, 'deep', 'AGENTS.md'), '# r3 deep rule\n');
+const together = await Promise.all(['a', 'b', 'c'].map((n) => write(path.join(r3, `${n}.txt`), coveringR1)));
+const withBlock = together.filter((r) => text(r).includes('<!-- source:'));
+assert.equal(withBlock.length, 1, `one of three calls made together carries the rule file: ${together.map(text).join('\n---\n')}`);
+assert.match(text(withBlock[0]), /# r3 rule/);
+const pointers = together.filter((r) => r !== withBlock[0]);
+const rec3 = newReceipt(withBlock[0]);
+assert.ok(rec3);
+for (const r of pointers) {
+  assert.equal(r.content.length, 1);
+  assert.doesNotMatch(text(r), /# r3 rule/);
+  assert.match(text(r), new RegExp(`^Not run yet: the rules for this path, ${path.join(r3, 'CLAUDE.md').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(sha256 [a-f0-9]{12}\\) went with another call a moment ago; if no result in this turn shows it, read it with aki__read_text_file first\\. Call again with receipt=`));
+  assert.equal(newReceipt(r), rec3, 'a pointer names the same new receipt as the result with the rules');
+}
+for (const n of ['a', 'b', 'c']) assert.ok(!fs.existsSync(path.join(r3, `${n}.txt`)), 'none of them ran');
+const mixed = await write(path.join(r3, 'deep', 'x.txt'), coveringR1);
+assert.match(mixed.content[0].text, /# r3 deep rule/, 'a rule file not shown yet is shown');
+assert.doesNotMatch(mixed.content[0].text, /# r3 rule\n/, 'the one just shown is not repeated');
+assert.match(mixed.content[1].text, /^Not run yet: rules for this path are above\. .*CLAUDE\.md \(sha256 [a-f0-9]{12}\) went with another call a moment ago; .*Call again with receipt=sha256:/);
+setNow(() => Date.now() + 11_000);
+assert.match(text(await write(path.join(r3, 'a.txt'), coveringR1)), /# r3 rule/, 'after the shown window the rule file is shown again');
+setNow(null);
+for (const n of ['a', 'b', 'c']) {
+  const r = await write(path.join(r3, `${n}.txt`), rec3);
+  assert.ok(!r.isError && !newReceipt(r), `the new receipt runs every one of them: ${text(r)}`);
+}
 const big = path.join(tmp, 'big', 'CLAUDE.md');
 fs.mkdirSync(path.dirname(big));
 fs.writeFileSync(big, `# big\n${'x'.repeat(40 * 1024)}\n`);
