@@ -800,6 +800,28 @@ assert.deepEqual(JSON.parse((await call('aiobox', { op: 'runs', since: '2026-10-
   const inProfile = JSON.parse((await call('aiobox_write', { op: 'open_url', url: 'http://[::1]:8443/', profile: 'P2' })).text);
   assert.deepEqual([inProfile.profileId, inProfile.opened, seen.at(-1).args], ['chrome-profile-7', 'chrome-profile-7', { url: 'http://[::1]:8443/', profileId: 'chrome-profile-7' }], 'a profile even when not signed in to anything: no provider to check');
   assert.match((await call('aiobox_write', { op: 'open_url', url: 'https://refuse.example/' })).text, /AIObox refused open_url \(run \d+\): an address with a user@ before its host \(url_not_allowed;/);
+  assert.match(link.next, /close the tab it opened: op=close_window/, 'open_url says to clean up after the check');
+  // A link tab op=open_url opened has no panel: close_window closes it over CDP; any other panel-less tab stays the owner's (owner 2026-10-05).
+  const linkTarget = live[7777].find((t) => t.id === 'T-CLAUDE');
+  const [keptUrl, keptTitle, keptPage] = [linkTarget.url, linkTarget.title, pages['T-CLAUDE']];
+  pages['T-CLAUDE'] = { body: '' };
+  linkTarget.title = 'P7·W2·T2 · Example Domain';
+  linkTarget.url = 'https://other.example/';
+  assert.match((await call('aiobox_write', { op: 'close_window', window: 'T-CLAUDE' })).text, /is no link op=open_url opened.*\(no_panel/);
+  linkTarget.url = 'https://example.com/a?b#c';
+  assert.match((await call('aiobox_write', { op: 'close_window', window: 'T-CLAUDE', successor: 'abc' })).text, /succeeds nothing \(no_panel/);
+  const closedTabs = [];
+  const realCloseTab = cdp.closeTab;
+  cdp.closeTab = async ({ port, targetId }) => {
+    closedTabs.push(targetId);
+    live[port] = live[port].filter((t) => t.id !== targetId);
+  };
+  const linkClosed = JSON.parse((await call('aiobox_write', { op: 'close_window', window: 'T-CLAUDE' })).text);
+  assert.deepEqual([linkClosed.closed, linkClosed.link, closedTabs], [true, 'https://example.com/a?b#c', ['T-CLAUDE']]);
+  live[7777].push(linkTarget);
+  assert.match((await call('aiobox_write', { op: 'close_window', window: 'T-CLAUDE' })).text, /\(no_panel/, 'a closed link is forgotten');
+  cdp.closeTab = realCloseTab;
+  [linkTarget.url, linkTarget.title, pages['T-CLAUDE']] = [keptUrl, keptTitle, keptPage];
 
   // A chat no tab shows any more: op=read returns the copy AIObox saved in archive/<chatId>.json (quota handoff, close).
   const archivePath = path.join(aioboxHome, 'archive');
