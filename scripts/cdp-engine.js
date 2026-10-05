@@ -48,8 +48,43 @@ async function openClient(opts) {
   return client;
 }
 
-export async function listTargets({ host = DEFAULT_HOST, port } = {}) {
-  return CDP.List({ host, port });
+// A client gives up on a tool call after about a minute and then gets nothing (S7, 2026-10-05: 24 logged calls ended at ~60 000 ms), and a frozen renderer never answers at all. So every call here ends within CALL_BOUND_MS from its start, finding the target and connecting included, and says so with code timeout and the step that is safe next.
+export const CALL_BOUND_MS = 50_000;
+function timeoutError(message, next) {
+  const e = new Error(`${message}; code timeout; next: ${next}`);
+  e.code = 'timeout';
+  e.timedOut = true;
+  return e;
+}
+// Runs work(adopt) against one bound: a client adopted after the bound is closed at once, the one adopted in time is closed when the call ends.
+async function bounded(timeoutMs, onTimeout, work) {
+  let timer;
+  let client = null;
+  let over = false;
+  const adopt = async (c) => {
+    if (over) {
+      await c.close().catch(() => {});
+      throw onTimeout();
+    }
+    client = c;
+    return c;
+  };
+  const expired = new Promise((_, reject) => {
+    timer = setTimeout(() => { over = true; reject(onTimeout()); }, timeoutMs);
+  });
+  const running = work(adopt);
+  running.catch(() => {}); // lost the race: its late failure has no one left to tell
+  try {
+    return await Promise.race([running, expired]);
+  } finally {
+    clearTimeout(timer);
+    if (client) await client.close().catch(() => {});
+  }
+}
+const endpointTimeout = (host, port, timeoutMs) => () => timeoutError(`the CDP endpoint ${host}:${port} did not answer within ${timeoutMs / 1000}s`, 'check the app is running with aki__port_status, then try once more');
+
+export async function listTargets({ host = DEFAULT_HOST, port, timeoutMs = CALL_BOUND_MS } = {}) {
+  return bounded(timeoutMs, endpointTimeout(host, port, timeoutMs), () => CDP.List({ host, port }));
 }
 
 // Pick a page target. `filter` may be a RegExp/substring tested against "<url> <title>", or a predicate function; default = the first page target.
@@ -64,32 +99,18 @@ function selectTarget(targets, filter) {
   return pages.find(test) || null;
 }
 
-// A frozen renderer never answers Runtime.evaluate, and without a bound the tool call hangs until the bridge's 10-minute timeout. Every evaluate is bounded here, once, for all callers.
-const EVALUATE_TIMEOUT_MS = 60_000;
-
 // Evaluate JS in a target and return the serialized result — or throw with the page-side message on a thrown exception. `target` may be a target object (from listTargets/findTarget), a target id string, or omitted with a `filter` to locate one.
 export async function evaluate({
   host = DEFAULT_HOST, port, target, filter, expression,
-  awaitPromise = true, returnByValue = true, userGesture = true, timeoutMs = EVALUATE_TIMEOUT_MS,
+  awaitPromise = true, returnByValue = true, userGesture = true, timeoutMs = CALL_BOUND_MS,
 } = {}) {
   if (!expression) throw new Error('evaluate requires an expression');
-  let resolved = target && typeof target === 'object' ? target : null;
-  if (!resolved) {
-    const targets = await CDP.List({ host, port });
-    resolved = typeof target === 'string' ? targets.find((t) => t.id === target) : selectTarget(targets, filter);
-  }
-  if (!resolved) throw new Error(`no matching CDP target on ${host}:${port}`);
-  const client = await openClient({ host, port, target: resolved.webSocketDebuggerUrl || resolved.id });
-  let timer;
-  const expired = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`the page did not answer within ${timeoutMs / 1000}s (the tab is frozen, or the script is still running)`)), timeoutMs);
-  });
-  const run = async () => {
+  const onTimeout = () => timeoutError(`the page did not answer within ${timeoutMs / 1000}s (the tab is frozen, or the script is still running)`, 'the script may have run: check with a short read-only expression before running it again; still no answer: the tab is frozen, tell the owner');
+  return bounded(timeoutMs, onTimeout, async (adopt) => {
+    const resolved = await resolveTarget({ host, port, target, filter });
+    const client = await adopt(await openClient({ host, port, target: resolved.webSocketDebuggerUrl || resolved.id }));
     await client.Runtime.enable().catch(() => {});
-    return client.Runtime.evaluate({ expression, awaitPromise, returnByValue, userGesture, includeCommandLineAPI: true });
-  };
-  try {
-    const { result, exceptionDetails } = await Promise.race([run(), expired]);
+    const { result, exceptionDetails } = await client.Runtime.evaluate({ expression, awaitPromise, returnByValue, userGesture, includeCommandLineAPI: true });
     if (exceptionDetails) {
       throw new Error(exceptionDetails.exception?.description || exceptionDetails.text || 'page evaluation error');
     }
@@ -98,10 +119,18 @@ export async function evaluate({
       type: result.type,
       target: { id: resolved.id, url: resolved.url, title: resolved.title },
     };
-  } finally {
-    clearTimeout(timer);
-    await client.close().catch(() => {});
+  });
+}
+
+// The target object as given, else the page target by id or filter (inside the caller's bound).
+async function resolveTarget({ host, port, target, filter }) {
+  let resolved = target && typeof target === 'object' ? target : null;
+  if (!resolved) {
+    const targets = await CDP.List({ host, port });
+    resolved = typeof target === 'string' ? targets.find((t) => t.id === target) : selectTarget(targets, filter);
   }
+  if (!resolved) throw new Error(`no matching CDP target on ${host}:${port}`);
+  return resolved;
 }
 
 // Find the first page target whose in-page probe returns truthy. Robust for multi-window apps
@@ -119,7 +148,7 @@ export async function findTarget({ host = DEFAULT_HOST, port, probeExpression, t
       lastError = e;
     }
     for (const target of pages) {
-      const probe = await evaluate({ host, port, target, expression: `!!(${probeExpression})` })
+      const probe = await evaluate({ host, port, target, expression: `!!(${probeExpression})`, timeoutMs: Math.max(deadline - Date.now(), 1000) })
         .catch((e) => { lastError = e; return { value: false }; });
       if (probe.value) return target;
     }
@@ -130,16 +159,12 @@ export async function findTarget({ host = DEFAULT_HOST, port, probeExpression, t
 
 export async function screenshot({
   host = DEFAULT_HOST, port, target, filter,
-  format = 'png', quality = 80, clip,
+  format = 'png', quality = 80, clip, timeoutMs = CALL_BOUND_MS,
 } = {}) {
-  let resolved = target && typeof target === 'object' ? target : null;
-  if (!resolved) {
-    const targets = await CDP.List({ host, port });
-    resolved = typeof target === 'string' ? targets.find((t) => t.id === target) : selectTarget(targets, filter);
-  }
-  if (!resolved) throw new Error(`no matching CDP target on ${host}:${port}`);
-  const client = await openClient({ host, port, target: resolved.webSocketDebuggerUrl || resolved.id });
-  try {
+  const onTimeout = () => timeoutError(`the page gave no screenshot within ${timeoutMs / 1000}s (the tab is frozen or hidden)`, 'try once more; still none: the tab is frozen, tell the owner');
+  return bounded(timeoutMs, onTimeout, async (adopt) => {
+    const resolved = await resolveTarget({ host, port, target, filter });
+    const client = await adopt(await openClient({ host, port, target: resolved.webSocketDebuggerUrl || resolved.id }));
     await client.Page.enable().catch(() => {});
     const params = { format };
     if (format === 'jpeg') params.quality = quality;
@@ -150,9 +175,13 @@ export async function screenshot({
       mimeType: format === 'jpeg' ? 'image/jpeg' : 'image/png',
       target: { id: resolved.id, url: resolved.url, title: resolved.title },
     };
-  } finally {
-    await client.close().catch(() => {});
-  }
+  });
+}
+
+// The /json/* HTTP calls (new, close, activate tab) end within the same bound.
+function boundRequest(req, host, port, reject) {
+  req.setTimeout(CALL_BOUND_MS, () => req.destroy(endpointTimeout(host, port, CALL_BOUND_MS)()));
+  req.on('error', reject);
 }
 
 export async function click({
@@ -228,7 +257,7 @@ export async function openTab({ host = DEFAULT_HOST, port, url = 'about:blank' }
         catch (e) { reject(e); }
       });
     });
-    req.on('error', reject);
+    boundRequest(req, host, port, reject);
     req.end();
   });
 }
@@ -246,7 +275,7 @@ export async function closeTab({ host = DEFAULT_HOST, port, targetId } = {}) {
       res.on('data', (c) => raw += c);
       res.on('end', () => resolve({ closed: true, targetId, response: raw.trim() }));
     });
-    req.on('error', reject);
+    boundRequest(req, host, port, reject);
     req.end();
   });
 }
@@ -264,12 +293,13 @@ export async function activateTab({ host = DEFAULT_HOST, port, targetId } = {}) 
       res.on('data', (c) => raw += c);
       res.on('end', () => resolve({ activated: true, targetId, response: raw.trim() }));
     });
-    req.on('error', reject);
+    boundRequest(req, host, port, reject);
     req.end();
   });
 }
 
 export default {
+  CALL_BOUND_MS,
   readDevToolsPort,
   listTargets,
   evaluate,

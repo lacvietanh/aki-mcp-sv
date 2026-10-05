@@ -179,8 +179,10 @@ const POSTMAN_MAIN_PROBE = "window.pm || document.querySelector('#global-context
 async function postmanEval(expression, { awaitPromise = true } = {}) {
   const endpoint = resolvePostmanEndpoint();
   if (!endpoint) throw new Error('Postman remote-debugging endpoint not found — launch Postman from the Aki panel (it adds --remote-debugging-port) first');
+  // One bound for the whole call (S7): finding the window counts against it.
+  const started = Date.now();
   const target = await cdp.findTarget({ ...endpoint, probeExpression: POSTMAN_MAIN_PROBE });
-  return cdp.evaluate({ ...endpoint, target, expression, awaitPromise });
+  return cdp.evaluate({ ...endpoint, target, expression, awaitPromise, timeoutMs: Math.max(cdp.CALL_BOUND_MS - (Date.now() - started), 1000) });
 }
 
 // Rename via Postman's own inline edit so the change persists in app state (a raw textContent write is reverted on the next render). Anchor ONLY to the app-owned semantic classes (.ai-chat-conversation-name*) — never the styled-components sc-* hashes, which regenerate on every build. Two traps: (1) a lone synthetic dblclick does not flip the component into edit mode, so we replay the full native mouse sequence (two press/release/click pairs + a detail:2 dblclick); (2) on entering edit mode the view <h4> is detached, so nameEl.parentElement is null — the input actually lives inside .ai-chat-conversation-name-editor, which is where we look (with a focused-field fallback).
