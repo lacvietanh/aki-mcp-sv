@@ -454,19 +454,41 @@ const WAIT_IDLE_DEFAULT_S = CALL_WAIT_MAX_S;
 const WAIT_IDLE_POLL_MS = 1_000;
 const WAIT_AGAIN = 'still answering: call op=wait_idle again (one call waits at most 50 s)';
 
-// flags.json, the one "do not use X" list every window sees (contract row flags.json, guide v10): { list: [...] } (a bare array still reads), scope account (account + profileId; the default) or workspace (its label), no until = until op=unflag. AkiMCP is its one writer (aiobox plan cleanup-ai-leftovers C1); AIObox and op=state read it.
-const flagsFile = () => path.join(aioboxDir(), 'flags.json');
+// Chat pauses (plan akimcp-tool-refactor § 9, D18a–d + challenger #24): an account or workspace that gets no new AI chat work (send, new chat, handoff) until `until` or op=resume_chat; joining it, reconnecting AkiMCP, reading usage and account admin still go ahead.
+// AIObox owns flags.json ({ list: [{ scope account|workspace, account?, workspace?, profileId, provider, reason, until }] }; a bare array, guide v9, still reads) and is its one writer (aiobox chat_cutoff.rs pause, request.rs pause_chat); AkiMCP reads it and asks for a change through requests/ (D18c).
+export const PAUSE_SCOPE = 'A chat pause only stops new AI chat work (send, new chat, handoff) there; joining it, reconnecting AkiMCP, reading usage and account admin still go ahead. Notion flagging an account is not a chat pause.';
+const pausesFile = () => path.join(aioboxDir(), 'flags.json');
 const listOf = (raw) => {
   const list = Array.isArray(raw) ? raw : raw?.list;
   return Array.isArray(list) ? list.filter((e) => e && typeof e === 'object') : [];
 };
-// For op=state a missing or unreadable file is no flag.
-function readFlags() {
+// For op=state a missing or unreadable file is no pause.
+function readList(file) {
   try {
-    return listOf(JSON.parse(fs.readFileSync(flagsFile(), 'utf8')));
+    return listOf(JSON.parse(fs.readFileSync(file, 'utf8')));
   } catch {
     return [];
   }
+}
+// One shape for a file entry and a pending request: profileId (file) or profile (request), no scope = account, no provider = notion.
+const normalized = (e) => ({ ...e, scope: e.scope ?? 'account', profileId: e.profileId ?? e.profile ?? null, provider: e.provider ?? 'notion' });
+const targetKey = (e) => JSON.stringify(e.scope === 'workspace' ? ['workspace', e.workspace, e.profileId, e.provider] : ['account', e.account, e.profileId, e.provider]);
+// Pause requests AIObox has taken but shows no ended run of yet count as in force (c'), so a gate here never lets work through in that gap.
+const pendingPauses = new Map(); // request id → entry
+// In force first, then one per target: an expired entry never hides the pause in force for the same target (a pending one included).
+function readPauses(now = Date.now()) {
+  const seen = new Set();
+  const once = (e) => !seen.has(targetKey(e)) && seen.add(targetKey(e));
+  for (const [request, entry] of pendingPauses) {
+    let run = null;
+    try {
+      run = readRuns(runsFile(), { request, last: 1 })[0] ?? null;
+    } catch {}
+    if (run && !run.running) pendingPauses.delete(request);
+    else if (Date.now() - Date.parse(entry.requestedAt) > HOUR_MS) pendingPauses.delete(request); // AIObox never ran it: the files decide
+  }
+  const pending = [...pendingPauses.values()].map((e) => ({ ...e, pending: true }));
+  return [...readList(pausesFile()), ...pending].map(normalized).filter((e) => inForce(e, now)).filter(once);
 }
 // An until that cannot be read holds, as AIObox reads it (fail closed); a number is epoch ms.
 const inForce = (e, now) => {
@@ -474,36 +496,20 @@ const inForce = (e, now) => {
   const until = typeof e.until === 'number' ? e.until : Date.parse(e.until);
   return Number.isNaN(until) || until > now;
 };
-const scopeOf = (f) => f.scope ?? 'account';
-// One rule with AIObox's request.rs workspace_flagged: a Notion workspace flag, of this profile or of none, naming the workspace by label (trimmed, any case) or id.
-const workspaceFlagged = (f, { label, id, profileId }) =>
-  scopeOf(f) === 'workspace' && (f.provider ?? 'notion') === 'notion' && (!f.profileId || !profileId || f.profileId === profileId) &&
+// One rule with AIObox's request.rs (workspace_flagged, now chat_paused): a Notion workspace pause, of this profile or of none, naming the workspace by label (trimmed, any case) or id.
+const workspacePaused = (f, { label, id, profileId }) =>
+  f.scope === 'workspace' && f.provider === 'notion' && (!f.profileId || !profileId || f.profileId === profileId) &&
   ((label != null && String(f.workspace ?? '').trim().toLowerCase() === String(label).trim().toLowerCase()) || (id != null && String(f.workspace ?? '').replace(/-/g, '').toLowerCase() === String(id).replace(/-/g, '').toLowerCase()));
-const coordination = (now = Date.now()) => ({ flags: readFlags().filter((e) => inForce(e, now)).map((e) => ({ ...e, scope: scopeOf(e) })) });
+const pausesInForce = (now = Date.now()) => readPauses(now);
+// What a profile or workspace view carries: why and until when, or null.
+const pauseOf = (e) => (e ? { reason: e.reason ?? null, until: e.until ?? null, ...(e.pending ? { pending: true } : {}) } : null);
 
 const HOUR_MS = 3_600_000;
-function flagTarget(op, args) {
-  if (args.workspace) return { scope: 'workspace', workspace: args.workspace };
+// An account pause holds for one provider of that profile (no provider = notion), so a Claude or ChatGPT account can be kept off a handoff too.
+function pauseTarget(op, args) {
+  if (args.workspace) return { scope: 'workspace', workspace: args.workspace, ...(args.profile ? { profile: args.profile } : {}), provider: 'notion' };
   if (!args.account || !args.profile) throw new Error(`op=${op} needs workspace, or account and profile`);
-  // An account flag holds for one provider of that profile (no provider = notion, as AIObox and accountFlag read it), so a Claude or ChatGPT account can be kept off a handoff too.
-  return { scope: 'account', account: args.account, profileId: args.profile, provider: args.provider ?? 'notion' };
-}
-const sameTarget = (f, t) => scopeOf(f) === t.scope && (t.scope === 'workspace' ? f.workspace === t.workspace : f.account === t.account && f.profileId === t.profileId && (f.provider ?? 'notion') === t.provider);
-// Read, change and write back in one synchronous step (no await in between), whole file, tmp + rename, as { list }; entries no longer in force are dropped. A file that is there but not JSON is refused rather than overwritten.
-function changeFlags(change) {
-  let raw;
-  try {
-    raw = JSON.parse(fs.readFileSync(flagsFile(), 'utf8'));
-  } catch (e) {
-    if (e.code !== 'ENOENT') throw new Error(`${flagsFile()} is not readable JSON (${e.message}); fix or delete it first`);
-  }
-  const now = Date.now();
-  const list = change(listOf(raw).filter((e) => inForce(e, now)), now);
-  fs.mkdirSync(path.dirname(flagsFile()), { recursive: true });
-  const tmp = `${flagsFile()}.${process.pid}.tmp`;
-  fs.writeFileSync(tmp, `${JSON.stringify({ list }, null, 2)}\n`);
-  fs.renameSync(tmp, flagsFile());
-  return list.map((e) => ({ ...e, scope: scopeOf(e) }));
+  return { scope: 'account', account: args.account, profile: args.profile, provider: args.provider ?? 'notion' };
 }
 // AIObox's automation runs (aiobox docs/arch/automation-scheduler.md § Store): the scheduler is the only writer, so this opens read-only. Stamps are fixed-width RFC 3339 UTC, so since compares as text; outcome null = still running.
 const runsFile = () => path.join(aioboxDir(), 'automation.sqlite');
@@ -567,16 +573,16 @@ function readProfiles() {
   if (doc.version !== PROFILES_VERSION) throw new Error(`profiles.json version ${doc.version} is not supported (expected ${PROFILES_VERSION}); update AkiMCP or AIObox`);
   return doc;
 }
-// The flag that keeps an AI off a profile's provider: an account flag in force for that profileId and provider (a flag without provider is Notion's, guide v9). AIObox checks the same flags.json when it runs the request (D2).
-const accountFlag = (flags, profileId, provider) => flags.find((f) => f.scope === 'account' && f.profileId === profileId && (f.provider ?? 'notion') === provider) || null;
+// The pause that keeps new AI chat work off a profile's provider: an account pause in force for that profileId and provider. AIObox checks the same pauses when it runs the request (D2).
+const accountPause = (pauses, profileId, provider) => pauses.find((f) => f.scope === 'account' && f.profileId === profileId && f.provider === provider) || null;
 function profilesView(now = Date.now()) {
   const doc = readProfiles();
-  const { flags } = coordination(now);
+  const pauses = pausesInForce(now);
   const providerView = (profileId) => (pr) => {
-    const flag = accountFlag(flags, profileId, pr.id);
-    const workspaceFlag = (w) => (pr.id === 'notion' && flags.find((f) => workspaceFlagged(f, { label: w.label, id: w.id, profileId }))) || null;
-    const workspaces = Array.isArray(pr.workspaces) ? { workspaces: pr.workspaces.map((w) => ({ ...w, flag: workspaceFlag(w) })) } : {};
-    return { ...pr, ...workspaces, flag, eligible: pr.login === 'signed_in' && !flag };
+    const chatPause = pauseOf(accountPause(pauses, profileId, pr.id));
+    const workspacePause = (w) => pauseOf((pr.id === 'notion' && pauses.find((f) => workspacePaused(f, { label: w.label, id: w.id, profileId }))) || null);
+    const workspaces = Array.isArray(pr.workspaces) ? { workspaces: pr.workspaces.map((w) => ({ ...w, chatPause: workspacePause(w) })) } : {};
+    return { ...pr, ...workspaces, chatPause, canTakeChat: pr.login === 'signed_in' && !chatPause };
   };
   return { updatedAt: doc.updatedAt ?? null, profiles: (doc.profiles || []).map((p) => ({ ...p, providers: (p.providers || []).map(providerView(p.id)) })) };
 }
@@ -606,14 +612,14 @@ function pickProfile(profile, provider) {
   const view = profilesView();
   const number = /^P?(\d+)$/i.exec(String(profile).trim())?.[1];
   const p = view.profiles.find((x) => x.id === profile || (number !== undefined && String(x.number).replace(/^P/i, '') === number));
-  if (!p) throw new Refusal('not_registered', `no AIObox profile '${profile}'; registered: ${view.profiles.map((x) => `${x.id} (P${x.number})`).join(', ') || 'none'}`, 'pick an eligible one from aki__aiobox op=profiles');
+  if (!p) throw new Refusal('not_registered', `no AIObox profile '${profile}'; registered: ${view.profiles.map((x) => `${x.id} (P${x.number})`).join(', ') || 'none'}`, 'pick one with canTakeChat from aki__aiobox op=profiles');
   const pr = p.providers.find((x) => x.id === provider);
-  if (!pr || pr.login !== 'signed_in') throw new Refusal('not_signed_in', `${p.id} is not signed in to ${provider} (${pr ? pr.login : 'AIObox has never seen it there'})`, 'pick an eligible profile from aki__aiobox op=profiles; an AI never signs in');
-  if (pr.flag) throw new Refusal('flagged', `${p.id} ${provider} is flagged: ${pr.flag.reason}`, 'pick another eligible profile from aki__aiobox op=profiles');
+  if (!pr || pr.login !== 'signed_in') throw new Refusal('not_signed_in', `${p.id} is not signed in to ${provider} (${pr ? pr.login : 'AIObox has never seen it there'})`, 'pick a profile with canTakeChat from aki__aiobox op=profiles; an AI never signs in');
+  if (pr.chatPause) throw new Refusal('chat_paused', `${p.id} ${provider} has a chat pause${pr.chatPause.pending ? ' (requested, AIObox has not run it yet)' : ''}: ${pr.chatPause.reason}`, `pick another profile with canTakeChat from aki__aiobox op=profiles. ${PAUSE_SCOPE}`);
   return { profileId: p.id, provider: pr.id };
 }
 
-// The request channel (aiobox plan aio-control-gaps D1): one file per request in ~/.aki/aiobox/requests/ (tmp + rename), { version: 1, id, op, args, at }. AIObox scans every 500 ms, deletes the file and runs it as an automation (ai-new-window, ai-handoff-open, ai-open-url) whose runs row carries request = id; there is no reply file. The third thing AkiMCP writes under ~/.aki/aiobox/, after windows.refresh and flags.json.
+// The request channel (aiobox plan aio-control-gaps D1): one file per request in ~/.aki/aiobox/requests/ (tmp + rename), { version: 1, id, op, args, at }. AIObox scans every 500 ms, deletes the file and runs it as an automation (ai-new-window, ai-handoff-open, ai-open-url) whose runs row carries request = id; there is no reply file. With windows.refresh, the only thing AkiMCP writes under ~/.aki/aiobox/ (a chat pause is a request too, D18c).
 const requestsDir = () => path.join(aioboxDir(), 'requests');
 const REQUEST_VERSION = 1;
 const REQUEST_MAX_BYTES = 16 * 1024;
@@ -662,8 +668,11 @@ function requestOutcome(op, request, run) {
   if (run.outcome === 'refused') {
     const detail = String(run.detail ?? '');
     const at = detail.indexOf(': ');
-    const [code, why] = at === -1 ? ['refused', detail] : [detail.slice(0, at), detail.slice(at + 2)];
-    const next = code === 'budget' ? `AIObox's hourly budget for AI ${op} is used up: do not ask again now; report "not opened: budget" or wait an hour` : code === 'url_not_allowed' ? 'pass a plain http:// or https:// address with a host' : code === 'invalid' || code === 'unknown_op' ? 'update AkiMCP or AIObox so they speak the same request version, or report it' : 'read aki__aiobox op=profiles and pick an eligible profile, or report it';
+    // One vocabulary whichever AIObox answers: its old codes (budget, flagged, workspace_flagged) read as the new ones (D18d/e).
+    const said = at === -1 ? 'refused' : detail.slice(0, at);
+    const code = said === 'budget' ? 'hourly_limit' : said === 'flagged' || said === 'workspace_flagged' ? 'chat_paused' : said;
+    const why = at === -1 ? detail : detail.slice(at + 2);
+    const next = code === 'hourly_limit' ? `AIObox's hourly limit for AI ${op} is reached (a safety brake shared by every AI): do not ask again now; tell the user "not opened: hourly limit" and when it frees up` : code === 'chat_paused' ? `pick another profile or workspace with canTakeChat from aki__aiobox op=profiles. ${PAUSE_SCOPE}` : code === 'url_not_allowed' ? 'pass a plain http:// or https:// address with a host' : code === 'invalid' || code === 'unknown_op' ? 'update AkiMCP or AIObox so they speak the same request version, or report it' : 'read aki__aiobox op=profiles and pick a profile with canTakeChat, or report it';
     throw new Refusal(code, `AIObox refused ${op} (run ${run.id}): ${why}`, next);
   }
   const base = { request, runId: run.id, done: !run.running, steps: run.steps ?? [] };
@@ -704,7 +713,7 @@ const READ_OPS = {
       if (p?.here?.scopes?.length && row.profileId && !workspaces[row.profileId]) workspaces[row.profileId] = p.here.scopes;
       return p ? { ...row, busy: p.busy, account: p.account, ...(p.read === undefined ? {} : { read: p.read }), ...hereOf(p) } : row;
     });
-    return ok(JSON.stringify({ akimcp: VERSION, ops: opsList(), ...readGuide(), run: map.run, renumbered: renumberedOf(map), macros, ...coordination(), workspaces, tabs }, null, 2));
+    return ok(JSON.stringify({ akimcp: VERSION, ops: opsList(), ...readGuide(), run: map.run, renumbered: renumberedOf(map), macros, chatPauses: pausesInForce(), workspaces, tabs }, null, 2));
   },
   // The caller's own window: the AI cannot see its tab, but it sees the user's latest message verbatim, and that text is in exactly one chat (the busy one, while it answers). Two chats showing it are returned as ambiguous, never guessed between.
   async whoami(args) {
@@ -776,7 +785,7 @@ const READ_OPS = {
   async runs(args) {
     return ok(JSON.stringify({ akimcp: VERSION, runs: readRuns(runsFile(), args) }, null, 2));
   },
-  // Where a window can open (G1a): AIObox's profiles.json with each provider's flag and eligible (signed in, not flagged) laid over it.
+  // Where a window can open (G1a): AIObox's profiles.json with each provider's chatPause and canTakeChat (signed in, no chat pause) laid over it.
   async profiles() {
     return ok(JSON.stringify({ akimcp: VERSION, ...profilesView() }, null, 2));
   },
@@ -963,7 +972,7 @@ const NEW_WINDOW_REST_MS = 1_100; // aiobox akipanel.ts NEW_WINDOW_REST_MS (1 s)
 const windowsOfProfile = (map, port) => (map.profiles || []).find((p) => p.port === port)?.windows || [];
 const handlesOfProfile = (map, port) => new Set(windowsOfProfile(map, port).map((w) => w.handle));
 
-// new_window without a window (G1b): AIObox opens one in any eligible profile, launching it when it is not running.
+// new_window without a window (G1b): AIObox opens one in any profile that can take a chat, launching it when it is not running.
 async function newWindowIn(args) {
   if (args.profile === undefined || args.provider === undefined) throw new Error('op=new_window needs window, or profile and provider');
   const target = pickProfile(args.profile, args.provider);
@@ -1019,7 +1028,7 @@ const WRITE_OPS = {
     const next = out.outcome === 'ok' ? { next: `op=read last=2 on ${opened.window ?? 'the new window'} to see it took the text; only if ${like} is the window handing off, then op=close_window window=${like} successor=${opened.window ?? '<new window>'}` } : {};
     return ok(JSON.stringify({ ...opened, ...target, like, ...out, ...next }, null, 2));
   },
-  // A link for the user to see (G4): AIObox opens it in the system's browser, or with profile in a new browser window of that profile; 20 an hour, apart from the windows' budget.
+  // A link for the user to see (G4): AIObox opens it in the system's browser, or with profile in a new browser window of that profile; 20 an hour, apart from the windows' hourly limit.
   async open_url(args) {
     need('open_url', args, ['url']);
     const url = args.url.trim();
@@ -1057,7 +1066,7 @@ const WRITE_OPS = {
     }
     throw new Error(`${tab.handle} did not show an empty chat within ${NEW_CHAT_WAIT_MS / 1000}s (now at ${last?.url ?? 'unknown'})`);
   },
-  // Notion: the tab moves to another workspace of its account; AkiMCP refuses a flagged one and returns once the new page's panel names it.
+  // Notion: the tab moves to another workspace of its account; AkiMCP refuses one with a chat pause and returns once the new page's panel names it.
   async switch_workspace(args) {
     need('switch_workspace', args, ['window', 'workspace']);
     const { tab, live: target, used } = await openTab(args);
@@ -1068,8 +1077,8 @@ const WRITE_OPS = {
     if (seen?.error) throw new Error(`${tab.handle}: ${seen.error}`);
     const scope = findWorkspace(seen.scopes, args.workspace);
     if (!scope) throw new Refusal('no_workspace', `'${args.workspace}' is no workspace of ${tab.handle}'s account`, 'pick one by id or label from aki__aiobox op=state workspaces');
-    const flag = coordination().flags.find((f) => workspaceFlagged(f, { label: scope.label, id: scope.id, profileId: tab.profile.id ?? null }));
-    if (flag) throw new Refusal('flagged', `${scope.label ?? scope.id} is flagged: ${flag.reason}`, 'pick another workspace from aki__aiobox op=state workspaces');
+    const pause = pausesInForce().find((f) => workspacePaused(f, { label: scope.label, id: scope.id, profileId: tab.profile.id ?? null }));
+    if (pause) throw new Refusal('chat_paused', `${scope.label ?? scope.id} has a chat pause: ${pause.reason}`, `pick another workspace from aki__aiobox op=state workspaces. ${PAUSE_SCOPE}`);
     const workspace = { id: scope.id, label: scope.label };
     if (seen.pick && spaceKey(seen.pick) === spaceKey(scope.id)) return ok(JSON.stringify({ ...used, workspace, moved: false }, null, 2));
     const previousWorkspace = seen.pick ? findWorkspace(seen.scopes, seen.pick) ?? { id: seen.pick, label: null } : null;
@@ -1122,27 +1131,32 @@ const WRITE_OPS = {
     if (!(await tabGone(tab))) throw new Error(`${tab.handle} is still open ${CLOSE_WAIT_MS / 1000}s after closeWindow: AIObox refused it${successor ? ` (successor ${successor} closed, the same window, or a loop)` : ''}; nothing was retired. Check op=windows, then try again`);
     return ok(JSON.stringify({ ...used, closed: true, ...(successor && { successor }) }, null, 2));
   },
-  // No window: flags.json is AIObox-wide. Flagging the same account or workspace again replaces its entry.
-  async flag(args) {
-    const target = flagTarget('flag', args);
-    need('flag', args, ['reason']);
-    let entry;
-    const flags = changeFlags((list, now) => {
-      entry = { provider: 'notion', ...target, reason: args.reason, flaggedAt: new Date(now).toISOString() };
-      if (args.hours !== undefined) entry.until = new Date(now + args.hours * HOUR_MS).toISOString();
-      return [...list.filter((f) => !sameTarget(f, target)), entry];
-    });
-    return ok(JSON.stringify({ flagged: entry, flags }, null, 2));
+  // No window: a chat pause is AIObox-wide. AIObox owns the file and writes it (D18c); this only asks, and a request AIObox took counts as in force here at once (c').
+  async pause_chat(args) {
+    const target = pauseTarget('pause_chat', args);
+    need('pause_chat', args, ['reason']);
+    const until = args.hours === undefined ? null : new Date(Date.now() + args.hours * HOUR_MS).toISOString();
+    const chatPause = { ...target, reason: args.reason, until };
+    const request = await sendRequest('pause_chat', chatPause);
+    pendingPauses.set(request, { ...chatPause, requestedAt: new Date().toISOString() });
+    const out = requestOutcome('pause_chat', request, await awaitRequestRun(request, waitLimitS(args.wait, CALL_WAIT_MAX_S) * 1000));
+    const queued = !out.done ? { queued: true, next: `AIObox took the request and has not run it yet; AkiMCP already treats it as in force: aki__aiobox op=runs request=${request}` } : {};
+    return ok(JSON.stringify({ chatPause, ...out, ...queued, scope: PAUSE_SCOPE }, null, 2));
   },
-  async unflag(args) {
-    const target = flagTarget('unflag', args);
-    let removed = 0;
-    const flags = changeFlags((list) => {
-      const kept = list.filter((f) => !sameTarget(f, target));
-      removed = list.length - kept.length;
-      return kept;
-    });
-    return ok(JSON.stringify({ unflagged: target, removed, flags }, null, 2));
+  async resume_chat(args) {
+    const target = pauseTarget('resume_chat', args);
+    const key = targetKey(normalized(target));
+    for (const [id, e] of pendingPauses) if (targetKey(normalized(e)) === key) pendingPauses.delete(id);
+    const request = await sendRequest('resume_chat', target);
+    const out = requestOutcome('resume_chat', request, await awaitRequestRun(request, waitLimitS(args.wait, CALL_WAIT_MAX_S) * 1000));
+    return ok(JSON.stringify({ resumed: target, ...out, ...(!out.done ? { queued: true, next: `AIObox took the request and has not run it yet: aki__aiobox op=runs request=${request}` } : {}) }, null, 2));
+  },
+  // Renamed in this major (D18d): the old names still answer, with the new op to call.
+  async flag() {
+    throw new Refusal('renamed', 'op=flag is now op=pause_chat (same account+profile or workspace, reason, hours)', `call aki__aiobox_write op=pause_chat. ${PAUSE_SCOPE}`);
+  },
+  async unflag() {
+    throw new Refusal('renamed', 'op=unflag is now op=resume_chat (same account+profile or workspace)', 'call aki__aiobox_write op=resume_chat');
   },
   async compose(args) {
     need('compose', args, ['window', 'text']);
@@ -1217,7 +1231,7 @@ export function register(server) {
       title: 'AIObox: read windows by handle',
       annotations: { readOnlyHint: true, openWorldHint: false },
       description:
-        'Read AIObox (AIO) windows P#·W#. op=state: every window (chatId, provider, account, busy, workspace, usage), macros, flags, guide. op=whoami quote=<20+ chars verbatim of the latest user message>: your window. window= handle (a retired one leads to its successor, kế nhiệm), chatId or targetId; expect refuses another chat. op=windows: tabs. op=profiles: where a new window can open. op=read last=N, or the saved copy of a closed chat. op=wait_idle: until it stops answering. op=text. op=screenshot. op=runs: id= or request=. Quota ≥95% or Interrupted twice: AIObox does the handoff to another account (Interrupted: 8h flag); never resend. Also: loop, macro, akipanel. Acting: aki__aiobox_write.',
+        'Read AIObox (AIO) windows P#·W#. op=state: every window (chatId, provider, account, busy, workspace, usage), macros, chatPauses, guide. op=whoami quote=<20+ chars verbatim of the latest user message>: your window. window= handle (a retired one leads to its successor, kế nhiệm), chatId or targetId; expect refuses another chat. op=windows: tabs. op=profiles: where a new window can open. op=read last=N, or the saved copy of a closed chat. op=wait_idle: until it stops answering. op=text. op=screenshot. op=runs: id= or request=. Quota ≥95% or Interrupted twice: AIObox does the handoff to another account (Interrupted: 8h flag); never resend. Also: loop, macro, akipanel. Acting: aki__aiobox_write.',
       inputSchema: {
         op: z.enum(Object.keys(READ_OPS)).describe(Object.keys(READ_OPS).join(' | ')),
         window: windowArg,
@@ -1248,27 +1262,27 @@ export function register(server) {
       title: 'AIObox: open a window, send or fill a chat, run JS',
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description:
-        `Act in an AIObox (AIO) window P#·W# (guide: aki__aiobox op=state); from=<your chatId>. op=new_window: profile+provider. op=handoff_open: profile, provider, like, text. ${OPEN_RULE} op=open_url: url, profile?. op=send: even mid-answer. op=compose: fills only. op=run_macro: macro, option; macro surface: op=eval akipanel.<method>(). op=close_window: idle; successor= retires; close what you opened once checked. op=flag/unflag. New account/workspace: first check AkiMCP tool count, else run_macro connect-akimcp option=reconnect. Quota/interrupted handoff: AIObox's own, open nothing.`,
+        `Act in an AIObox (AIO) window P#·W# (guide: aki__aiobox op=state); from=<your chatId>. op=new_window: profile+provider. op=handoff_open: profile, provider, like, text. ${OPEN_RULE} op=open_url: url, profile?. op=send: even mid-answer. op=compose: fills only. op=run_macro: macro, option; macro surface: op=eval akipanel.<method>(). op=close_window: idle; successor= retires; close what you opened. op=pause_chat/resume_chat: no new AI chat work there; join, reconnect, usage still go. New account/workspace: first check AkiMCP tool count, else run_macro connect-akimcp option=reconnect.`,
       inputSchema: {
         op: z.enum(Object.keys(WRITE_OPS)).describe(Object.keys(WRITE_OPS).join(' | ')),
         window: windowArg,
         expect: expectArg,
         from: z.string().optional().describe('your own chatId (aki__aiobox op=whoami); send, compose, new_chat, switch_workspace, close_window refuse it'),
         like: z.string().optional().describe('place_like, handoff_open: the window to copy the place of (handle, chatId or targetId)'),
-        provider: z.string().optional().describe('new_window, handoff_open, flag, unflag: notion, claude, gpt or grok (flag default notion)'),
+        provider: z.string().optional().describe('new_window, handoff_open, pause_chat, resume_chat: notion, claude, gpt or grok (pause default notion)'),
         successor: z.string().optional().describe('close_window: the window that took over (handle, chatId or targetId); the closed handle then leads to it'),
         macro: z.string().optional().describe('run_macro: macro id (op=state macros)'),
         option: z.string().optional().describe('run_macro: option id (default: the first)'),
         text: z.string().optional().describe('send, compose, handoff_open: the text (handoff_open ≤8 KB)'),
-        wait: z.number().int().min(0).max(300).optional().describe('send: seconds to retry a draft or blocked chat (default 0); new_window, handoff_open, open_url: run wait (default 50); max 50 per call'),
+        wait: z.number().int().min(0).max(300).optional().describe('send: seconds to retry a draft or blocked chat (default 0); new_window, handoff_open, open_url, pause_chat, resume_chat: run wait (default 50); max 50 per call'),
         url: z.string().optional().describe('open_url: http(s) link for the user; system browser, or profile\'s new window'),
         expression: z.string().optional().describe('eval: JS evaluated in the page; the last expression is returned'),
         awaitPromise: z.boolean().optional().describe('eval: await a returned Promise (default true)'),
-        account: z.string().optional().describe('flag, unflag: account label (op=state account)'),
-        profile: z.string().optional().describe('flag, unflag: its profileId; new_window, handoff_open, open_url: profileId or P#'),
-        workspace: z.string().optional().describe('flag, unflag: a workspace label instead; switch_workspace: its id or label (Notion)'),
-        reason: z.string().optional().describe('flag: why'),
-        hours: z.number().positive().max(720).optional().describe('flag: hours in force (none = until unflag)'),
+        account: z.string().optional().describe('pause_chat, resume_chat: account label (op=state account)'),
+        profile: z.string().optional().describe('pause_chat, resume_chat: its profileId; new_window, handoff_open, open_url: profileId or P#'),
+        workspace: z.string().optional().describe('pause_chat, resume_chat: a workspace label instead; switch_workspace: its id or label (Notion)'),
+        reason: z.string().optional().describe('pause_chat: why'),
+        hours: z.number().positive().max(720).optional().describe('pause_chat: hours in force (none = until resume_chat)'),
       },
     },
     async ({ op, ...args }) => {

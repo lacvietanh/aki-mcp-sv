@@ -202,8 +202,8 @@ pages['T-NOTION'] = { body: 'notion body', akipanel: readonlyPanel({
 pages['T-GPT'] = { akipanel: readonlyPanel({ capabilities: {} }), body: 'history: please compare the last two answers now, then more' };
 const state = JSON.parse((await call('aiobox', { op: 'state' })).text);
 assert.equal(state.akimcp, VERSION);
-assert.deepEqual(state.ops, { aiobox: ['windows', 'state', 'whoami', 'read', 'wait_idle', 'text', 'screenshot', 'runs', 'profiles'], aiobox_write: ['new_window', 'handoff_open', 'open_url', 'new_chat', 'switch_workspace', 'place_like', 'close_window', 'flag', 'unflag', 'compose', 'send', 'run_macro', 'eval'] });
-assert.deepEqual(state.flags, [], 'no flags.json yet: empty list');
+assert.deepEqual(state.ops, { aiobox: ['windows', 'state', 'whoami', 'read', 'wait_idle', 'text', 'screenshot', 'runs', 'profiles'], aiobox_write: ['new_window', 'handoff_open', 'open_url', 'new_chat', 'switch_workspace', 'place_like', 'close_window', 'pause_chat', 'resume_chat', 'flag', 'unflag', 'compose', 'send', 'run_macro', 'eval'] });
+assert.deepEqual(state.chatPauses, [], 'no flags.json yet: empty list');
 assert.equal('claims' in state, false, 'claims are gone (aiobox plan cleanup-ai-leftovers)');
 // No ~/.aki/aiobox/guide.md yet: the short fallback, pointing at the web guide.
 assert.match(state.guide, /^AIObox guide \(short fallback.*https:\/\/aiobox\.app\/guide\/aiobox\.md/);
@@ -219,7 +219,7 @@ assert.deepEqual([withFile.guide, withFile.guideVersion], [guideText, 5]);
 fs.writeFileSync(guidePath, '# AIObox guide\nno frontmatter\n');
 assert.equal(JSON.parse((await call('aiobox', { op: 'state' })).text).guideVersion, null, 'a malformed head falls back');
 fs.rmSync(guidePath);
-// Flags come from flags.json, only the ones still in force; it is { list } or a bare array (guide v10), scope account or workspace, no until = until unflag.
+// Chat pauses (D18a–d): AIObox's flags.json (AIObox writes it), only entries still in force; { list } or a bare array, scope account or workspace, no until = until resume_chat.
 const soon = new Date(Date.now() + 3_600_000).toISOString();
 const gone = new Date(Date.now() - 1_000).toISOString();
 const aioboxHome = path.join(home, '.aki', 'aiobox');
@@ -230,39 +230,23 @@ fs.writeFileSync(flagsPath, JSON.stringify({ list: [
   { scope: 'account', account: 'z@y', profileId: 'q', provider: 'notion', reason: 'interrupted', flaggedAt: gone, until: soon },
 ] }));
 const coordinated = JSON.parse((await call('aiobox', { op: 'state' })).text);
-assert.deepEqual(coordinated.flags.map((f) => f.workspace ?? f.account), ['dldn.1', 'z@y'], 'an expired flag is gone, one without until stays');
+assert.deepEqual(coordinated.chatPauses.map((f) => f.workspace ?? f.account), ['dldn.1', 'z@y'], 'an expired pause is gone, one without until stays');
 // An until that cannot be read holds, as AIObox reads it; a number is epoch ms (P9·W6 review of 14ea2a0, L1).
 fs.writeFileSync(flagsPath, JSON.stringify({ list: [{ account: 'a', profileId: 'p', reason: 'r', until: 'soon' }, { account: 'b', profileId: 'p', reason: 'r', until: Date.now() - 1 }, { account: 'c', profileId: 'p', reason: 'r', until: Date.now() + 60_000 }] }));
-assert.deepEqual(JSON.parse((await call('aiobox', { op: 'state' })).text).flags.map((f) => f.account), ['a', 'c']);
+assert.deepEqual(JSON.parse((await call('aiobox', { op: 'state' })).text).chatPauses.map((f) => f.account), ['a', 'c']);
 fs.writeFileSync(path.join(aioboxHome, 'flags.json'), JSON.stringify([{ account: 'old@v9', profileId: 'p', reason: 'interrupted', flaggedAt: gone, until: soon }]));
-assert.deepEqual(JSON.parse((await call('aiobox', { op: 'state' })).text).flags.map((f) => [f.scope, f.account]), [['account', 'old@v9']], 'a v9 bare array still reads, without scope = account');
-// op=flag / op=unflag are the one way to write it: whole file as { list }, entries no longer in force dropped, the same target replaced, no window needed.
-const flagged = JSON.parse((await call('aiobox_write', { op: 'flag', workspace: 'dldn.1', reason: 'usage policy' })).text);
-assert.deepEqual([flagged.flagged.scope, flagged.flagged.workspace, flagged.flagged.until], ['workspace', 'dldn.1', undefined], 'no hours: until unflagged');
-let onDisk = JSON.parse(fs.readFileSync(flagsPath, 'utf8'));
-assert.deepEqual(onDisk.list.map((f) => f.workspace ?? f.account), ['old@v9', 'dldn.1'], 'the v9 array is rewritten as { list }');
-const timed = JSON.parse((await call('aiobox_write', { op: 'flag', account: 'x@y', profile: 'p', reason: 'interrupted x2', hours: 8 })).text);
-assert.ok(Math.abs(Date.parse(timed.flagged.until) - Date.now() - 8 * 3_600_000) < 60_000, 'hours sets until');
-await call('aiobox_write', { op: 'flag', account: 'x@y', profile: 'p', reason: 'again', hours: 1 });
-onDisk = JSON.parse(fs.readFileSync(flagsPath, 'utf8'));
-assert.deepEqual(onDisk.list.map((f) => [f.account ?? f.workspace, f.reason]), [['old@v9', 'interrupted'], ['dldn.1', 'usage policy'], ['x@y', 'again']], 'flagging again replaces');
-assert.deepEqual(JSON.parse((await call('aiobox', { op: 'state' })).text).flags.map((f) => f.account ?? f.workspace), ['old@v9', 'dldn.1', 'x@y'], 'op=state reads what op=flag wrote');
-const un = JSON.parse((await call('aiobox_write', { op: 'unflag', workspace: 'dldn.1' })).text);
-assert.deepEqual([un.removed, un.flags.map((f) => f.account)], [1, ['old@v9', 'x@y']]);
-assert.equal(JSON.parse((await call('aiobox_write', { op: 'unflag', account: 'x@y', profile: 'other' })).text).removed, 0, 'an account is matched with its profile');
-// An account flag names one provider of the profile (default notion), so the same profile's Claude can be flagged apart (P9·W6 review of 14ea2a0, M1).
-const claudeFlag = JSON.parse((await call('aiobox_write', { op: 'flag', account: 'x@y', profile: 'p', provider: 'claude', reason: 'interrupted x2' })).text);
-assert.equal(claudeFlag.flagged.provider, 'claude');
-assert.deepEqual(claudeFlag.flags.filter((f) => f.account === 'x@y').map((f) => f.provider), ['notion', 'claude'], 'the notion flag of that profile stays');
-assert.equal(JSON.parse((await call('aiobox_write', { op: 'unflag', account: 'x@y', profile: 'p', provider: 'claude' })).text).removed, 1, 'unflag takes the provider too');
-assert.deepEqual(JSON.parse(fs.readFileSync(flagsPath, 'utf8')).list.filter((f) => f.account === 'x@y').map((f) => f.provider), ['notion']);
-assert.match((await call('aiobox_write', { op: 'flag', account: 'x@y', reason: 'r' })).text, /op=flag needs workspace, or account and profile/);
-assert.match((await call('aiobox_write', { op: 'flag', workspace: 'w' })).text, /op=flag needs reason/);
-assert.ok(!fs.readdirSync(aioboxHome).some((n) => n.endsWith('.tmp')), 'no temp file left behind');
+assert.deepEqual(JSON.parse((await call('aiobox', { op: 'state' })).text).chatPauses.map((f) => [f.scope, f.account, f.provider]), [['account', 'old@v9', 'notion']], 'a v9 bare array still reads, without scope = account, without provider = notion');
+// One target counts once, and an expired entry never hides the one in force for it (P10·W9 review of D18); profile reads as profileId.
+fs.writeFileSync(flagsPath, JSON.stringify({ list: [{ scope: 'account', account: 'old@v9', profileId: 'p', provider: 'notion', reason: 'old', until: gone }, { scope: 'account', account: 'old@v9', profile: 'p', provider: 'notion', reason: 'interrupted', until: soon }, { scope: 'workspace', workspace: 'dldn.1', provider: 'notion', reason: 'usage policy', until: null }] }));
+assert.deepEqual(JSON.parse((await call('aiobox', { op: 'state' })).text).chatPauses.map((f) => [f.account ?? f.workspace, f.profileId, f.reason]), [['old@v9', 'p', 'interrupted'], ['dldn.1', null, 'usage policy']], 'the entry in force wins, the same target once');
+// The old ops still answer in this major, with the new name (D18d); nothing is written by AkiMCP any more.
+assert.match((await call('aiobox_write', { op: 'flag', workspace: 'w', reason: 'r' })).text, /op=flag is now op=pause_chat .*\(renamed; next: call aki__aiobox_write op=pause_chat\. A chat pause only stops new AI chat work .*joining it, reconnecting AkiMCP, reading usage and account admin still go ahead\. Notion flagging an account is not a chat pause\./);
+assert.match((await call('aiobox_write', { op: 'unflag', workspace: 'w' })).text, /op=unflag is now op=resume_chat .*\(renamed; next: call aki__aiobox_write op=resume_chat/);
+assert.match((await call('aiobox_write', { op: 'pause_chat', account: 'x@y', reason: 'r' })).text, /op=pause_chat needs workspace, or account and profile/);
+assert.match((await call('aiobox_write', { op: 'pause_chat', workspace: 'w' })).text, /op=pause_chat needs reason/);
+assert.equal(fs.existsSync(path.join(aioboxHome, 'requests')), false, 'a refused pause writes no request');
 fs.writeFileSync(flagsPath, 'not json');
-assert.deepEqual(JSON.parse((await call('aiobox', { op: 'state' })).text).flags, [], 'an unreadable file is no flag');
-assert.match((await call('aiobox_write', { op: 'flag', workspace: 'w', reason: 'r' })).text, /flags\.json is not readable JSON.*fix or delete it first/);
-assert.equal(fs.readFileSync(flagsPath, 'utf8'), 'not json', 'and is never overwritten');
+assert.deepEqual(JSON.parse((await call('aiobox', { op: 'state' })).text).chatPauses, [], 'an unreadable file is no pause');
 fs.rmSync(flagsPath);
 const notionRow = state.tabs.find((t) => t.targetId === 'T-NOTION');
 assert.equal(notionRow.busy, true);
@@ -544,7 +528,7 @@ delete pages['T-GPT'].url;
   assert.deepEqual([stay.moved, stay.workspace], [false, { id: WS, label: 'Linh2' }], 'a label matches trimmed and in any case; already there moves nothing');
   // One rule with AIObox's workspace_flagged (P9·W6 review, L1): label trimmed in any case; another profile's or provider's flag does not count.
   fs.writeFileSync(flagsPath, JSON.stringify({ list: [{ scope: 'workspace', workspace: ' LINH1', provider: 'notion', reason: 'quota', flaggedAt: '2026-10-04T00:00:00.000Z' }, { scope: 'workspace', workspace: 'Linh2', profileId: 'chrome-profile-99', provider: 'notion', reason: 'elsewhere', flaggedAt: '2026-10-04T00:00:00.000Z' }, { scope: 'workspace', workspace: 'Linh2', provider: 'claude', reason: 'not notion', flaggedAt: '2026-10-04T00:00:00.000Z' }] }));
-  assert.match((await call('aiobox_write', { op: 'switch_workspace', window: 'P1·W1', workspace: 'other' })).text, /Linh1 is flagged: quota \(flagged/);
+  assert.match((await call('aiobox_write', { op: 'switch_workspace', window: 'P1·W1', workspace: 'other' })).text, /Linh1 has a chat pause: quota \(chat_paused; next: .*joining it, reconnecting AkiMCP/);
   assert.equal(JSON.parse((await call('aiobox_write', { op: 'switch_workspace', window: 'P1·W1', workspace: 'Linh2' })).text).moved, false, "another profile's or provider's flag does not refuse");
   fs.rmSync(flagsPath);
   assert.deepEqual(switched, ['other'], 'only the panel refusal reached the panel');
@@ -728,14 +712,16 @@ assert.deepEqual(JSON.parse((await call('aiobox', { op: 'runs', since: '2026-10-
   ] }));
   const view = JSON.parse((await call('aiobox', { op: 'profiles' })).text);
   const prov = (pid, id) => view.profiles.find((p) => p.id === pid).providers.find((x) => x.id === id);
-  assert.deepEqual([prov('chrome-profile-7', 'claude').eligible, prov('chrome-profile-7', 'gpt').eligible, prov('chrome-profile-18', 'notion').eligible], [true, false, false], 'eligible = signed in and not flagged');
-  assert.equal(prov('chrome-profile-18', 'notion').flag.reason, 'interrupted x2', 'the account flag is laid over its profile and provider');
-  assert.deepEqual(prov('chrome-profile-18', 'notion').workspaces.map((w) => w.flag?.reason ?? null), ['quota', null], 'a workspace flag marks that workspace only');
+  assert.deepEqual([prov('chrome-profile-7', 'claude').canTakeChat, prov('chrome-profile-7', 'gpt').canTakeChat, prov('chrome-profile-18', 'notion').canTakeChat], [true, false, false], 'canTakeChat = signed in and no chat pause');
+  assert.deepEqual(prov('chrome-profile-18', 'notion').chatPause, { reason: 'interrupted x2', until: null }, 'the account pause (old flags.json) is laid over its profile and provider');
+  assert.equal(prov('chrome-profile-7', 'claude').chatPause, null);
+  assert.deepEqual(prov('chrome-profile-18', 'notion').workspaces.map((w) => w.chatPause?.reason ?? null), ['quota', null], 'a workspace pause marks that workspace only');
+  assert.equal('eligible' in prov('chrome-profile-7', 'claude') || 'flag' in prov('chrome-profile-7', 'claude'), false, 'the old field names are gone');
 
   assert.equal((await call('aiobox_write', { op: 'new_window', profile: 'chrome-profile-7' })).text, 'rejected: op=new_window needs window, or profile and provider');
   assert.match((await call('aiobox_write', { op: 'new_window', profile: 'chrome-profile-99', provider: 'claude' })).text, /no AIObox profile 'chrome-profile-99'; registered: chrome-profile-7 \(P2\), chrome-profile-18 \(P9\) \(not_registered;/);
   assert.match((await call('aiobox_write', { op: 'new_window', profile: 'P2', provider: 'gpt' })).text, /chrome-profile-7 is not signed in to gpt \(signed_out\) \(not_signed_in;/, 'P# names a profile too');
-  assert.match((await call('aiobox_write', { op: 'new_window', profile: 'chrome-profile-18', provider: 'notion' })).text, /chrome-profile-18 notion is flagged: interrupted x2 \(flagged;/);
+  assert.match((await call('aiobox_write', { op: 'new_window', profile: 'chrome-profile-18', provider: 'notion' })).text, /chrome-profile-18 notion has a chat pause: interrupted x2 \(chat_paused;/);
   const requestsPath = path.join(aioboxHome, 'requests');
   assert.equal(fs.existsSync(requestsPath), false, 'a refused call writes no request');
 
@@ -758,7 +744,13 @@ assert.deepEqual(JSON.parse((await call('aiobox', { op: 'runs', since: '2026-10-
       const step = (s, status = 'ok') => ({ step: s, status, at, info: null });
       if (req.op === 'open_url') addRun.run('ai-open-url', 'request', null, at, at, req.args.url.includes('refuse') ? 'refused' : 'ok', req.args.url.includes('refuse') ? 'url_not_allowed: an address with a user@ before its host' : JSON.stringify({ opened: req.args.profileId ?? 'system' }), req.id, JSON.stringify([step('scope'), step('open')]));
       else if (req.op === 'new_window') addRun.run('ai-new-window', 'request', null, at, at, 'ok', JSON.stringify({ handle: 'P2·W1', targetId: 'T-NEW' }), req.id, JSON.stringify(['scope', 'launch', 'open', 'panel'].map((s) => step(s))));
-      else if (req.args.text === 'over budget') addRun.run('ai-handoff-open', 'request', null, at, at, 'refused', 'budget: 6 new windows in the last hour', req.id, JSON.stringify([step('scope', 'error')]));
+      else if (req.op === 'pause_chat' || req.op === 'resume_chat') {
+        if (req.args.reason === 'slow') continue; // taken, no run yet
+        if (req.args.reason === 'old aiobox') addRun.run('ai-request', 'request', null, at, at, 'refused', `unknown_op: ${req.op}`, req.id, JSON.stringify([]));
+        else addRun.run(`ai-${req.op.replace('_', '-')}`, 'request', null, at, at, 'ok', JSON.stringify({ [req.op === 'pause_chat' ? 'paused' : 'resumed']: true }), req.id, JSON.stringify([step('write')]));
+      } else if (req.args.text === 'over budget') addRun.run('ai-handoff-open', 'request', null, at, at, 'refused', 'budget: 6 new windows in the last hour', req.id, JSON.stringify([step('scope', 'error')]));
+      else if (req.args.text === 'over limit') addRun.run('ai-handoff-open', 'request', null, at, at, 'refused', 'hourly_limit: used 12 of 12 handoffs; the next frees up at 14:52', req.id, JSON.stringify([step('scope', 'error')]));
+      else if (req.args.text === 'old flag') addRun.run('ai-handoff-open', 'request', null, at, at, 'refused', 'workspace_flagged: dldn.1', req.id, JSON.stringify([step('scope', 'error')]));
       else if (req.args.text === 'slow') addRun.run('ai-handoff-open', 'request', null, at, null, null, null, req.id, JSON.stringify([step('scope'), step('launch', 'skipped'), step('open'), step('connect', 'running')]));
       else if (req.args.text === 'broken') addRun.run('ai-handoff-open', 'request', null, at, at, 'error', 'verify: no signed-in claude.ai client', req.id, JSON.stringify([step('open'), step('connect'), { ...step('verify', 'error'), info: 'no signed-in claude.ai client' }]));
       else addRun.run('ai-handoff-open', 'request', null, at, at, 'ok', JSON.stringify({ handle: 'P2·W2', targetId: 'T-H', chatId: 'c-1' }), req.id, JSON.stringify(['scope', 'launch', 'open', 'panel', 'connect', 'verify', 'place', 'send'].map((s) => step(s))));
@@ -779,7 +771,30 @@ assert.deepEqual(JSON.parse((await call('aiobox', { op: 'runs', since: '2026-10-
   assert.deepEqual([handed.window, handed.chatId, handed.like, handed.done, handed.steps.length], ['P2·W2', 'c-1', 'P1·W1', true, 8], 'like is passed on as the handle it names');
   assert.equal(seen.at(-1).args.text, 'take over: read working.md');
   assert.match(handed.next, /op=close_window window=P1·W1 successor=P2·W2/);
-  assert.match((await call('aiobox_write', { op: 'handoff_open', profile: 'P2', provider: 'claude', like: 'P1·W1', text: 'over budget' })).text, /^rejected: AIObox refused handoff_open \(run \d+\): 6 new windows in the last hour \(budget; next: AIObox's hourly budget for AI handoff_open is used up/, "AIObox's refusal keeps its own code");
+  assert.match((await call('aiobox_write', { op: 'handoff_open', profile: 'P2', provider: 'claude', like: 'P1·W1', text: 'over budget' })).text, /^rejected: AIObox refused handoff_open \(run \d+\): 6 new windows in the last hour \(hourly_limit; next: AIObox's hourly limit for AI handoff_open is reached/, "an old AIObox's budget reads as hourly_limit");
+  assert.match((await call('aiobox_write', { op: 'handoff_open', profile: 'P2', provider: 'claude', like: 'P1·W1', text: 'over limit' })).text, /used 12 of 12 handoffs; the next frees up at 14:52 \(hourly_limit; next: .*tell the user "not opened: hourly limit"/, 'the new code and its used/limit/nextFreeAt text come through');
+  assert.match((await call('aiobox_write', { op: 'handoff_open', profile: 'P2', provider: 'claude', like: 'P1·W1', text: 'old flag' })).text, /\(chat_paused; next: pick another profile or workspace with canTakeChat/, "an old AIObox's workspace_flagged reads as chat_paused");
+  // pause_chat / resume_chat ask AIObox, the owner of flags.json, through requests/ (D18c); AkiMCP writes no pause file.
+  const flagsBefore = fs.readFileSync(flagsPath, 'utf8');
+  const paused = JSON.parse((await call('aiobox_write', { op: 'pause_chat', account: 'c@x', profile: 'chrome-profile-7', provider: 'claude', reason: 'interrupted x2', hours: 8 })).text);
+  assert.deepEqual([seen.at(-1).op, seen.at(-1).args.scope, seen.at(-1).args.profile, seen.at(-1).args.provider, seen.at(-1).args.reason, paused.done, paused.outcome], ['pause_chat', 'account', 'chrome-profile-7', 'claude', 'interrupted x2', true, 'ok']);
+  assert.ok(Math.abs(Date.parse(seen.at(-1).args.until) - Date.now() - 8 * 3_600_000) < 60_000, 'hours sets until');
+  assert.match(paused.scope, /joining it, reconnecting AkiMCP, reading usage and account admin still go ahead/);
+  assert.equal(fs.readFileSync(flagsPath, 'utf8'), flagsBefore, 'AkiMCP never writes the pause file');
+  // An expired flags.json entry for the same target never hides the pending pause (P10·W9 review of D18).
+  fs.writeFileSync(flagsPath, JSON.stringify({ list: [...JSON.parse(flagsBefore).list, { scope: 'account', account: 'c@x', profileId: 'chrome-profile-7', provider: 'claude', reason: 'old', until: gone }] }));
+  // c': a pause AIObox took but has not run counts as in force at once, so new_window there is refused before AIObox wrote it.
+  const queued = JSON.parse((await call('aiobox_write', { op: 'pause_chat', account: 'c@x', profile: 'chrome-profile-7', provider: 'claude', reason: 'slow', wait: 1 })).text);
+  assert.deepEqual([queued.queued, queued.done], [true, false]);
+  assert.match(queued.next, /AkiMCP already treats it as in force/);
+  assert.deepEqual(JSON.parse((await call('aiobox', { op: 'profiles' })).text).profiles.find((p) => p.id === 'chrome-profile-7').providers.find((x) => x.id === 'claude').chatPause, { reason: 'slow', until: null, pending: true });
+  assert.equal(JSON.parse((await call('aiobox', { op: 'profiles' })).text).profiles.find((p) => p.id === 'chrome-profile-7').providers.find((x) => x.id === 'claude').canTakeChat, false, 'the pending pause holds over an expired entry of the same target');
+  assert.match((await call('aiobox_write', { op: 'new_window', profile: 'chrome-profile-7', provider: 'claude' })).text, /has a chat pause \(requested, AIObox has not run it yet\): slow \(chat_paused;/);
+  const resumed = JSON.parse((await call('aiobox_write', { op: 'resume_chat', account: 'c@x', profile: 'chrome-profile-7', provider: 'claude' })).text);
+  assert.deepEqual([seen.at(-1).op, resumed.done], ['resume_chat', true]);
+  assert.equal(JSON.parse((await call('aiobox', { op: 'profiles' })).text).profiles.find((p) => p.id === 'chrome-profile-7').providers.find((x) => x.id === 'claude').canTakeChat, true, 'resume drops the pending pause');
+  fs.writeFileSync(flagsPath, flagsBefore);
+  assert.match((await call('aiobox_write', { op: 'pause_chat', workspace: 'w', reason: 'old aiobox' })).text, /AIObox refused pause_chat \(run \d+\): pause_chat \(unknown_op; next: update AkiMCP or AIObox/, 'an AIObox without chat pauses says so');
   assert.match((await call('aiobox_write', { op: 'handoff_open', profile: 'P2', provider: 'claude', like: 'P1·W1', text: 'broken' })).text, /handoff_open run \d+ ended error: verify: no signed-in claude\.ai client \(steps: open ok → connect ok → verify error \(no signed-in claude\.ai client\)\)/);
   const slow = JSON.parse((await call('aiobox_write', { op: 'handoff_open', profile: 'P2', provider: 'claude', like: 'P1·W1', text: 'slow', wait: 1 })).text);
   assert.deepEqual([slow.done, slow.window, slow.steps.at(-1)], [false, undefined, { step: 'connect', status: 'running', at: slow.steps.at(-1).at, info: null }]);
