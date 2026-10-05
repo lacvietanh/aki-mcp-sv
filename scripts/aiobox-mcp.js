@@ -1,5 +1,6 @@
 // AIObox windows by handle (P7·W2): aki__aiobox reads, aki__aiobox_write runs JS. Built on cdp-engine.js the way postman-mcp.js is: AIObox knowledge lives here, devtools_* stay app-agnostic.
 // Contract with aiobox (windows.json shape, handle forms, akipanel.live.chat()): docs/plan/IMPORTANT-akimcp-aiobox-contract.md. Plan: docs/plan/done/provider-toolkit-architecture.md § Provider aiobox; next steps: docs/plan/aiobox-control-ops.md.
+import { AsyncLocalStorage } from 'node:async_hooks';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -52,7 +53,38 @@ const RAW_TEXT_CAP = 20_000; // codepoints of page text returned by op=read with
 const TEXT_ELEMENTS_CAP = 50;
 const TEXT_ELEMENT_CAP = 4_000;
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// One tool call ends within CALL_WAIT_MAX_S end to end (S4, 2026-10-05): a client gives up after about a minute (24 calls ended at ~60 000 ms with nothing back), and a frozen tab used to hold a call for 60 s per evaluate. The deadline is set once per call; every page call is bounded by what is left of it, every poll sleeps at most up to it, and a call out of time says so (code timeout) with the step that is safe next.
+const callDeadline = new AsyncLocalStorage();
+let callBudgetMs = null; // null: CALL_WAIT_MAX_S; tests shorten it
+export const setCallBudgetMs = (ms) => { callBudgetMs = ms; };
+const leftMs = () => { const deadline = callDeadline.getStore(); return deadline === undefined ? Infinity : deadline - Date.now(); };
+class OutOfTime extends Error {
+  constructor() {
+    super('out of time');
+    this.outOfTime = true;
+  }
+}
+// A page call raced against the time left: it ends at the deadline even if the page never answers (the CDP side is told the same bound, so its socket closes too).
+function inTime(run) {
+  const left = leftMs();
+  if (left <= 0) return Promise.reject(new OutOfTime());
+  if (left === Infinity) return run(undefined);
+  let timer;
+  const out = new Promise((_, reject) => { timer = setTimeout(() => reject(new OutOfTime()), left); });
+  return Promise.race([run(Math.ceil(left) + 100), out]).finally(() => clearTimeout(timer));
+}
+const page = {
+  evaluate: (opts) => inTime((bound) => cdp.evaluate(bound === undefined || (opts.timeoutMs !== undefined && opts.timeoutMs < bound) ? opts : { ...opts, timeoutMs: bound })),
+  listTargets: (opts) => inTime(() => cdp.listTargets(opts)),
+  screenshot: (opts) => inTime(() => cdp.screenshot(opts)),
+  closeTab: (opts) => inTime(() => cdp.closeTab(opts)),
+};
+// A poll waits at most until the deadline, and a poll loop past it ends there (even one that swallows a page error).
+const sleep = (ms) => {
+  const left = leftMs();
+  if (left <= 0) return Promise.reject(new OutOfTime());
+  return new Promise((r) => setTimeout(r, Math.min(ms, left)));
+};
 
 // A refusal an AI can act on: a stable code, the one next step, and the running version (a client whose cached tool schema lacks an op can compare with op=state's ops).
 class Refusal extends Error {
@@ -338,7 +370,7 @@ async function openTab(args) {
 
 // The map and Chrome can disagree for a moment (a window just closed or restored). A live target whose title carries a different written handle, or no live target at all, means the map is stale: refuse rather than act on the wrong window. A page without a title prefix (chrome://, new tab) is accepted, since AIObox cannot prefix it.
 async function liveTarget(tab) {
-  const live = (await cdp.listTargets({ port: tab.port })).find((t) => t.id === tab.targetId);
+  const live = (await page.listTargets({ port: tab.port })).find((t) => t.id === tab.targetId);
   if (!live) throw new Refusal('stale_map', `window map is stale: ${tab.handle} (target ${tab.targetId}) is no longer open on port ${tab.port}`, NEXT_STATE);
   const head = (live.title || '').split(TITLE_SEP)[0];
   const h = parseHandle(head);
@@ -427,11 +459,11 @@ const QUOTE_MIN = 20;
 async function probeTabs(map, quote) {
   const tabs = tabsOf(map).filter((t) => CHAT_PROVIDERS.has(providerOf(t.url)));
   const liveByPort = new Map();
-  for (const port of new Set(tabs.map((t) => t.port))) liveByPort.set(port, await cdp.listTargets({ port }).catch(() => []));
+  for (const port of new Set(tabs.map((t) => t.port))) liveByPort.set(port, await page.listTargets({ port }).catch(() => []));
   const probes = await Promise.allSettled(tabs.map((t) => {
     const live = liveByPort.get(t.port).find((l) => l.id === t.targetId);
     if (!live) return Promise.reject(new Error('not live'));
-    return cdp.evaluate({ port: t.port, target: live, expression: PROBE_JS(quote), timeoutMs: PROBE_TIMEOUT_MS });
+    return page.evaluate({ port: t.port, target: live, expression: PROBE_JS(quote), timeoutMs: PROBE_TIMEOUT_MS });
   }));
   return new Map(tabs.flatMap((t, i) => (probes[i].status === 'fulfilled' && probes[i].value?.value ? [[t.targetId, probes[i].value.value]] : [])));
 }
@@ -452,6 +484,8 @@ export const CALL_WAIT_MAX_S = 50;
 export const waitLimitS = (asked, fallback) => Math.min(asked ?? fallback, CALL_WAIT_MAX_S);
 const WAIT_IDLE_DEFAULT_S = CALL_WAIT_MAX_S;
 const WAIT_IDLE_POLL_MS = 1_000;
+const WAIT_IDLE_READ_MS = 2_000;
+const SEND_DELIVERED_MS = 5_000;
 const WAIT_AGAIN = 'still answering: call op=wait_idle again (one call waits at most 50 s)';
 
 // Chat pauses (plan akimcp-tool-refactor § 9, D18a–d + challenger #24): an account or workspace that gets no new AI chat work (send, new chat, handoff) until `until` or op=resume_chat; joining it, reconnecting AkiMCP, reading usage and account admin still go ahead.
@@ -651,7 +685,7 @@ async function sendRequest(op, args) {
 }
 // The run of a request, once it ended or the wait is over (null: no row yet).
 async function awaitRequestRun(request, waitMs) {
-  for (const end = Date.now() + waitMs; ; await sleep(REQUEST_POLL_MS)) {
+  for (const end = Date.now() + Math.min(waitMs, leftMs()); ; await sleep(REQUEST_POLL_MS)) {
     let run = null;
     try {
       run = readRuns(runsFile(), { request, last: 1 })[0] ?? null;
@@ -744,7 +778,7 @@ const READ_OPS = {
       return ok(JSON.stringify(archivedRead(args.window, doc, args.last ?? 1), null, 2));
     }
     const { tab, live: target, used } = opened;
-    const { value } = await cdp.evaluate({ port: tab.port, target, expression: READ_JS(args.last ?? 1) });
+    const { value } = await page.evaluate({ port: tab.port, target, expression: READ_JS(args.last ?? 1) });
     if (value?.error !== undefined) throw new Error(`AIObox chat reader in ${tab.handle}: ${value.error}`);
     if (value?.unsupported !== undefined) throw new Error(`AIObox chat capability version ${value.unsupported} in ${tab.handle} is not supported (expected ${CHAT_VERSION}); update AkiMCP or AIObox`);
     const body = value?.source === 'raw' ? { source: 'raw', ...tailCodepoints(value.text, RAW_TEXT_CAP) } : value;
@@ -757,27 +791,36 @@ const READ_OPS = {
     const { tab, live: target, used } = await openTab(args);
     const limitMs = waitLimitS(args.timeout, WAIT_IDLE_DEFAULT_S) * 1000;
     const started = Date.now();
+    // The last read starts no later than WAIT_IDLE_READ_MS before the call's deadline, so it has time to answer.
+    const end = started + Math.min(limitMs, leftMs() - WAIT_IDLE_READ_MS);
     for (;;) {
-      const { value } = await cdp.evaluate({ port: tab.port, target, expression: READ_JS(args.last ?? 1) });
+      let value;
+      try {
+        ({ value } = await page.evaluate({ port: tab.port, target, expression: READ_JS(args.last ?? 1) }));
+      } catch (e) {
+        if (!e.outOfTime) throw e;
+        return ok(JSON.stringify({ ...used, busy: null, timedOut: true, waitedMs: Date.now() - started, next: `${tab.handle} did not answer a read before this call's ${CALL_WAIT_MAX_S} s were up (frozen, or very slow): ${WAIT_AGAIN}; still no answer: op=state, or tell the owner` }, null, 2));
+      }
       if (value?.source !== 'provider' || value.unsupported !== undefined) throw new Refusal('no_adapter', `${tab.handle} has no AIObox chat reader, so whether it is answering is unknown`, 'read it with op=read and judge from the text');
       if (value.error !== undefined) throw new Error(`AIObox chat reader in ${tab.handle}: ${value.error}`);
       const waitedMs = Date.now() - started;
       if (!value.busy && value.draft) return ok(JSON.stringify({ ...used, busy: false, draft: true, warning: [used.warning, DRAFT_WARNING].filter(Boolean).join(' Also: '), waitedMs, messages: value.messages, ...interruptedNext(tab, value) }, null, 2));
       if (!value.busy) return ok(JSON.stringify({ ...used, busy: false, waitedMs, messages: value.messages, ...interruptedNext(tab, value) }, null, 2));
-      if (waitedMs >= limitMs) return ok(JSON.stringify({ ...used, busy: true, timedOut: true, waitedMs, next: WAIT_AGAIN }, null, 2));
-      await sleep(WAIT_IDLE_POLL_MS);
+      const left = end - Date.now();
+      if (left <= 0) return ok(JSON.stringify({ ...used, busy: true, timedOut: true, waitedMs, next: WAIT_AGAIN }, null, 2));
+      await sleep(Math.min(WAIT_IDLE_POLL_MS, left));
     }
   },
   async text(args) {
     need('text', args, ['window', 'selector']);
     const { tab, live: target, used } = await openTab(args);
-    const { value } = await cdp.evaluate({ port: tab.port, target, expression: TEXT_JS(args.selector) });
+    const { value } = await page.evaluate({ port: tab.port, target, expression: TEXT_JS(args.selector) });
     return ok(JSON.stringify({ ...used, elements: value }, null, 2));
   },
   async screenshot(args) {
     need('screenshot', args, ['window']);
     const { tab, live: target, used } = await openTab(args);
-    const { data, mimeType } = await cdp.screenshot({ port: tab.port, target, format: args.format });
+    const { data, mimeType } = await page.screenshot({ port: tab.port, target, format: args.format });
     const shot = okImage(data, mimeType);
     shot.content.push({ type: 'text', text: JSON.stringify(used) });
     return shot;
@@ -934,7 +977,7 @@ const CLOSE_WAIT_MS = 3_000;
 const CLOSE_POLL_MS = 250;
 const tabGone = async (tab) => {
   for (const end = Date.now() + CLOSE_WAIT_MS; ; await sleep(CLOSE_POLL_MS)) {
-    const open = (await cdp.listTargets({ port: tab.port }).catch(() => null))?.some((t) => t.id === tab.targetId);
+    const open = (await page.listTargets({ port: tab.port }).catch(() => null))?.some((t) => t.id === tab.targetId);
     if (open === false) return true;
     if (Date.now() >= end) return false;
   }
@@ -947,7 +990,7 @@ const openedLinkOf = (tab, target) => {
 async function closeOpenedLink(tab, used, key, successor) {
   if (successor) throw new Refusal('no_panel', `${tab.handle} is a link tab op=open_url opened, so it succeeds nothing`, 'close it without successor');
   const opened = readOpened();
-  await cdp.closeTab({ port: tab.port, targetId: tab.targetId });
+  await page.closeTab({ port: tab.port, targetId: tab.targetId });
   if (!(await tabGone(tab))) throw new Error(`${tab.handle} is still open ${CLOSE_WAIT_MS / 1000}s after closing the link tab`);
   writeOpened(opened.filter((o) => o.url !== key));
   return ok(JSON.stringify({ ...used, closed: true, link: key }, null, 2));
@@ -980,7 +1023,7 @@ const WRITE_OPS = {
   async new_window(args) {
     if (args.window === undefined) return newWindowIn(args);
     const { tab, live: target, used } = await openTab(args);
-    const ask = async () => (await cdp.evaluate({ port: tab.port, target, expression: NEW_WINDOW_JS })).value;
+    const ask = async () => (await page.evaluate({ port: tab.port, target, expression: NEW_WINDOW_JS })).value;
     let before = handlesOfProfile(readMap(), tab.port);
     let value = await ask();
     // The panel was resting from a window someone opened a moment ago: asking now would open nothing and that window would be taken for ours. Wait the rest out, count their window as existing, then ask once more.
@@ -1044,7 +1087,7 @@ const WRITE_OPS = {
     if (args.from && args.from === used.chatId) throw new Refusal('self_target', `${tab.handle} is your own chat (${used.chatId})`, 'open another chat with op=new_window instead');
     let value;
     try {
-      value = (await cdp.evaluate({ port: tab.port, target, expression: NEW_CHAT_JS })).value;
+      value = (await page.evaluate({ port: tab.port, target, expression: NEW_CHAT_JS })).value;
     } catch (e) {
       if (!NAVIGATED.test(e.message)) throw e;
       value = { ok: true };
@@ -1053,7 +1096,7 @@ const WRITE_OPS = {
     if (value?.error) throw new Error(`${tab.handle}: ${value.error}`);
     let last = null;
     for (const end = Date.now() + NEW_CHAT_WAIT_MS; Date.now() < end; await sleep(NEW_WINDOW_POLL_MS)) {
-      last = (await cdp.evaluate({ port: tab.port, target, expression: NEW_CHAT_READY_JS }).catch(() => null))?.value ?? last;
+      last = (await page.evaluate({ port: tab.port, target, expression: NEW_CHAT_READY_JS }).catch(() => null))?.value ?? last;
       if (last?.ready && chatIdOf(last.url) === null) {
         return ok(JSON.stringify({ ...used, previousChatId: used.chatId, chatId: null, url: last.url, next: 'op=send the first message, then op=state shows its chatId' }, null, 2));
       }
@@ -1066,7 +1109,7 @@ const WRITE_OPS = {
     const { tab, live: target, used } = await openTab(args);
     if (args.from && args.from === used.chatId) throw new Refusal('self_target', `${tab.handle} is your own chat (${used.chatId})`, "switch your own tab with Notion's sidebar switcher");
     if (providerOf(tab.url) !== 'notion') throw new Refusal('not_notion', `${tab.handle} is not a Notion window`, 'only Notion has workspaces');
-    const seen = (await cdp.evaluate({ port: tab.port, target, expression: WORKSPACES_JS })).value;
+    const seen = (await page.evaluate({ port: tab.port, target, expression: WORKSPACES_JS })).value;
     if (seen?.missing) throw new Refusal('no_switch_workspace', `${tab.handle} has no AIObox switchWorkspace (an older AIObox build)`, "rebuild AIObox, or use Notion's sidebar switcher");
     if (seen?.error) throw new Error(`${tab.handle}: ${seen.error}`);
     const scope = findWorkspace(seen.scopes, args.workspace);
@@ -1078,7 +1121,7 @@ const WRITE_OPS = {
     const previousWorkspace = seen.pick ? findWorkspace(seen.scopes, seen.pick) ?? { id: seen.pick, label: null } : null;
     let value;
     try {
-      value = (await cdp.evaluate({ port: tab.port, target, expression: SWITCH_WORKSPACE_JS(scope.id) })).value;
+      value = (await page.evaluate({ port: tab.port, target, expression: SWITCH_WORKSPACE_JS(scope.id) })).value;
     } catch (e) {
       if (!NAVIGATED.test(e.message)) throw e;
       value = { ok: true };
@@ -1086,7 +1129,7 @@ const WRITE_OPS = {
     if (value?.error) throw new Error(`${tab.handle}: ${value.error}`);
     let last = null;
     for (const end = Date.now() + SWITCH_WAIT_MS; Date.now() < end; await sleep(NEW_WINDOW_POLL_MS)) {
-      last = (await cdp.evaluate({ port: tab.port, target, expression: SWITCHED_JS }).catch(() => null))?.value ?? last;
+      last = (await page.evaluate({ port: tab.port, target, expression: SWITCHED_JS }).catch(() => null))?.value ?? last;
       if (last?.ready && atNotionAiHome(last.url) && last.pick && spaceKey(last.pick) === spaceKey(scope.id)) {
         return ok(JSON.stringify({ ...used, previousChatId: used.chatId, chatId: chatIdOf(last.url), url: last.url, workspace, previousWorkspace, moved: true, next: 'op=send the first message there, then op=state shows its chatId' }, null, 2));
       }
@@ -1100,7 +1143,7 @@ const WRITE_OPS = {
     let like = args.like;
     try { like = resolveTab(readMap(), args.like).targetId; } catch {}
     if (like === tab.targetId) throw new Refusal('same_window', `${tab.handle} cannot be placed like itself`, 'pass the old window as like and the new one as window');
-    const { value } = await cdp.evaluate({ port: tab.port, target, expression: PLACE_LIKE_JS(like), awaitPromise: true });
+    const { value } = await page.evaluate({ port: tab.port, target, expression: PLACE_LIKE_JS(like), awaitPromise: true });
     if (value?.missing) throw new Refusal('no_place_like', `${tab.handle} has no AIObox placeLike (an older AIObox build)`, 'rebuild AIObox, or leave the window where it is');
     if (value?.error) throw new Error(`${tab.handle}: ${value.error}`);
     return ok(JSON.stringify({ ...used, like, placed: true, bounds: value.bounds }, null, 2));
@@ -1152,7 +1195,7 @@ const WRITE_OPS = {
     need('compose', args, ['window', 'text']);
     const { tab, live: target, used } = await openTab(args);
     if (args.from && args.from === used.chatId) throw new Refusal('self_target', `${tab.handle} is your own chat (${used.chatId})`, "compose into the other session's window, found by its handle in op=state");
-    const { value } = await cdp.evaluate({ port: tab.port, target, expression: COMPOSE_JS(args.text), awaitPromise: true });
+    const { value } = await page.evaluate({ port: tab.port, target, expression: COMPOSE_JS(args.text), awaitPromise: true });
     if (value?.unsupported !== undefined) throw new Error(`AIObox compose capability version ${value.unsupported} in ${tab.handle} is not supported (expected ${COMPOSE_VERSION}); update AkiMCP or AIObox`);
     if (!value?.ok) throw new Error(`${tab.handle}: ${value?.error ?? 'compose returned no result'}`);
     return ok(JSON.stringify({ ...used, composed: true, sent: false }, null, 2));
@@ -1165,31 +1208,32 @@ const WRITE_OPS = {
     const started = Date.now();
     const waitS = waitLimitS(args.wait, 0);
     let value;
-    for (const end = started + waitS * 1000; ; await sleep(WAIT_IDLE_POLL_MS)) {
-      ({ value } = await cdp.evaluate({ port: tab.port, target, expression: SEND_JS(args.text), awaitPromise: true }));
+    // A held message is retried only while SEND_DELIVERED_MS of the call is left, so a draft or busy answer, or the delivery check, still comes back within it.
+    for (const end = started + Math.min(waitS * 1000, leftMs() - SEND_DELIVERED_MS); ; await sleep(WAIT_IDLE_POLL_MS)) {
+      ({ value } = await page.evaluate({ port: tab.port, target, expression: SEND_JS(args.text), awaitPromise: true }));
       if (!value?.held || Date.now() >= end) break;
     }
     const retry = waitS < CALL_WAIT_MAX_S ? 'op=send wait=50 in this turn' : 'op=send wait=50 again in this turn';
-    if (value?.held === 'draft') throw new Refusal('draft', `${tab.handle} holds a draft in its message box${waitS ? ` after ${waitS}s` : ''}; it is left untouched`, `${retry}; still there: ask another window to relay it, or report "not sent: ${tab.handle} draft"`);
-    if (value?.held) throw new Refusal('busy', `${tab.handle} is answering and its provider takes no message mid-answer (read=blocked)${waitS ? `, still after ${waitS}s` : ''}`, `${retry}; still busy: report "not sent: ${tab.handle} busy", never promise a later send`);
+    if (value?.held === 'draft') throw new Refusal('draft', `${tab.handle} holds a draft in its message box${waitS ? ` after ${Math.round((Date.now() - started) / 1000)}s` : ''}; it is left untouched`, `${retry}; still there: ask another window to relay it, or report "not sent: ${tab.handle} draft"`);
+    if (value?.held) throw new Refusal('busy', `${tab.handle} is answering and its provider takes no message mid-answer (read=blocked)${waitS ? `, still after ${Math.round((Date.now() - started) / 1000)}s` : ''}`, `${retry}; still busy: report "not sent: ${tab.handle} busy", never promise a later send`);
     if (value?.missing) throw new Refusal('no_send', `${tab.handle} has no AIObox send capability (an older AIObox build, or not a chat page)`, 'use op=compose and ask the owner to press Enter, or rebuild AIObox');
     if (value?.unsupported !== undefined) throw new Error(`AIObox send capability version ${value.unsupported} in ${tab.handle} is not supported (expected ${SEND_VERSION} or ${SEND_V1}); update AkiMCP or AIObox`);
     if (!value?.ok) throw new Error(`${tab.handle}: ${value?.error ?? 'send returned no result'}`);
     const how = { ...(value.midAnswer ? { midAnswer: true } : {}), ...(value.draft ? { draft: value.draft } : {}) };
     if (value.queued) return ok(JSON.stringify({ ...used, sent: false, delivered: false, queued: true, position: value.position, reason: value.reason, waitedMs: Date.now() - started, next: `AIObox holds it and sends it once ${tab.handle} can take it; it arrived only when op=read there shows it` }, null, 2));
-    const seen = (await cdp.evaluate({ port: tab.port, target, expression: DELIVERED_JS(args.text, value.users), awaitPromise: true })).value;
+    const seen = (await page.evaluate({ port: tab.port, target, expression: DELIVERED_JS(args.text, value.users), awaitPromise: true })).value;
     const delivered = seen?.seen === true;
     return ok(JSON.stringify({ ...used, sent: true, delivered, ...how, waitedMs: Date.now() - started, ...(delivered ? {} : { next: `${seen?.unread ? 'this page has no chat reader' : 'the message does not show in the chat yet'}: op=read last=3 on ${tab.handle} before saying it arrived; never send it again before reading` }) }, null, 2));
   },
   async run_macro(args) {
     need('run_macro', args, ['window', 'macro']);
     const { tab, live: target, used } = await openTab(args);
-    const { value } = await cdp.evaluate({ port: tab.port, target, expression: MACRO_JS(args.macro, args.option) });
+    const { value } = await page.evaluate({ port: tab.port, target, expression: MACRO_JS(args.macro, args.option) });
     if (value?.error) throw new Error(`${tab.handle}: ${value.error}`);
     if (value?.unknown) throw new Refusal('no_macro', `${tab.handle} has no macro '${args.macro}'; it has: ${value.unknown.join(', ') || 'none'}`, 'pick an id from op=state macros');
     if (value?.badOption) throw new Refusal('no_option', `macro '${args.macro}' has no option '${args.option}'; it has: ${value.badOption.join(', ') || 'none'}`, 'pick one of those, or omit option for the default');
-    for (const end = Date.now() + MACRO_WAIT_MS; Date.now() < end; await sleep(MACRO_POLL_MS)) {
-      const run = (await cdp.evaluate({ port: tab.port, target, expression: MACRO_RUN_JS(args.macro) })).value;
+    for (const end = Date.now() + Math.min(MACRO_WAIT_MS, leftMs() - MACRO_POLL_MS); Date.now() < end; await sleep(MACRO_POLL_MS)) {
+      const run = (await page.evaluate({ port: tab.port, target, expression: MACRO_RUN_JS(args.macro) })).value;
       if (run && run.at > value.before && MACRO_ENDED.has(run.status)) return ok(JSON.stringify({ ...used, macro: args.macro, status: run.status, message: run.message }, null, 2));
     }
     // macroRuns lives in the page: a macro that navigates or reloads it (connect-akimcp does) never reports back here.
@@ -1198,7 +1242,7 @@ const WRITE_OPS = {
   async eval(args) {
     need('eval', args, ['window', 'expression']);
     const { tab, live: target, used } = await openTab(args);
-    const out = await cdp.evaluate({ port: tab.port, target, expression: args.expression, awaitPromise: args.awaitPromise ?? true });
+    const out = await page.evaluate({ port: tab.port, target, expression: args.expression, awaitPromise: args.awaitPromise ?? true });
     return ok(JSON.stringify({ ...used, value: out.value, type: out.type }, null, 2));
   },
 };
@@ -1213,6 +1257,16 @@ export const provider = {
 
 const windowArg = z.string().optional().describe('handle P#·W#, chatId or targetId');
 const expectArg = z.string().optional().describe('targetId, chatId, or text the url or title must contain; refused if the window shows another');
+
+const withinCall = (run) => callDeadline.run(Date.now() + (callBudgetMs ?? CALL_WAIT_MAX_S * 1000), run);
+// Out of time: a read op is safe to call again; a write op may have acted, so it is read before anything is sent or asked again.
+function outOfTime(op, args, acts) {
+  const where = args.window ? ` window=${args.window}` : '';
+  const next = acts
+    ? `it may have taken effect: aki__aiobox op=read last=3${where} (op=runs for a request, op=windows for a window) before trying again; never send or ask again before reading`
+    : `call op=${op} again; out of time again: the tab may be frozen, so op=state, or tell the owner`;
+  return new Refusal('timeout', `op=${op} did not finish within this call's ${CALL_WAIT_MAX_S} s`, next);
+}
 
 export function register(server) {
   server.registerTool(
@@ -1240,9 +1294,9 @@ export function register(server) {
     },
     async ({ op, ...args }) => {
       try {
-        return await READ_OPS[op](args);
+        return await withinCall(() => READ_OPS[op](args));
       } catch (e) {
-        return fail(e);
+        return fail(e.outOfTime ? outOfTime(op, args, false) : e);
       }
     },
   );
@@ -1278,9 +1332,9 @@ export function register(server) {
     },
     async ({ op, ...args }) => {
       try {
-        return await WRITE_OPS[op](args);
+        return await withinCall(() => WRITE_OPS[op](args));
       } catch (e) {
-        return fail(e);
+        return fail(e.outOfTime ? outOfTime(op, args, true) : e);
       }
     },
   );

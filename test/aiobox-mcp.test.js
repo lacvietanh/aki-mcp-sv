@@ -15,7 +15,7 @@ process.env.USERPROFILE = home;
 // userdata.js fixes the data dir at import, so the env goes first and the modules after.
 process.env.AKI_MCP_DATA_DIR = path.join(home, 'mcpsv');
 const { default: cdp } = await import('../scripts/cdp-engine.js');
-const { register, provider, parseHandle, formatHandle, stripHandle, chatIdOf, waitLimitS, CALL_WAIT_MAX_S } = await import('../scripts/aiobox-mcp.js');
+const { register, provider, parseHandle, formatHandle, stripHandle, chatIdOf, waitLimitS, CALL_WAIT_MAX_S, setCallBudgetMs } = await import('../scripts/aiobox-mcp.js');
 const mapFile = path.join(home, '.aki', 'aiobox', 'cdp', 'windows.json');
 const seenFile = path.join(home, 'mcpsv', 'aiobox-seen.json');
 
@@ -289,6 +289,31 @@ assert.match(stillBusy.next, /call op=wait_idle again/, 'a timed-out wait says h
 // One call never outlasts the client's own tool-call timeout (about a minute): a longer wait is clamped, the caller loops.
 assert.deepEqual([waitLimitS(240, 50), waitLimitS(undefined, 50), waitLimitS(5, 50), waitLimitS(undefined, 0)], [CALL_WAIT_MAX_S, CALL_WAIT_MAX_S, 5, 0]);
 assert.ok(CALL_WAIT_MAX_S <= 55);
+// S4: one call ends within its budget (CALL_WAIT_MAX_S, here shortened) even when the tab never answers; out of time says what is safe next.
+{
+  const BUDGET = 1_500;
+  setCallBudgetMs(BUDGET);
+  const timed = async (name, args) => { const t0 = Date.now(); const r = await call(name, args); return { ...r, ms: Date.now() - t0 }; };
+  const busyLoop = await timed('aiobox', { op: 'wait_idle', window: 'abc', timeout: 50 });
+  assert.deepEqual([JSON.parse(busyLoop.text).busy, JSON.parse(busyLoop.text).timedOut], [true, true]);
+  assert.ok(busyLoop.ms < BUDGET, `a busy wait_idle ends before the call's deadline (${busyLoop.ms} ms)`);
+  const realEvaluate = cdp.evaluate;
+  cdp.evaluate = () => new Promise(() => {}); // a frozen tab: never answers
+  const frozenIdle = await timed('aiobox', { op: 'wait_idle', window: 'abc' });
+  const fi = JSON.parse(frozenIdle.text);
+  assert.deepEqual([fi.busy, fi.timedOut], [null, true], 'a frozen tab: busy unknown, timed out');
+  assert.match(fi.next, /did not answer a read.*call op=wait_idle again/);
+  assert.ok(frozenIdle.ms < BUDGET + 300, `frozen wait_idle ends at the deadline (${frozenIdle.ms} ms)`);
+  const frozenRead = await timed('aiobox', { op: 'read', window: 'abc' });
+  assert.ok(frozenRead.isError);
+  assert.match(frozenRead.text, /op=read did not finish within this call's 50 s \(timeout; next: call op=read again/);
+  assert.ok(frozenRead.ms < BUDGET + 300, `frozen read ends at the deadline (${frozenRead.ms} ms)`);
+  const frozenSend = await timed('aiobox_write', { op: 'send', window: 'abc', text: 'hello there' });
+  assert.match(frozenSend.text, /\(timeout; next: it may have taken effect: aki__aiobox op=read last=3 window=abc .*never send or ask again before reading/, 'a send out of time is read before it is sent again');
+  assert.ok(frozenSend.ms < BUDGET + 300, `frozen send ends at the deadline (${frozenSend.ms} ms)`);
+  cdp.evaluate = realEvaluate;
+  setCallBudgetMs(null);
+}
 notionBusy = false;
 const idle = JSON.parse((await call('aiobox', { op: 'wait_idle', window: 'abc' })).text);
 assert.deepEqual([idle.busy, idle.messages], [false, [{ role: 'assistant', text: 'working' }]]);
@@ -625,6 +650,17 @@ assert.ok(midOut.waitedMs < 2000, 'sent at once, no busy wait');
 liveDraft = true;
 assert.match((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'x' })).text, /P7·W2 holds a draft in its message box; it is left untouched \(draft; next: op=send wait=50 in this turn; still there: ask another window to relay it/);
 assert.deepEqual(liveSent, ['now'], 'a draft is never touched');
+// S4: wait=50 (as next advises) retries a held message only while 5 s of the call are left, so the draft refusal comes back, not a timeout.
+{
+  setCallBudgetMs(7_000);
+  const t0 = Date.now();
+  const heldOut = (await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'x', wait: 50 })).text;
+  const ms = Date.now() - t0;
+  setCallBudgetMs(null);
+  assert.match(heldOut, /holds a draft in its message box after \d+s; it is left untouched \(draft; next: op=send wait=50 again in this turn/);
+  assert.ok(ms >= 1_500 && ms < 4_000, `retried within the budget less the delivery reserve (${ms} ms)`);
+  assert.deepEqual(liveSent, ['now'], 'still untouched');
+}
 setTimeout(() => { liveDraft = false; }, 1200);
 const afterDraft = JSON.parse((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'later', wait: 5 })).text);
 assert.deepEqual([afterDraft.delivered, liveSent], [true, ['now', 'later']], 'sent once the box is empty');
