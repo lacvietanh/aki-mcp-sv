@@ -73,6 +73,17 @@ test('buildLogEntry keeps the code only at basic; detail adds error, from, macro
   assert.equal(detail.errorCode, 'busy');
 });
 
+test('buildLogEntry finds the error code written past the 200-char cut line', () => {
+  const message = 'x'.repeat(220) + ' (blocked; next: wait)';
+  const ctx = { sessionId: 'sess-code-tail', agent: 'A', params: { name: 'aki__git', arguments: {} }, response: { error: { message } }, ms: 1 };
+  const basic = buildLogEntry(ctx, { level: 'basic' }, new Set());
+  assert.equal(basic.errorCode, 'blocked');
+  assert.equal(basic.error, undefined);
+  const detail = buildLogEntry(ctx, { level: 'detail' }, new Set());
+  assert.equal(detail.errorCode, 'blocked');
+  assert.equal(detail.error, message.slice(0, 200));
+});
+
 test('buildLogEntry writes the request headers once per session', () => {
   const seen = new Set();
   const ctx = { sessionId: 's1', agent: 'A', headerNames: ['host', 'x-custom'], params: { name: 'aki__git', arguments: {} }, response: {}, ms: 1 };

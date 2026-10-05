@@ -73,10 +73,8 @@ export function buildLogEntry({ sessionId, agent, headerNames, trace, params, re
   const args = params?.arguments || {};
   const result = response?.result;
   const failed = Boolean(response?.error) || result?.isError === true;
-  const errorText = short(
-    response?.error?.message ?? (failed ? result?.content?.find((c) => c.type === 'text')?.text : undefined),
-    200,
-  );
+  const rawErrorText = response?.error?.message ?? (failed ? result?.content?.find((c) => c.type === 'text')?.text : undefined);
+  const errorText = short(rawErrorText, 200);
   const entry = {
     ts: new Date().toISOString(),
     client: short(sessionId, 8),
@@ -87,7 +85,7 @@ export function buildLogEntry({ sessionId, agent, headerNames, trace, params, re
     port: short(args.port, 6),
     evalKind: evalKindOf(args.expression),
     ok: !failed,
-    errorCode: errorCodeOf(errorText),
+    errorCode: errorCodeOf(rawErrorText),
     ms,
     version: VERSION,
     ...traceFields(trace),
