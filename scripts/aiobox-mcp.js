@@ -44,7 +44,7 @@ const writeOpened = (list) => {
 const MAP_VERSION = 1;
 const CHAT_VERSION = 1; // akipanel.capabilities.chat: the shape of live.chat() this reader understands
 const COMPOSE_VERSION = 2; // akipanel.capabilities.compose: live.compose(text) returns a Promise of { ok, error }
-// akipanel.capabilities.send, contract row live.send: v2 owns busy, drafts and its queue, resolving { ok: true, data: { delivered: true, midAnswer?, draft? } } or { ok: true, data: { queued: true, position, reason } }; v1 refuses busy and drafts and resolves { ok: true } once the message shows. v1 stays read until every AIObox build has v2.
+// akipanel.capabilities.send, contract row live.send: v2 owns busy, drafts and its queue, resolving { ok: true, data: { delivered: true, midAnswer?, draft? } }, { ok: false, delivered: false, rejected: { reason, retried }, error? } when the provider refused it (S1: Notion 'Error sending message', seen within AIObox's 2 s settle; contract wt-s1 a413be4), or { ok: true, data: { queued: true, position, reason } }; v1 refuses busy and drafts and resolves { ok: true } once the message shows. v1 stays read until every AIObox build has v2.
 const SEND_VERSION = 2;
 const SEND_V1 = 1;
 // A user message counts as the one sent when it holds this many codepoints of the sent text, markup and spacing dropped (a provider renders Markdown).
@@ -400,7 +400,7 @@ const READ_JS = (last) => `(() => {
     const data = r.data || {};
     const all = data.messages || [];
     const interrupted = Number(data.interrupted) || 0;
-    return { source: 'provider', ...acct, busy: !!data.busy, ...(data.draft === undefined ? {} : { draft: !!data.draft }), ...(interrupted ? { interrupted } : {}), messages: all.slice(-${last}).map((m) => ({ role: m.role, text: m.text })) };
+    return { source: 'provider', ...acct, busy: !!data.busy, ...(data.draft === undefined ? {} : { draft: !!data.draft }), ...(interrupted ? { interrupted } : {}), messages: all.slice(-${last}).map((m) => ({ role: m.role, text: m.text, ...(m.failed === true ? { failed: true } : {}) })) };
   }
   if (caps.chat !== undefined) return { source: 'provider', unsupported: String(caps.chat) };
   const root = document.body || document.querySelector('main');
@@ -485,7 +485,12 @@ export const waitLimitS = (asked, fallback) => Math.min(asked ?? fallback, CALL_
 const WAIT_IDLE_DEFAULT_S = CALL_WAIT_MAX_S;
 const WAIT_IDLE_POLL_MS = 1_000;
 const WAIT_IDLE_READ_MS = 2_000;
-const SEND_DELIVERED_MS = 5_000;
+const SEND_SEEN_MS = 5_000;
+// A provider can refuse a message it already drew (S1, Notion: 'Error sending message' and a Retry button about 1 s later), so a send live.send did not confirm is watched this long after it shows.
+const SEND_SETTLE_MS = 3_000;
+const SEND_DELIVERED_MS = SEND_SEEN_MS + SEND_SETTLE_MS;
+const NOTION_RETRY_SELECTOR = '[aria-label="Retry sending message"]';
+const RETRY_ITEM_DEPTH = 6; // how far up from the Retry button the message item may sit
 const WAIT_AGAIN = 'still answering: call op=wait_idle again (one call waits at most 50 s)';
 
 // Chat pauses (plan akimcp-tool-refactor § 9, D18a–d + challenger #24): an account or workspace that gets no new AI chat work (send, new chat, handoff) until `until` or op=resume_chat; joining it, reconnecting AkiMCP, reading usage and account admin still go ahead.
@@ -867,7 +872,11 @@ const SEND_JS = (text) => `(async () => {
   const reader = caps.chat === ${CHAT_VERSION} && typeof panel.live.chat === 'function';
   const now = reader ? panel.live.chat() : null;
   const users = now?.ok === true ? (now.data?.messages || []).filter((m) => m.role === 'user').length : null;
-  const sendBy = async (r) => (r && r.ok === true ? { ok: true, users, ...(r.data || {}) } : { error: String(r?.error ?? 'live.send() returned no result') });
+  const sendBy = async (r) => {
+    if (r && r.ok === true) return { ok: true, users, ...(r.data || {}) };
+    if (r?.rejected) return { ok: true, users, delivered: false, reason: String(r.rejected.reason ?? 'rejected'), retried: r.rejected.retried, error: r.error ?? null };
+    return { error: String(r?.error ?? 'live.send() returned no result') };
+  };
   if (caps.send === ${SEND_VERSION}) return sendBy(await panel.live.send(${JSON.stringify(text)}));
   if (now?.ok === true && now.data?.draft) return { held: 'draft' };
   if (now?.ok === true && now.data?.busy) {
@@ -881,19 +890,27 @@ const SEND_JS = (text) => `(async () => {
   }
   return sendBy(await panel.live.send(${JSON.stringify(text)}));
 })()`;
-// delivered = a user message after the first `after` ones holds the sent text; polled 5 s, since a provider draws the new turn late.
-const DELIVERED_JS = (text, after) => `(async () => {
+// delivered = a user message after the first `after` ones holds the sent text; polled SEND_SEEN_MS, since a provider draws the new turn late. Then watched settleMs for the provider refusing it: the reader's failed: true, or a Retry button inside that message's item; AkiMCP never presses Retry (AIObox's live.send does).
+const DELIVERED_JS = (text, after, settleMs) => `(async () => {
   const panel = window.akipanel;
   let caps = {};
   try { caps = JSON.parse(JSON.stringify(panel?.capabilities ?? {})) || {}; } catch {}
   if (caps.chat !== ${CHAT_VERSION} || typeof panel?.live?.chat !== 'function') return { unread: true };
   const plain = (s) => [...String(s ?? '').replace(/[*_\`~#>|\\[\\]()]/g, '').replace(/\\s+/g, ' ').trim()];
   const want = plain(${JSON.stringify(text)}).slice(0, ${DELIVERED_MATCH}).join('');
-  for (let i = 0; i < 50; i++) {
-    const r = panel.live.chat();
-    const fresh = (r?.data?.messages || []).filter((m) => m.role === 'user').slice(${Number(after) || 0});
-    if (fresh.some((m) => plain(m.text).join('').includes(want))) return { seen: true };
-    await new Promise((res) => setTimeout(res, 100));
+  const sentOne = () => (panel.live.chat()?.data?.messages || []).filter((m) => m.role === 'user').slice(${Number(after) || 0}).find((m) => plain(m.text).join('').includes(want));
+  const retryShown = () => {
+    let item = document.querySelector(${JSON.stringify(NOTION_RETRY_SELECTOR)});
+    for (let up = 0; item && up < ${RETRY_ITEM_DEPTH}; up++, item = item.parentElement) if (plain(item.innerText ?? item.textContent).join('').includes(want)) return true;
+    return false;
+  };
+  const refused = (m) => m.failed === true || retryShown();
+  const pause = () => new Promise((res) => setTimeout(res, 100));
+  for (let i = 0; i < ${SEND_SEEN_MS / 100}; i++, await pause()) {
+    const m = sentOne();
+    if (!m) continue;
+    for (let j = 0; j < ${Math.ceil((Number(settleMs) || 0) / 100)}; j++, await pause()) if (refused(sentOne() || m)) return { seen: true, failed: true };
+    return { seen: true, failed: refused(sentOne() || m) };
   }
   return { seen: false };
 })()`;
@@ -1223,7 +1240,13 @@ const WRITE_OPS = {
     if (!value?.ok) throw new Error(`${tab.handle}: ${value?.error ?? 'send returned no result'}`);
     const how = { ...(value.midAnswer ? { midAnswer: true } : {}), ...(value.draft ? { draft: value.draft } : {}) };
     if (value.queued) return ok(JSON.stringify({ ...used, sent: false, delivered: false, queued: true, position: value.position, reason: value.reason, waitedMs: Date.now() - started, next: `AIObox holds it and sends it once ${tab.handle} can take it; it arrived only when op=read there shows it` }, null, 2));
-    const seen = (await page.evaluate({ port: tab.port, target, expression: DELIVERED_JS(args.text, value.users), awaitPromise: true })).value;
+    // S1: the provider refused it: reported as AIObox saw it, never overwritten by the delivery check.
+    const notTaken = (reason, error, retried) => ok(JSON.stringify({ ...used, sent: true, delivered: false, reason, error, ...(retried === undefined ? {} : { retried }), ...how, waitedMs: Date.now() - started, next: `${tab.handle} did not take it (${reason}): op=read last=3 on ${tab.handle} before anything else; never send it again before reading` }, null, 2));
+    if (value.delivered === false) return notTaken(value.reason ?? 'not_delivered', value.error ?? null, value.retried);
+    // A send AIObox confirmed after its own 2 s settle is not watched again; v1, a mid-answer compose, or a v2 that does not report delivered, is.
+    const settleMs = value.delivered === true ? 0 : SEND_SETTLE_MS;
+    const seen = (await page.evaluate({ port: tab.port, target, expression: DELIVERED_JS(args.text, value.users, settleMs), awaitPromise: true })).value;
+    if (seen?.failed) return notTaken('notion_send_error', 'the chat shows the message as not sent (Retry)');
     const delivered = seen?.seen === true;
     return ok(JSON.stringify({ ...used, sent: true, delivered, ...how, waitedMs: Date.now() - started, ...(delivered ? {} : { next: `${seen?.unread ? 'this page has no chat reader' : 'the message does not show in the chat yet'}: op=read last=3 on ${tab.handle} before saying it arrived; never send it again before reading` }) }, null, 2));
   },

@@ -664,13 +664,13 @@ pages['T-GPT'].akipanel = readonlyPanel({
 pages['T-GPT'].querySelector = (s) => (s === 'button[data-testid="send-button"]' ? { disabled: false, click: () => { liveSent.push(liveBox); liveMsgs.push({ role: 'user', text: liveBox }); liveBox = ''; } } : null);
 const midOut = JSON.parse((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'now' })).text);
 assert.deepEqual([midOut.sent, midOut.delivered, midOut.midAnswer, liveSent], [true, true, true, ['now']]);
-assert.ok(midOut.waitedMs < 2000, 'sent at once, no busy wait');
+assert.ok(midOut.waitedMs < 5000, 'sent at once, no busy wait (only the 3 s watch for a refusal)');
 liveDraft = true;
 assert.match((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'x' })).text, /P7·W2 holds a draft in its message box; it is left untouched \(draft; next: op=send wait=50 in this turn; still there: ask another window to relay it/);
 assert.deepEqual(liveSent, ['now'], 'a draft is never touched');
-// S4: wait=50 (as next advises) retries a held message only while 5 s of the call are left, so the draft refusal comes back, not a timeout.
+// S4: wait=50 (as next advises) retries a held message only while 8 s of the call are left (5 s to see it, 3 s to see it refused), so the draft refusal comes back, not a timeout.
 {
-  setCallBudgetMs(7_000);
+  setCallBudgetMs(10_000);
   const t0 = Date.now();
   const heldOut = (await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'x', wait: 50 })).text;
   const ms = Date.now() - t0;
@@ -694,6 +694,34 @@ const queuedOut = JSON.parse((await call('aiobox_write', { op: 'send', window: '
 assert.deepEqual([queuedOut.sent, queuedOut.delivered, queuedOut.queued, queuedOut.position, queuedOut.reason], [false, false, true, 2, 'busy']);
 v2Reply = () => ({ ok: false, error: 'the message box did not take the text' });
 assert.equal((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'x' })).text, 'rejected: P7·W2: the message box did not take the text');
+// S1 (contract wt-s1 a413be4): the provider refused it within AIObox's settle: returned as it came, the delivery check never turns it into delivered.
+v2Reply = (t) => (v2Msgs.push({ role: 'user', text: t, failed: true }), { ok: false, delivered: false, rejected: { reason: 'notion_send_error', retried: 0 }, error: 'Notion could not send it' });
+const refusedOut = JSON.parse((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'nope' })).text);
+assert.deepEqual([refusedOut.sent, refusedOut.delivered, refusedOut.reason, refusedOut.error, refusedOut.retried], [true, false, 'notion_send_error', 'Notion could not send it', 0]);
+assert.match(refusedOut.next, /op=read last=3 on P7·W2 before anything else; never send it again before reading/);
+// S1 read: a message the reader marks failed keeps failed: true; the others carry no such key.
+const failedRead = JSON.parse((await call('aiobox', { op: 'read', window: 'P7·W2', last: 2 })).text);
+assert.deepEqual(failedRead.messages.slice(-1), [{ role: 'user', text: 'nope', failed: true }]);
+assert.equal('failed' in failedRead.messages[0], false);
+// S1 without live.send's verdict (v1): a message the chat marks failed, or shows with Retry inside its item, is not delivered; AkiMCP presses nothing.
+{
+  const v1Msgs = [];
+  let mark = {};
+  pages['T-GPT'].akipanel = readonlyPanel({ capabilities: { chat: 1, send: 1 }, live: { chat: () => ({ ok: true, data: { messages: v1Msgs, busy: false } }), send: async (t) => (v1Msgs.push({ role: 'user', text: t, ...mark }), { ok: true, data: null }) } });
+  mark = { failed: true };
+  const markedOut = JSON.parse((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'marked' })).text);
+  assert.deepEqual([markedOut.sent, markedOut.delivered, markedOut.reason], [true, false, 'notion_send_error']);
+  mark = {};
+  let pressed = 0;
+  pages['T-GPT'].querySelector = (s) => (s === '[aria-label="Retry sending message"]' ? { innerText: 'Retry', click: () => pressed++, parentElement: { innerText: 'with retry\nError sending message', parentElement: null } } : null);
+  const retryOut = JSON.parse((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'with retry' })).text);
+  assert.deepEqual([retryOut.delivered, retryOut.reason, pressed], [false, 'notion_send_error', 0]);
+  const t0 = Date.now();
+  const fineOut = JSON.parse((await call('aiobox_write', { op: 'send', window: 'P7·W2', text: 'fine' })).text);
+  assert.deepEqual([fineOut.delivered, fineOut.reason], [true, undefined], 'a Retry in another message is not this one');
+  assert.ok(Date.now() - t0 >= 2_900, 'watched 3 s for a late refusal');
+  delete pages['T-GPT'].querySelector;
+}
 
 assert.equal((await call('aiobox_write', { op: 'eval', window: 'P7·W2' })).text, 'rejected: op=eval needs expression');
 const evaluated = JSON.parse((await call('aiobox_write', { op: 'eval', window: 'T-GPT', expression: '6*7' })).text);
