@@ -799,7 +799,8 @@ const SWITCH_WORKSPACE_JS = (id) => `(() => {
   const r = window.akipanel.switchWorkspace(${JSON.stringify(id)});
   return r && r.ok === true ? { ok: true } : { error: String(r?.error ?? 'switchWorkspace() returned no result') };
 })()`;
-const SCOPE_PICK_JS = `(() => ({ online: !!window.akipanel?.online, pick: typeof window.akipanel?.scopePick === 'string' ? window.akipanel.scopePick : null, url: location.href }))()`;
+// scopePick already names the workspace on Notion's intermediate app.notion.com/<domain> page; the switch is done only once AIObox reached Notion AI's home, i.e. the new_chat readiness.
+const SWITCHED_JS = `(() => ({ ...${NEW_CHAT_READY_JS}, pick: typeof window.akipanel?.scopePick === 'string' ? window.akipanel.scopePick : null }))()`;
 // The id and label matching of akipanel.switchWorkspace: an id with or without dashes, a label trimmed, both case-insensitive.
 const spaceKey = (id) => String(id).replace(/-/g, '').toLowerCase();
 const findWorkspace = (scopes, wanted) => {
@@ -929,12 +930,12 @@ const WRITE_OPS = {
     if (value?.error) throw new Error(`${tab.handle}: ${value.error}`);
     let last = null;
     for (const end = Date.now() + SWITCH_WAIT_MS; Date.now() < end; await sleep(NEW_WINDOW_POLL_MS)) {
-      last = (await cdp.evaluate({ port: tab.port, target, expression: SCOPE_PICK_JS }).catch(() => null))?.value ?? last;
-      if (last?.online && last.pick && spaceKey(last.pick) === spaceKey(scope.id)) {
+      last = (await cdp.evaluate({ port: tab.port, target, expression: SWITCHED_JS }).catch(() => null))?.value ?? last;
+      if (last?.ready && chatIdOf(last.url) === null && last.pick && spaceKey(last.pick) === spaceKey(scope.id)) {
         return ok(JSON.stringify({ ...used, previousChatId: used.chatId, chatId: chatIdOf(last.url), url: last.url, workspace, previousWorkspace, moved: true, next: 'op=send the first message there, then op=state shows its chatId' }, null, 2));
       }
     }
-    throw new Error(`${tab.handle} did not reach ${workspace.label ?? workspace.id} within ${SWITCH_WAIT_MS / 1000}s (now at ${last?.url ?? 'unknown'}, workspace ${last?.pick ?? 'unknown'})`);
+    throw new Error(`${tab.handle} did not show an empty chat in ${workspace.label ?? workspace.id} within ${SWITCH_WAIT_MS / 1000}s (now at ${last?.url ?? 'unknown'}, workspace ${last?.pick ?? 'unknown'})`);
   },
   // The new window of a handoff takes the old one's place; `like` may be a chatId too, sent to AIObox as that tab's targetId.
   async place_like(args) {

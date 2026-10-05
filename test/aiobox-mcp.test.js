@@ -511,7 +511,9 @@ delete pages['T-GPT'].url;
     pages['T-NOTION'] = { url: 'https://app.notion.com/chat?t=abc', akipanel: readonlyPanel({ online: true, usage: notionUsage, scopePick: WS, switchWorkspace: (id) => {
       switched.push(id);
       if (refusal) return { ok: false, error: refusal };
-      setTimeout(() => { pages['T-NOTION'] = { url: 'https://app.notion.com/ai', akipanel: readonlyPanel({ online: true, usage: notionUsage, scopePick: 'other' }) }; }, 700);
+      // As seen live (run 969): scopePick names the workspace already on Notion's app.notion.com/<domain> page, before AIObox reaches Notion AI's home.
+      setTimeout(() => { pages['T-NOTION'] = { url: 'https://app.notion.com/nova-cathedral-7fd', akipanel: readonlyPanel({ online: true, capabilities: { chat: 1 }, usage: notionUsage, scopePick: 'other', live: { chat: () => ({ ok: false, error: 'no conversation in this tab' }) } }) }; }, 300);
+      setTimeout(() => { pages['T-NOTION'] = { url: 'https://app.notion.com/ai', akipanel: readonlyPanel({ online: true, capabilities: { chat: 1 }, usage: notionUsage, scopePick: 'other', live: { chat: chatOk([]) } }) }; }, 1500);
       return { ok: true, data: null };
     } }) };
   };
@@ -528,7 +530,7 @@ delete pages['T-GPT'].url;
   assert.deepEqual(switched, ['other'], 'only the panel refusal reached the panel');
   const moved = JSON.parse((await call('aiobox_write', { op: 'switch_workspace', window: 'P1·W1', workspace: 'Linh1' })).text);
   delete moved.warning;
-  assert.deepEqual(moved, { window: 'P1·W1', targetId: 'T-NOTION', chatId: null, previousChatId: 'abc', url: 'https://app.notion.com/ai', workspace: { id: 'other', label: 'Linh1' }, previousWorkspace: { id: WS, label: 'Linh2' }, moved: true, next: 'op=send the first message there, then op=state shows its chatId' }, 'the old page is not taken for the new workspace');
+  assert.deepEqual(moved, { window: 'P1·W1', targetId: 'T-NOTION', chatId: null, previousChatId: 'abc', url: 'https://app.notion.com/ai', workspace: { id: 'other', label: 'Linh1' }, previousWorkspace: { id: WS, label: 'Linh2' }, moved: true, next: 'op=send the first message there, then op=state shows its chatId' }, 'neither the old page nor the intermediate workspace page is taken for the switch');
   assert.deepEqual(switched, ['other', 'other']);
   pages['T-NOTION'] = savedNotion;
   live[1111] = [];
