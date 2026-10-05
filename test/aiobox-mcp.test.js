@@ -317,17 +317,18 @@ assert.ok(drafted.waitedMs < 1000, `a draft is not waited on (${drafted.waitedMs
 assert.equal(JSON.parse((await call('aiobox', { op: 'read', window: 'abc' })).text).draft, true, 'op=read carries the reader\'s draft');
 notionDraft = undefined;
 assert.equal(JSON.parse((await call('aiobox', { op: 'read', window: 'abc' })).text).draft, undefined, 'a reader that reports no draft adds no field');
-// Answers cut off as Interrupted twice in a row: read and wait_idle say hand off at once, never resend (owner 2026-10-05).
+// Answers cut off as Interrupted twice in a row, as the provider reader counts them (data.interrupted): AIObox hands off itself; read and wait_idle say follow it, open nothing, never resend (owner 2026-10-05).
 const panelBeforeCut = pages['T-NOTION'].akipanel;
-pages['T-NOTION'].akipanel = readonlyPanel({ capabilities: { chat: 1 }, account, live: { chat: chatOk([{ role: 'user', text: 'q' }, { role: 'assistant', text: 'Interrupted' }, { role: 'user', text: 'again' }, { role: 'assistant', text: ' Interrupted ' }]) } });
+const cutPanel = (interrupted) => readonlyPanel({ capabilities: { chat: 1 }, account, live: { chat: () => ({ ok: true, data: { messages: [{ role: 'user', text: 'q' }, { role: 'assistant', text: 'Interrupted' }], busy: false, ...(interrupted === undefined ? {} : { interrupted }) } }) } });
+pages['T-NOTION'].akipanel = cutPanel(2);
 const cut = JSON.parse((await call('aiobox', { op: 'read', window: 'abc' })).text);
 assert.equal(cut.interrupted, 2);
-assert.match(cut.next, /flag its account now \(aki__aiobox_write op=flag account=nt@x\.com profile=chrome-profile-11 reason=interrupted\) and hand off to another account at once.*never send/);
-assert.match(JSON.parse((await call('aiobox', { op: 'wait_idle', window: 'abc' })).text).next, /flag its account now/, 'wait_idle says it too');
-pages['T-NOTION'].akipanel = readonlyPanel({ capabilities: { chat: 1 }, account, live: { chat: chatOk([{ role: 'assistant', text: 'Interrupted' }, { role: 'user', text: 'again' }, { role: 'assistant', text: 'Interrupted' }, { role: 'user', text: 'retry' }, { role: 'assistant', text: 'done' }]) } });
+assert.match(cut.next, /AIObox hands it off itself \(automation interrupted-handoff\); follow it in aki__aiobox op=runs, open no window, never send/);
+assert.match(JSON.parse((await call('aiobox', { op: 'wait_idle', window: 'abc' })).text).next, /AIObox hands it off itself/, 'wait_idle says it too');
+pages['T-NOTION'].akipanel = cutPanel(undefined);
 const healed = JSON.parse((await call('aiobox', { op: 'read', window: 'abc' })).text);
-assert.deepEqual([healed.interrupted, healed.next], [undefined, undefined], 'an answer after the cuts clears them');
-pages['T-NOTION'].akipanel = readonlyPanel({ capabilities: { chat: 1 }, account, live: { chat: chatOk([{ role: 'user', text: 'q' }, { role: 'assistant', text: 'Interrupted' }]) } });
+assert.deepEqual([healed.interrupted, healed.next], [undefined, undefined], 'AkiMCP never counts the text itself: no data.interrupted, no field');
+pages['T-NOTION'].akipanel = cutPanel(1);
 const once = JSON.parse((await call('aiobox', { op: 'read', window: 'abc' })).text);
 assert.deepEqual([once.interrupted, once.next], [1, undefined], 'one cut is counted, not yet a handoff');
 pages['T-NOTION'].akipanel = panelBeforeCut;
@@ -777,7 +778,7 @@ assert.deepEqual(JSON.parse((await call('aiobox', { op: 'runs', since: '2026-10-
   assert.deepEqual([handed.window, handed.chatId, handed.like, handed.done, handed.steps.length], ['P2·W2', 'c-1', 'P1·W1', true, 8], 'like is passed on as the handle it names');
   assert.equal(seen.at(-1).args.text, 'take over: read working.md');
   assert.match(handed.next, /op=close_window window=P1·W1 successor=P2·W2/);
-  assert.match((await call('aiobox_write', { op: 'handoff_open', profile: 'P2', provider: 'claude', like: 'P1·W1', text: 'over budget' })).text, /^rejected: AIObox refused handoff_open \(run \d+\): 6 new windows in the last hour \(budget;/, "AIObox's refusal keeps its own code");
+  assert.match((await call('aiobox_write', { op: 'handoff_open', profile: 'P2', provider: 'claude', like: 'P1·W1', text: 'over budget' })).text, /^rejected: AIObox refused handoff_open \(run \d+\): 6 new windows in the last hour \(budget; next: AIObox's hourly budget for AI handoff_open is used up/, "AIObox's refusal keeps its own code");
   assert.match((await call('aiobox_write', { op: 'handoff_open', profile: 'P2', provider: 'claude', like: 'P1·W1', text: 'broken' })).text, /handoff_open run \d+ ended error: verify: no signed-in claude\.ai client \(steps: open ok → connect ok → verify error \(no signed-in claude\.ai client\)\)/);
   const slow = JSON.parse((await call('aiobox_write', { op: 'handoff_open', profile: 'P2', provider: 'claude', like: 'P1·W1', text: 'slow', wait: 1 })).text);
   assert.deepEqual([slow.done, slow.window, slow.steps.at(-1)], [false, undefined, { step: 'connect', status: 'running', at: slow.steps.at(-1).at, info: null }]);
@@ -831,12 +832,17 @@ assert.deepEqual(JSON.parse((await call('aiobox', { op: 'runs', since: '2026-10-
   saved('3f0f022c-5a74-801b-becf-00a9c9fe60c9', '2026-10-05T04:00:00Z');
   saved('older0chat', '2026-10-05T03:00:00Z', { reason: 'close', successor: null });
   saved('future0chat', '2026-10-05T05:00:00Z', { version: 2 });
+  saved('cut0chat', '2026-10-05T02:00:00Z', { reason: 'interrupted', successor: null });
   const arch = JSON.parse((await call('aiobox', { op: 'read', window: '3F0F022C5A74801BBECF00A9C9FE60C9', last: 2 })).text);
   assert.deepEqual([arch.archived, arch.chatId, arch.reason, arch.successor, arch.truncated, arch.total, arch.messages.map((m) => m.text), arch.workspace.label], [true, '3f0f022c-5a74-801b-becf-00a9c9fe60c9', 'quota_handoff', 'P9·W6', false, 3, ['a1', 'q2'], 'dldn.1'], 'a chatId matches without dashes, in any case; last=N cut by AkiMCP');
   assert.match(arch.next, /op=read window=P9·W6/);
   const byHandle = JSON.parse((await call('aiobox', { op: 'read', window: 'p9w6' })).text);
   assert.deepEqual([byHandle.chatId, byHandle.messages.length], ['3f0f022c-5a74-801b-becf-00a9c9fe60c9', 1], 'a handle no tab has: the newest copy naming it, skipping a version AkiMCP cannot read');
   assert.match((await call('aiobox', { op: 'read', window: 'future0chat' })).text, /archive future0chat\.json has version 2, AkiMCP reads 1/);
+  const cutArch = JSON.parse((await call('aiobox', { op: 'read', window: 'cut0chat' })).text);
+  assert.deepEqual([cutArch.reason, cutArch.successor], ['interrupted', null], 'an interrupted handoff saves before its successor exists');
+  assert.match(cutArch.next, /AIObox is handing this chat off; the successor shows in aki__aiobox op=runs/);
+  assert.match(JSON.parse((await call('aiobox', { op: 'read', window: 'older0chat' })).text).next, /no tab shows this chat now/, 'a plain close keeps the plain next');
   assert.match((await call('aiobox', { op: 'read', window: 'older0chat', expect: 'x' })).text, /\(no_window/, 'expect names a live tab: no archive');
   assert.match((await call('aiobox', { op: 'read', window: 'P1·W1' })).text, /\(stale_map;/, 'only no_window falls back to the archive, never a stale map');
   fs.rmSync(archivePath, { recursive: true });

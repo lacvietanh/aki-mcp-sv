@@ -246,7 +246,7 @@ const successorOf = (map, name) => {
   return r ? writtenHandle(r.successor) : null;
 };
 
-// A chat no tab shows any more, as AIObox saved it (contract: archive/<chatId>.json; quota_handoff before a switch_workspace in the same tab, close at close_window). AIObox is its one writer; AkiMCP only reads.
+// A chat no tab shows any more, as AIObox saved it (contract: archive/<chatId>.json; reason quota_handoff before a switch_workspace in the same tab, interrupted at an interrupted handoff, close at close_window; successor may be null for quota_handoff/interrupted). AIObox is its one writer; AkiMCP only reads.
 const archiveDir = () => path.join(aioboxDir(), 'archive');
 const ARCHIVE_VERSION = 1;
 const ARCHIVE_MAX_BYTES = 4 * 1024 * 1024 + 64 * 1024; // the app keeps a file at 4 MiB; a little slack for the frame
@@ -286,7 +286,7 @@ function findArchive(input) {
 }
 const archivedRead = (input, doc, last) => {
   const messages = Array.isArray(doc.messages) ? doc.messages : [];
-  return { window: input, archived: true, chatId: doc.chatId ?? null, handle: doc.handle ?? null, provider: doc.provider ?? null, profileId: doc.profileId ?? null, url: doc.url ?? null, title: doc.title ?? null, workspace: doc.workspace ?? null, savedAt: doc.savedAt ?? null, reason: doc.reason ?? null, successor: doc.successor ?? null, truncated: doc.truncated === true, total: messages.length, messages: messages.slice(-last), next: doc.successor ? `the chat went on in ${doc.successor}: op=read window=${doc.successor}` : 'no tab shows this chat now; this is the copy AIObox saved' };
+  return { window: input, archived: true, chatId: doc.chatId ?? null, handle: doc.handle ?? null, provider: doc.provider ?? null, profileId: doc.profileId ?? null, url: doc.url ?? null, title: doc.title ?? null, workspace: doc.workspace ?? null, savedAt: doc.savedAt ?? null, reason: doc.reason ?? null, successor: doc.successor ?? null, truncated: doc.truncated === true, total: messages.length, messages: messages.slice(-last), next: doc.successor ? `the chat went on in ${doc.successor}: op=read window=${doc.successor}` : doc.reason === 'quota_handoff' || doc.reason === 'interrupted' ? 'AIObox is handing this chat off; the successor shows in aki__aiobox op=runs' : 'no tab shows this chat now; this is the copy AIObox saved' };
 };
 
 // expect: the tab the caller means, as a targetId, chat id, or text its url or title contains. Checked against the live target, so a handle that now names another chat is refused instead of acted on.
@@ -367,12 +367,7 @@ const READ_JS = (last) => `(() => {
     if (!r || r.ok !== true) return { source: 'provider', error: String(r?.error ?? 'live.chat() returned no result') };
     const data = r.data || {};
     const all = data.messages || [];
-    let interrupted = 0;
-    for (let i = all.length - 1; i >= 0; i--) {
-      if (all[i].role === 'user') continue;
-      if (!/^interrupted$/i.test(String(all[i].text ?? '').trim())) break;
-      interrupted++;
-    }
+    const interrupted = Number(data.interrupted) || 0;
     return { source: 'provider', ...acct, busy: !!data.busy, ...(data.draft === undefined ? {} : { draft: !!data.draft }), ...(interrupted ? { interrupted } : {}), messages: all.slice(-${last}).map((m) => ({ role: m.role, text: m.text })) };
   }
   if (caps.chat !== undefined) return { source: 'provider', unsupported: String(caps.chat) };
@@ -668,7 +663,7 @@ function requestOutcome(op, request, run) {
     const detail = String(run.detail ?? '');
     const at = detail.indexOf(': ');
     const [code, why] = at === -1 ? ['refused', detail] : [detail.slice(0, at), detail.slice(at + 2)];
-    const next = code === 'budget' ? `AIObox opens few ${op === 'open_url' ? 'links' : 'windows'} an hour for AIs: do not ask again now; report "not opened: budget" or wait an hour` : code === 'url_not_allowed' ? 'pass a plain http:// or https:// address with a host' : code === 'invalid' || code === 'unknown_op' ? 'update AkiMCP or AIObox so they speak the same request version, or report it' : 'read aki__aiobox op=profiles and pick an eligible profile, or report it';
+    const next = code === 'budget' ? `AIObox's hourly budget for AI ${op} is used up: do not ask again now; report "not opened: budget" or wait an hour` : code === 'url_not_allowed' ? 'pass a plain http:// or https:// address with a host' : code === 'invalid' || code === 'unknown_op' ? 'update AkiMCP or AIObox so they speak the same request version, or report it' : 'read aki__aiobox op=profiles and pick an eligible profile, or report it';
     throw new Refusal(code, `AIObox refused ${op} (run ${run.id}): ${why}`, next);
   }
   const base = { request, runId: run.id, done: !run.running, steps: run.steps ?? [] };
@@ -681,11 +676,11 @@ function requestOutcome(op, request, run) {
   return { ...base, outcome: run.outcome, result };
 }
 
-// Answers in a row the provider cut off (Notion shows "Interrupted"): from this many, resending only burns turns, so the window hands off (owner 2026-10-05).
+// Answers in a row the provider cut off (Notion shows "Interrupted"), as the provider reader counts them (data.interrupted): from this many AIObox itself hands the chat off (automation interrupted-handoff, 8h flag on the account), so the AI only follows it (owner 2026-10-05).
 const INTERRUPTED_HANDOFF = 2;
 const interruptedNext = (tab, value) =>
   value.interrupted >= INTERRUPTED_HANDOFF
-    ? { interrupted: value.interrupted, next: `${tab.handle}'s last ${value.interrupted} answers were Interrupted: flag its account now (aki__aiobox_write op=flag account=${value.account?.label ?? '<account>'} profile=${tab.profile?.id ?? '<profileId>'} reason=interrupted) and hand off to another account at once (op=handoff_open, the account with the fewest windows); never send the same text again` }
+    ? { interrupted: value.interrupted, next: `${tab.handle}'s last ${value.interrupted} answers were Interrupted: AIObox hands it off itself (automation interrupted-handoff); follow it in aki__aiobox op=runs, open no window, never send the same text again` }
     : {};
 
 const DRAFT_WARNING = 'the message box holds a draft, so busy may read false while it still answers (Notion); read it again later with op=read, and never touch the draft';
@@ -1220,7 +1215,7 @@ export function register(server) {
       title: 'AIObox: read windows by handle',
       annotations: { readOnlyHint: true, openWorldHint: false },
       description:
-        'Read AIObox (AIO) windows P#·W#. op=state: every window (chatId, provider, account, busy, workspace, usage), macros, flags, guide. op=whoami quote=<20+ chars verbatim of the latest user message>: your window. window= handle (a retired one leads to its successor, kế nhiệm), chatId or targetId; expect refuses another chat. op=windows: tabs. op=profiles: where a new window can open. op=read last=N, or the saved copy of a closed chat. op=wait_idle: until it stops answering. op=text. op=screenshot. op=runs: id= or request=. Rules: quota ≥95% or Interrupted twice → flag the account, handoff to another account (fewest windows), never resend. Also: loop, macro, akipanel. Acting: aki__aiobox_write.',
+        'Read AIObox (AIO) windows P#·W#. op=state: every window (chatId, provider, account, busy, workspace, usage), macros, flags, guide. op=whoami quote=<20+ chars verbatim of the latest user message>: your window. window= handle (a retired one leads to its successor, kế nhiệm), chatId or targetId; expect refuses another chat. op=windows: tabs. op=profiles: where a new window can open. op=read last=N, or the saved copy of a closed chat. op=wait_idle: until it stops answering. op=text. op=screenshot. op=runs: id= or request=. Quota ≥95% or Interrupted twice: AIObox does the handoff to another account (Interrupted: 8h flag); never resend. Also: loop, macro, akipanel. Acting: aki__aiobox_write.',
       inputSchema: {
         op: z.enum(Object.keys(READ_OPS)).describe(Object.keys(READ_OPS).join(' | ')),
         window: windowArg,
@@ -1251,7 +1246,7 @@ export function register(server) {
       title: 'AIObox: open a window, send or fill a chat, run JS',
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description:
-        `Act in an AIObox (AIO) window P#·W# (guide: aki__aiobox op=state); from=<your chatId>. op=new_window: profile+provider. op=handoff_open: profile, provider, like, text. ${OPEN_RULE} op=open_url: url, profile?. op=send: even mid-answer. op=compose: fills only. op=run_macro: macro, option; macro surface: op=eval akipanel.<method>(). op=close_window: idle; successor= retires; close what you opened once checked. op=flag/unflag. New account/workspace: first check AkiMCP tool count, else run_macro connect-akimcp option=reconnect. Handoff (quota, interrupted): another account, fewest windows.`,
+        `Act in an AIObox (AIO) window P#·W# (guide: aki__aiobox op=state); from=<your chatId>. op=new_window: profile+provider. op=handoff_open: profile, provider, like, text. ${OPEN_RULE} op=open_url: url, profile?. op=send: even mid-answer. op=compose: fills only. op=run_macro: macro, option; macro surface: op=eval akipanel.<method>(). op=close_window: idle; successor= retires; close what you opened once checked. op=flag/unflag. New account/workspace: first check AkiMCP tool count, else run_macro connect-akimcp option=reconnect. Quota/interrupted handoff: AIObox's own, open nothing.`,
       inputSchema: {
         op: z.enum(Object.keys(WRITE_OPS)).describe(Object.keys(WRITE_OPS).join(' | ')),
         window: windowArg,
