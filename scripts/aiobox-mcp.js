@@ -221,6 +221,49 @@ const successorOf = (map, name) => {
   return r ? writtenHandle(r.successor) : null;
 };
 
+// A chat no tab shows any more, as AIObox saved it (contract: archive/<chatId>.json; quota_handoff before a switch_workspace in the same tab, close at close_window). AIObox is its one writer; AkiMCP only reads.
+const archiveDir = () => path.join(aioboxDir(), 'archive');
+const ARCHIVE_VERSION = 1;
+const ARCHIVE_MAX_BYTES = 4 * 1024 * 1024 + 64 * 1024; // the app keeps a file at 4 MiB; a little slack for the frame
+const chatKey = (id) => String(id).replace(/-/g, '').toLowerCase();
+function readArchiveFile(file) {
+  if (fs.statSync(file).size > ARCHIVE_MAX_BYTES) throw new Error(`archive ${path.basename(file)} is over ${ARCHIVE_MAX_BYTES} bytes`);
+  const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
+  if (doc?.version !== ARCHIVE_VERSION) throw new Error(`archive ${path.basename(file)} has version ${doc?.version}, AkiMCP reads ${ARCHIVE_VERSION}; update AkiMCP or AIObox`);
+  return doc;
+}
+// window = a chatId: its file; a handle: the newest savedAt of the files naming it. null: none saved.
+function findArchive(input) {
+  let names;
+  try {
+    names = fs.readdirSync(archiveDir()).filter((n) => n.endsWith('.json') && !n.startsWith('.'));
+  } catch (e) {
+    if (e.code === 'ENOENT') return null;
+    throw e;
+  }
+  const h = parseHandle(input);
+  if (!h?.window) {
+    const name = names.find((n) => chatKey(n.slice(0, -5)) === chatKey(input));
+    return name ? readArchiveFile(path.join(archiveDir(), name)) : null;
+  }
+  const handle = formatHandle(h.profile, h.window, h.tab);
+  let best = null;
+  for (const n of names) {
+    let doc;
+    try {
+      doc = readArchiveFile(path.join(archiveDir(), n));
+    } catch {
+      continue;
+    }
+    if (writtenHandle(doc.handle) === handle && (!best || Date.parse(doc.savedAt) > Date.parse(best.savedAt))) best = doc;
+  }
+  return best;
+}
+const archivedRead = (input, doc, last) => {
+  const messages = Array.isArray(doc.messages) ? doc.messages : [];
+  return { window: input, archived: true, chatId: doc.chatId ?? null, handle: doc.handle ?? null, provider: doc.provider ?? null, profileId: doc.profileId ?? null, url: doc.url ?? null, title: doc.title ?? null, workspace: doc.workspace ?? null, savedAt: doc.savedAt ?? null, reason: doc.reason ?? null, successor: doc.successor ?? null, truncated: doc.truncated === true, total: messages.length, messages: messages.slice(-last), next: doc.successor ? `the chat went on in ${doc.successor}: op=read window=${doc.successor}` : 'no tab shows this chat now; this is the copy AIObox saved' };
+};
+
 // expect: the tab the caller means, as a targetId, chat id, or text its url or title contains. Checked against the live target, so a handle that now names another chat is refused instead of acted on.
 function checkExpect(tab, live, expect) {
   if (expect === undefined || expect === '') return;
@@ -510,6 +553,27 @@ function profilesView(now = Date.now()) {
   };
   return { updatedAt: doc.updatedAt ?? null, profiles: (doc.profiles || []).map((p) => ({ ...p, providers: (p.providers || []).map(providerView(p.id)) })) };
 }
+// AIObox's url_allowed (request.rs, G4), checked here first so a bad address costs no request: lower-case http(s)://, at most 2048 bytes, no space or control character, no user@, a host of letters, digits, '.', '-' (or [IPv6]).
+export const URL_MAX_BYTES = 2048;
+export function urlNotAllowed(url) {
+  if (Buffer.byteLength(url) > URL_MAX_BYTES) return `longer than ${URL_MAX_BYTES} bytes`;
+  const rest = url.startsWith('https://') ? url.slice(8) : url.startsWith('http://') ? url.slice(7) : null;
+  if (rest === null) return 'only an http:// or https:// address';
+  if (/[\s\p{Cc}]/u.test(url)) return 'an address with a space or a control character';
+  const authority = rest.split(/[/?#]/)[0];
+  if (authority.includes('@')) return 'an address with a user@ before its host';
+  const host = authority.startsWith('[') ? authority.slice(1).split(']')[0] : authority.split(':')[0];
+  if (!host || !/^[A-Za-z0-9.:-]+$/.test(host)) return `no host an address can name ('${host}')`;
+  return null;
+}
+// A profile by id or P#, registered in AIObox; no provider, so no sign-in or flag to check (open_url).
+function registeredProfile(profile) {
+  const view = profilesView();
+  const number = /^P?(\d+)$/i.exec(String(profile).trim())?.[1];
+  const p = view.profiles.find((x) => x.id === profile || (number !== undefined && String(x.number).replace(/^P/i, '') === number));
+  if (!p) throw new Refusal('not_registered', `no AIObox profile '${profile}'; registered: ${view.profiles.map((x) => `${x.id} (P${x.number})`).join(', ') || 'none'}`, 'pick one from aki__aiobox op=profiles, or leave profile out for the system browser');
+  return p.id;
+}
 // profile = its id, or its number as AIObox shows it (P9, 9). Refused with the same codes AIObox uses, so the AI reads one vocabulary.
 function pickProfile(profile, provider) {
   const view = profilesView();
@@ -572,7 +636,7 @@ function requestOutcome(op, request, run) {
     const detail = String(run.detail ?? '');
     const at = detail.indexOf(': ');
     const [code, why] = at === -1 ? ['refused', detail] : [detail.slice(0, at), detail.slice(at + 2)];
-    const next = code === 'budget' ? 'AIObox opens few windows an hour for AIs: do not ask again now; report "not opened: budget" or wait an hour' : code === 'invalid' || code === 'unknown_op' ? 'update AkiMCP or AIObox so they speak the same request version, or report it' : 'read aki__aiobox op=profiles and pick an eligible profile, or report it';
+    const next = code === 'budget' ? `AIObox opens few ${op === 'open_url' ? 'links' : 'windows'} an hour for AIs: do not ask again now; report "not opened: budget" or wait an hour` : code === 'url_not_allowed' ? 'pass a plain http:// or https:// address with a host' : code === 'invalid' || code === 'unknown_op' ? 'update AkiMCP or AIObox so they speak the same request version, or report it' : 'read aki__aiobox op=profiles and pick an eligible profile, or report it';
     throw new Refusal(code, `AIObox refused ${op} (run ${run.id}): ${why}`, next);
   }
   const base = { request, runId: run.id, done: !run.running, steps: run.steps ?? [] };
@@ -627,7 +691,16 @@ const READ_OPS = {
   },
   async read(args) {
     need('read', args, ['window']);
-    const { tab, live: target, used } = await openTab(args);
+    let opened;
+    try {
+      opened = await openTab(args);
+    } catch (e) {
+      // No tab shows it any more: the copy AIObox saved when the chat left its tab (quota handoff or close).
+      const doc = e instanceof Refusal && e.code === 'no_window' && args.expect === undefined ? findArchive(args.window) : null;
+      if (!doc) throw e;
+      return ok(JSON.stringify(archivedRead(args.window, doc, args.last ?? 1), null, 2));
+    }
+    const { tab, live: target, used } = opened;
     const { value } = await cdp.evaluate({ port: tab.port, target, expression: READ_JS(args.last ?? 1) });
     if (value?.error !== undefined) throw new Error(`AIObox chat reader in ${tab.handle}: ${value.error}`);
     if (value?.unsupported !== undefined) throw new Error(`AIObox chat capability version ${value.unsupported} in ${tab.handle} is not supported (expected ${CHAT_VERSION}); update AkiMCP or AIObox`);
@@ -894,6 +967,17 @@ const WRITE_OPS = {
     const next = out.outcome === 'ok' ? { next: `op=read last=2 on ${opened.window ?? 'the new window'} to see it took the text; only if ${like} is the window handing off, then op=close_window window=${like} successor=${opened.window ?? '<new window>'}` } : {};
     return ok(JSON.stringify({ ...opened, ...target, like, ...out, ...next }, null, 2));
   },
+  // A link for the user to see (G4): AIObox opens it in the system's browser, or with profile in a new browser window of that profile; 20 an hour, apart from the windows' budget.
+  async open_url(args) {
+    need('open_url', args, ['url']);
+    const url = args.url.trim();
+    const why = urlNotAllowed(url);
+    if (why) throw new Refusal('url_not_allowed', `${why}: ${url.slice(0, 120)}`, 'pass a plain http:// or https:// address with a host');
+    const profileId = args.profile === undefined ? null : registeredProfile(args.profile);
+    const request = await sendRequest('open_url', { url, ...(profileId ? { profileId } : {}) });
+    const out = requestOutcome('open_url', request, await awaitRequestRun(request, waitLimitS(args.wait, CALL_WAIT_MAX_S) * 1000));
+    return ok(JSON.stringify({ url, profileId, opened: out.result?.opened ?? null, ...out }, null, 2));
+  },
   // Same tab, fresh chat: the chat id is only in the URL after the first message, so the result has none.
   async new_chat(args) {
     need('new_chat', args, ['window']);
@@ -1080,7 +1164,7 @@ export function register(server) {
       title: 'AIObox: read windows by handle',
       annotations: { readOnlyHint: true, openWorldHint: false },
       description:
-        'Read AIObox windows. Start with op=state: every window (chatId, provider, account, busy, workspace, usage), macros, flags, the guide for acting. op=whoami quote=<20+ chars verbatim of the latest user message> finds your window. Name a window by handle P#·W# (lasting; a retired one leads to its successor), chatId or targetId; expect refuses a window showing another chat. op=windows: tabs only. op=profiles: where a new window can open (login, usage, flag, eligible). op=read: last messages (last=N). op=wait_idle: waits until the chat stops answering. op=text: by selector. op=screenshot. op=runs: automation runs; id= or request= for one, with steps. Acting: aki__aiobox_write.',
+        'Read AIObox windows. Start with op=state: every window (chatId, provider, account, busy, workspace, usage), macros, flags, the guide for acting. op=whoami quote=<20+ chars verbatim of the latest user message> finds your window. Name a window by handle P#·W# (lasting; a retired one leads to its successor), chatId or targetId; expect refuses a window showing another chat. op=windows: tabs only. op=profiles: where a new window can open (login, usage, flag, eligible). op=read: last=N messages, or the saved copy of a chat no tab shows. op=wait_idle: until it stops answering. op=text: by selector. op=screenshot. op=runs: automation runs; id= or request=: one, with steps. Acting: aki__aiobox_write.',
       inputSchema: {
         op: z.enum(Object.keys(READ_OPS)).describe(Object.keys(READ_OPS).join(' | ')),
         window: windowArg,
@@ -1111,7 +1195,7 @@ export function register(server) {
       title: 'AIObox: open a window, send or fill a chat, run JS',
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description:
-        `Act in an AIObox window (handle, chatId or targetId; rules: aki__aiobox op=state); from=<your chatId>. op=new_window: window= or profile+provider (aki__aiobox op=profiles). op=handoff_open: profile, provider, like, text (whole handoff); steps: op=runs id=<runId>. ${OPEN_RULE} op=new_chat: fresh chat. op=switch_workspace: workspace=. op=send: now, even mid-answer (delivered:true shown, queued:true held). op=compose: fills only. op=run_macro: macro, option. op=place_like: bounds of like. op=close_window: idle, no draft; successor= retires. op=flag/unflag: no-use list. op=eval: page JS.`,
+        `Act in an AIObox window (handle, chatId or targetId; rules: aki__aiobox op=state); from=<your chatId>. op=new_window: window= or profile+provider (aki__aiobox op=profiles). op=handoff_open: profile, provider, like, text; steps: op=runs id=<runId>. ${OPEN_RULE} op=open_url: url, profile?. op=new_chat: fresh chat. op=switch_workspace: workspace=. op=send: even mid-answer (delivered:true shown, queued:true held). op=compose: fills only. op=run_macro: macro, option. op=place_like: bounds of like. op=close_window: idle; successor= retires. op=flag/unflag: no-use list. op=eval: page JS.`,
       inputSchema: {
         op: z.enum(Object.keys(WRITE_OPS)).describe(Object.keys(WRITE_OPS).join(' | ')),
         window: windowArg,
@@ -1123,11 +1207,12 @@ export function register(server) {
         macro: z.string().optional().describe('run_macro: macro id (op=state macros)'),
         option: z.string().optional().describe('run_macro: option id (default: the first)'),
         text: z.string().optional().describe('send, compose, handoff_open: the text (handoff_open ≤8 KB)'),
-        wait: z.number().int().min(0).max(300).optional().describe('send: seconds to retry a draft or blocked chat (default 0); new_window, handoff_open: run wait (default 50); max 50 per call'),
+        wait: z.number().int().min(0).max(300).optional().describe('send: seconds to retry a draft or blocked chat (default 0); new_window, handoff_open, open_url: run wait (default 50); max 50 per call'),
+        url: z.string().optional().describe('open_url: http(s) link for the user; system browser, or profile\'s new window'),
         expression: z.string().optional().describe('eval: JS evaluated in the page; the last expression is returned'),
         awaitPromise: z.boolean().optional().describe('eval: await a returned Promise (default true)'),
         account: z.string().optional().describe('flag, unflag: account label (op=state account)'),
-        profile: z.string().optional().describe('flag, unflag: its profileId; new_window, handoff_open: profileId or P#'),
+        profile: z.string().optional().describe('flag, unflag: its profileId; new_window, handoff_open, open_url: profileId or P#'),
         workspace: z.string().optional().describe('flag, unflag: a workspace label instead; switch_workspace: its id or label (Notion)'),
         reason: z.string().optional().describe('flag: why'),
         hours: z.number().positive().max(720).optional().describe('flag: hours in force (none = until unflag)'),

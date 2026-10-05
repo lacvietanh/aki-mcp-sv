@@ -202,7 +202,7 @@ pages['T-NOTION'] = { body: 'notion body', akipanel: readonlyPanel({
 pages['T-GPT'] = { akipanel: readonlyPanel({ capabilities: {} }), body: 'history: please compare the last two answers now, then more' };
 const state = JSON.parse((await call('aiobox', { op: 'state' })).text);
 assert.equal(state.akimcp, VERSION);
-assert.deepEqual(state.ops, { aiobox: ['windows', 'state', 'whoami', 'read', 'wait_idle', 'text', 'screenshot', 'runs', 'profiles'], aiobox_write: ['new_window', 'handoff_open', 'new_chat', 'switch_workspace', 'place_like', 'close_window', 'flag', 'unflag', 'compose', 'send', 'run_macro', 'eval'] });
+assert.deepEqual(state.ops, { aiobox: ['windows', 'state', 'whoami', 'read', 'wait_idle', 'text', 'screenshot', 'runs', 'profiles'], aiobox_write: ['new_window', 'handoff_open', 'open_url', 'new_chat', 'switch_workspace', 'place_like', 'close_window', 'flag', 'unflag', 'compose', 'send', 'run_macro', 'eval'] });
 assert.deepEqual(state.flags, [], 'no flags.json yet: empty list');
 assert.equal('claims' in state, false, 'claims are gone (aiobox plan cleanup-ai-leftovers)');
 // No ~/.aki/aiobox/guide.md yet: the short fallback, pointing at the web guide.
@@ -740,7 +740,8 @@ assert.deepEqual(JSON.parse((await call('aiobox', { op: 'runs', since: '2026-10-
       seen.push(req);
       const at = new Date().toISOString();
       const step = (s, status = 'ok') => ({ step: s, status, at, info: null });
-      if (req.op === 'new_window') addRun.run('ai-new-window', 'request', null, at, at, 'ok', JSON.stringify({ handle: 'P2·W1', targetId: 'T-NEW' }), req.id, JSON.stringify(['scope', 'launch', 'open', 'panel'].map((s) => step(s))));
+      if (req.op === 'open_url') addRun.run('ai-open-url', 'request', null, at, at, req.args.url.includes('refuse') ? 'refused' : 'ok', req.args.url.includes('refuse') ? 'url_not_allowed: an address with a user@ before its host' : JSON.stringify({ opened: req.args.profileId ?? 'system' }), req.id, JSON.stringify([step('scope'), step('open')]));
+      else if (req.op === 'new_window') addRun.run('ai-new-window', 'request', null, at, at, 'ok', JSON.stringify({ handle: 'P2·W1', targetId: 'T-NEW' }), req.id, JSON.stringify(['scope', 'launch', 'open', 'panel'].map((s) => step(s))));
       else if (req.args.text === 'over budget') addRun.run('ai-handoff-open', 'request', null, at, at, 'refused', 'budget: 6 new windows in the last hour', req.id, JSON.stringify([step('scope', 'error')]));
       else if (req.args.text === 'slow') addRun.run('ai-handoff-open', 'request', null, at, null, null, null, req.id, JSON.stringify([step('scope'), step('launch', 'skipped'), step('open'), step('connect', 'running')]));
       else if (req.args.text === 'broken') addRun.run('ai-handoff-open', 'request', null, at, at, 'error', 'verify: no signed-in claude.ai client', req.id, JSON.stringify([step('open'), step('connect'), { ...step('verify', 'error'), info: 'no signed-in claude.ai client' }]));
@@ -771,6 +772,38 @@ assert.deepEqual(JSON.parse((await call('aiobox', { op: 'runs', since: '2026-10-
   assert.deepEqual([one.length, one[0].request, one[0].running, one[0].steps.length], [1, slow.request, true, 4], 'op=runs id= reads one run with its steps');
   assert.equal(JSON.parse((await call('aiobox', { op: 'runs', request: opened.request })).text).runs[0].automation, 'ai-new-window');
   assert.equal('steps' in JSON.parse((await call('aiobox', { op: 'runs', automation: 'usage', last: 1 })).text).runs[0], false, 'a run without steps shows no key');
+
+  // G4 open_url: AkiMCP checks the address as AIObox's url_allowed does, so a bad one writes no request; a profile must be registered; AIObox's refusal keeps its code.
+  const before = seen.length;
+  for (const bad of ['file:///etc/passwd', 'javascript:alert(1)', 'HTTPS://EXAMPLE.COM', 'https://', 'https:///p', 'https://user:pw@evil.example/', 'https://exa mple.com', 'https://ex%61mple.com', `https://example.com/${'a'.repeat(2048)}`]) {
+    assert.match((await call('aiobox_write', { op: 'open_url', url: bad })).text, /\(url_not_allowed;/, bad);
+  }
+  assert.equal((await call('aiobox_write', { op: 'open_url' })).text, 'rejected: op=open_url needs url');
+  assert.match((await call('aiobox_write', { op: 'open_url', url: 'https://example.com', profile: 'P77' })).text, /no AIObox profile 'P77'.*\(not_registered;/);
+  assert.equal(seen.length, before, 'a refused link writes no request');
+  const link = JSON.parse((await call('aiobox_write', { op: 'open_url', url: ' https://example.com/a?b#c ' })).text);
+  assert.deepEqual([link.url, link.profileId, link.opened, link.outcome, seen.at(-1).op, seen.at(-1).args], ['https://example.com/a?b#c', null, 'system', 'ok', 'open_url', { url: 'https://example.com/a?b#c' }]);
+  const inProfile = JSON.parse((await call('aiobox_write', { op: 'open_url', url: 'http://[::1]:8443/', profile: 'P2' })).text);
+  assert.deepEqual([inProfile.profileId, inProfile.opened, seen.at(-1).args], ['chrome-profile-7', 'chrome-profile-7', { url: 'http://[::1]:8443/', profileId: 'chrome-profile-7' }], 'a profile even when not signed in to anything: no provider to check');
+  assert.match((await call('aiobox_write', { op: 'open_url', url: 'https://refuse.example/' })).text, /AIObox refused open_url \(run \d+\): an address with a user@ before its host \(url_not_allowed;/);
+
+  // A chat no tab shows any more: op=read returns the copy AIObox saved in archive/<chatId>.json (quota handoff, close).
+  const archivePath = path.join(aioboxHome, 'archive');
+  assert.match((await call('aiobox', { op: 'read', window: 'gone-chat' })).text, /no window 'gone-chat'.*\(no_window/, 'no archive yet: still no_window');
+  fs.mkdirSync(archivePath, { recursive: true });
+  const saved = (chatId, savedAt, extra = {}) => fs.writeFileSync(path.join(archivePath, `${chatId}.json`), JSON.stringify({ version: 1, chatId, provider: 'notion', profileId: 'chrome-profile-18', handle: 'P9·W6', url: `https://app.notion.com/chat?t=${chatId}`, title: 'old chat', workspace: { id: 'w1', label: 'dldn.1' }, savedAt, reason: 'quota_handoff', successor: 'P9·W6', truncated: false, messages: [{ role: 'user', text: 'q1' }, { role: 'assistant', text: 'a1' }, { role: 'user', text: 'q2' }], ...extra }));
+  saved('3f0f022c-5a74-801b-becf-00a9c9fe60c9', '2026-10-05T04:00:00Z');
+  saved('older0chat', '2026-10-05T03:00:00Z', { reason: 'close', successor: null });
+  saved('future0chat', '2026-10-05T05:00:00Z', { version: 2 });
+  const arch = JSON.parse((await call('aiobox', { op: 'read', window: '3F0F022C5A74801BBECF00A9C9FE60C9', last: 2 })).text);
+  assert.deepEqual([arch.archived, arch.chatId, arch.reason, arch.successor, arch.truncated, arch.total, arch.messages.map((m) => m.text), arch.workspace.label], [true, '3f0f022c-5a74-801b-becf-00a9c9fe60c9', 'quota_handoff', 'P9·W6', false, 3, ['a1', 'q2'], 'dldn.1'], 'a chatId matches without dashes, in any case; last=N cut by AkiMCP');
+  assert.match(arch.next, /op=read window=P9·W6/);
+  const byHandle = JSON.parse((await call('aiobox', { op: 'read', window: 'p9w6' })).text);
+  assert.deepEqual([byHandle.chatId, byHandle.messages.length], ['3f0f022c-5a74-801b-becf-00a9c9fe60c9', 1], 'a handle no tab has: the newest copy naming it, skipping a version AkiMCP cannot read');
+  assert.match((await call('aiobox', { op: 'read', window: 'future0chat' })).text, /archive future0chat\.json has version 2, AkiMCP reads 1/);
+  assert.match((await call('aiobox', { op: 'read', window: 'older0chat', expect: 'x' })).text, /\(no_window/, 'expect names a live tab: no archive');
+  assert.match((await call('aiobox', { op: 'read', window: 'P1·W1' })).text, /\(stale_map;/, 'only no_window falls back to the archive, never a stale map');
+  fs.rmSync(archivePath, { recursive: true });
   clearInterval(app);
   db.close();
   fs.rmSync(path.join(aioboxHome, 'flags.json'));
