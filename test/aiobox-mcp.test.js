@@ -317,6 +317,20 @@ assert.ok(drafted.waitedMs < 1000, `a draft is not waited on (${drafted.waitedMs
 assert.equal(JSON.parse((await call('aiobox', { op: 'read', window: 'abc' })).text).draft, true, 'op=read carries the reader\'s draft');
 notionDraft = undefined;
 assert.equal(JSON.parse((await call('aiobox', { op: 'read', window: 'abc' })).text).draft, undefined, 'a reader that reports no draft adds no field');
+// Answers cut off as Interrupted twice in a row: read and wait_idle say hand off at once, never resend (owner 2026-10-05).
+const panelBeforeCut = pages['T-NOTION'].akipanel;
+pages['T-NOTION'].akipanel = readonlyPanel({ capabilities: { chat: 1 }, account, live: { chat: chatOk([{ role: 'user', text: 'q' }, { role: 'assistant', text: 'Interrupted' }, { role: 'user', text: 'again' }, { role: 'assistant', text: ' Interrupted ' }]) } });
+const cut = JSON.parse((await call('aiobox', { op: 'read', window: 'abc' })).text);
+assert.equal(cut.interrupted, 2);
+assert.match(cut.next, /flag its account now \(aki__aiobox_write op=flag account=nt@x\.com profile=chrome-profile-11 reason=interrupted\) and hand off to another account at once.*never send/);
+assert.match(JSON.parse((await call('aiobox', { op: 'wait_idle', window: 'abc' })).text).next, /flag its account now/, 'wait_idle says it too');
+pages['T-NOTION'].akipanel = readonlyPanel({ capabilities: { chat: 1 }, account, live: { chat: chatOk([{ role: 'assistant', text: 'Interrupted' }, { role: 'user', text: 'again' }, { role: 'assistant', text: 'Interrupted' }, { role: 'user', text: 'retry' }, { role: 'assistant', text: 'done' }]) } });
+const healed = JSON.parse((await call('aiobox', { op: 'read', window: 'abc' })).text);
+assert.deepEqual([healed.interrupted, healed.next], [undefined, undefined], 'an answer after the cuts clears them');
+pages['T-NOTION'].akipanel = readonlyPanel({ capabilities: { chat: 1 }, account, live: { chat: chatOk([{ role: 'user', text: 'q' }, { role: 'assistant', text: 'Interrupted' }]) } });
+const once = JSON.parse((await call('aiobox', { op: 'read', window: 'abc' })).text);
+assert.deepEqual([once.interrupted, once.next], [1, undefined], 'one cut is counted, not yet a handoff');
+pages['T-NOTION'].akipanel = panelBeforeCut;
 
 // run_macro goes through akipanel.runMacro and waits for its outcome in macroRuns.
 assert.match((await call('aiobox_write', { op: 'run_macro', window: 'abc', macro: 'nope' })).text, /P1·W1 has no macro 'nope'; it has: connect-akimcp \(no_macro/);

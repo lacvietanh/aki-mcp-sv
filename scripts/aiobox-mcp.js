@@ -341,7 +341,14 @@ const READ_JS = (last) => `(() => {
     const r = panel.live.chat();
     if (!r || r.ok !== true) return { source: 'provider', error: String(r?.error ?? 'live.chat() returned no result') };
     const data = r.data || {};
-    return { source: 'provider', ...acct, busy: !!data.busy, ...(data.draft === undefined ? {} : { draft: !!data.draft }), messages: (data.messages || []).slice(-${last}).map((m) => ({ role: m.role, text: m.text })) };
+    const all = data.messages || [];
+    let interrupted = 0;
+    for (let i = all.length - 1; i >= 0; i--) {
+      if (all[i].role === 'user') continue;
+      if (!/^interrupted$/i.test(String(all[i].text ?? '').trim())) break;
+      interrupted++;
+    }
+    return { source: 'provider', ...acct, busy: !!data.busy, ...(data.draft === undefined ? {} : { draft: !!data.draft }), ...(interrupted ? { interrupted } : {}), messages: all.slice(-${last}).map((m) => ({ role: m.role, text: m.text })) };
   }
   if (caps.chat !== undefined) return { source: 'provider', unsupported: String(caps.chat) };
   const root = document.body || document.querySelector('main');
@@ -649,6 +656,13 @@ function requestOutcome(op, request, run) {
   return { ...base, outcome: run.outcome, result };
 }
 
+// Answers in a row the provider cut off (Notion shows "Interrupted"): from this many, resending only burns turns, so the window hands off (owner 2026-10-05).
+const INTERRUPTED_HANDOFF = 2;
+const interruptedNext = (tab, value) =>
+  value.interrupted >= INTERRUPTED_HANDOFF
+    ? { interrupted: value.interrupted, next: `${tab.handle}'s last ${value.interrupted} answers were Interrupted: flag its account now (aki__aiobox_write op=flag account=${value.account?.label ?? '<account>'} profile=${tab.profile?.id ?? '<profileId>'} reason=interrupted) and hand off to another account at once (op=handoff_open, the account with the fewest windows); never send the same text again` }
+    : {};
+
 const DRAFT_WARNING = 'the message box holds a draft, so busy may read false while it still answers (Notion); read it again later with op=read, and never touch the draft';
 const renumberedOf = (map) => (map.renumbered ? { ...map.renumbered, warning: renumberWarning(map.renumbered) } : null);
 
@@ -705,7 +719,7 @@ const READ_OPS = {
     if (value?.error !== undefined) throw new Error(`AIObox chat reader in ${tab.handle}: ${value.error}`);
     if (value?.unsupported !== undefined) throw new Error(`AIObox chat capability version ${value.unsupported} in ${tab.handle} is not supported (expected ${CHAT_VERSION}); update AkiMCP or AIObox`);
     const body = value?.source === 'raw' ? { source: 'raw', ...tailCodepoints(value.text, RAW_TEXT_CAP) } : value;
-    return ok(JSON.stringify({ ...used, ...body }, null, 2));
+    return ok(JSON.stringify({ ...used, ...body, ...interruptedNext(tab, value) }, null, 2));
   },
   // Until the chat stops answering, by AIObox's reader (busy); a page without one has no busy to read, so it is refused rather than guessed from the DOM.
   // A draft in the box makes Notion read busy false even mid-answer (aiobox f18ca9c), so idle with a draft is returned at once with a warning, not trusted and not waited on: only the owner clears a draft.
@@ -719,8 +733,8 @@ const READ_OPS = {
       if (value?.source !== 'provider' || value.unsupported !== undefined) throw new Refusal('no_adapter', `${tab.handle} has no AIObox chat reader, so whether it is answering is unknown`, 'read it with op=read and judge from the text');
       if (value.error !== undefined) throw new Error(`AIObox chat reader in ${tab.handle}: ${value.error}`);
       const waitedMs = Date.now() - started;
-      if (!value.busy && value.draft) return ok(JSON.stringify({ ...used, busy: false, draft: true, warning: [used.warning, DRAFT_WARNING].filter(Boolean).join(' Also: '), waitedMs, messages: value.messages }, null, 2));
-      if (!value.busy) return ok(JSON.stringify({ ...used, busy: false, waitedMs, messages: value.messages }, null, 2));
+      if (!value.busy && value.draft) return ok(JSON.stringify({ ...used, busy: false, draft: true, warning: [used.warning, DRAFT_WARNING].filter(Boolean).join(' Also: '), waitedMs, messages: value.messages, ...interruptedNext(tab, value) }, null, 2));
+      if (!value.busy) return ok(JSON.stringify({ ...used, busy: false, waitedMs, messages: value.messages, ...interruptedNext(tab, value) }, null, 2));
       if (waitedMs >= limitMs) return ok(JSON.stringify({ ...used, busy: true, timedOut: true, waitedMs, next: WAIT_AGAIN }, null, 2));
       await sleep(WAIT_IDLE_POLL_MS);
     }
@@ -1164,7 +1178,7 @@ export function register(server) {
       title: 'AIObox: read windows by handle',
       annotations: { readOnlyHint: true, openWorldHint: false },
       description:
-        'Read AIObox windows. Start with op=state: every window (chatId, provider, account, busy, workspace, usage), macros, flags, the guide for acting. op=whoami quote=<20+ chars verbatim of the latest user message> finds your window. Name a window by handle P#·W# (lasting; a retired one leads to its successor), chatId or targetId; expect refuses a window showing another chat. op=windows: tabs only. op=profiles: where a new window can open (login, usage, flag, eligible). op=read: last=N messages, or the saved copy of a chat no tab shows. op=wait_idle: until it stops answering. op=text: by selector. op=screenshot. op=runs: automation runs; id= or request=: one, with steps. Acting: aki__aiobox_write.',
+        'Read AIObox (AIO) windows P#·W#. op=state: every window (chatId, provider, account, busy, workspace, usage), macros, flags, guide. op=whoami quote=<20+ chars verbatim of the latest user message>: your window. window= handle (a retired one leads to its successor, kế nhiệm), chatId or targetId; expect refuses another chat. op=windows: tabs. op=profiles: where a new window can open. op=read last=N, or the saved copy of a closed chat. op=wait_idle: until it stops answering. op=text. op=screenshot. op=runs: id= or request=. Rules: quota ≥95% or Interrupted twice → flag the account, handoff to another account (fewest windows), never resend. Also: loop, macro, akipanel. Acting: aki__aiobox_write.',
       inputSchema: {
         op: z.enum(Object.keys(READ_OPS)).describe(Object.keys(READ_OPS).join(' | ')),
         window: windowArg,
@@ -1195,7 +1209,7 @@ export function register(server) {
       title: 'AIObox: open a window, send or fill a chat, run JS',
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description:
-        `Act in an AIObox window (handle, chatId or targetId; rules: aki__aiobox op=state); from=<your chatId>. op=new_window: window= or profile+provider (aki__aiobox op=profiles). op=handoff_open: profile, provider, like, text; steps: op=runs id=<runId>. ${OPEN_RULE} op=open_url: url, profile?. op=new_chat: fresh chat. op=switch_workspace: workspace=. op=send: even mid-answer (delivered:true shown, queued:true held). op=compose: fills only. op=run_macro: macro, option. op=place_like: bounds of like. op=close_window: idle; successor= retires. op=flag/unflag: no-use list. op=eval: page JS.`,
+        `Act in an AIObox (AIO) window P#·W# (guide: aki__aiobox op=state); from=<your chatId>. op=new_window: window= or profile+provider. op=handoff_open: profile, provider, like, text. ${OPEN_RULE} op=open_url: url, profile?. op=send: even mid-answer. op=compose: fills only. op=run_macro: macro, option; macro surface: op=eval akipanel.<method>(). op=close_window: idle; successor= retires. op=flag/unflag. New account/workspace: before the first message check AkiMCP tool count, else run_macro connect-akimcp option=reconnect. Handoff (quota, interrupted): another account, fewest windows.`,
       inputSchema: {
         op: z.enum(Object.keys(WRITE_OPS)).describe(Object.keys(WRITE_OPS).join(' | ')),
         window: windowArg,
