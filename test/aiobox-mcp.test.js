@@ -513,6 +513,8 @@ delete pages['T-GPT'].url;
       if (refusal) return { ok: false, error: refusal };
       // As seen live (run 969): scopePick names the workspace already on Notion's app.notion.com/<domain> page, before AIObox reaches Notion AI's home.
       setTimeout(() => { pages['T-NOTION'] = { url: 'https://app.notion.com/nova-cathedral-7fd', akipanel: readonlyPanel({ online: true, capabilities: { chat: 1 }, usage: notionUsage, scopePick: 'other', live: { chat: () => ({ ok: false, error: 'no conversation in this tab' }) } }) }; }, 300);
+      // Then Notion's /p/<id> doc page, whose reader may well read an empty chat (P9·W6 review of 7d9f406, M): only the address tells it from the home.
+      setTimeout(() => { pages['T-NOTION'] = { url: 'https://app.notion.com/p/1f2e3d4c5b6a', akipanel: readonlyPanel({ online: true, capabilities: { chat: 1 }, usage: notionUsage, scopePick: 'other', live: { chat: chatOk([]) } }) }; }, 800);
       setTimeout(() => { pages['T-NOTION'] = { url: 'https://app.notion.com/ai', akipanel: readonlyPanel({ online: true, capabilities: { chat: 1 }, usage: notionUsage, scopePick: 'other', live: { chat: chatOk([]) } }) }; }, 1500);
       return { ok: true, data: null };
     } }) };
@@ -524,8 +526,10 @@ delete pages['T-GPT'].url;
   assert.match((await call('aiobox_write', { op: 'switch_workspace', window: 'abc', workspace: 'Linh1', from: 'abc' })).text, /is your own chat \(abc\) \(self_target/);
   const stay = JSON.parse((await call('aiobox_write', { op: 'switch_workspace', window: 'P1·W1', workspace: ' linh2 ' })).text);
   assert.deepEqual([stay.moved, stay.workspace], [false, { id: WS, label: 'Linh2' }], 'a label matches trimmed and in any case; already there moves nothing');
-  fs.writeFileSync(flagsPath, JSON.stringify({ list: [{ scope: 'workspace', workspace: 'Linh1', provider: 'notion', reason: 'quota', flaggedAt: '2026-10-04T00:00:00.000Z' }] }));
+  // One rule with AIObox's workspace_flagged (P9·W6 review, L1): label trimmed in any case; another profile's or provider's flag does not count.
+  fs.writeFileSync(flagsPath, JSON.stringify({ list: [{ scope: 'workspace', workspace: ' LINH1', provider: 'notion', reason: 'quota', flaggedAt: '2026-10-04T00:00:00.000Z' }, { scope: 'workspace', workspace: 'Linh2', profileId: 'chrome-profile-99', provider: 'notion', reason: 'elsewhere', flaggedAt: '2026-10-04T00:00:00.000Z' }, { scope: 'workspace', workspace: 'Linh2', provider: 'claude', reason: 'not notion', flaggedAt: '2026-10-04T00:00:00.000Z' }] }));
   assert.match((await call('aiobox_write', { op: 'switch_workspace', window: 'P1·W1', workspace: 'other' })).text, /Linh1 is flagged: quota \(flagged/);
+  assert.equal(JSON.parse((await call('aiobox_write', { op: 'switch_workspace', window: 'P1·W1', workspace: 'Linh2' })).text).moved, false, "another profile's or provider's flag does not refuse");
   fs.rmSync(flagsPath);
   assert.deepEqual(switched, ['other'], 'only the panel refusal reached the panel');
   const moved = JSON.parse((await call('aiobox_write', { op: 'switch_workspace', window: 'P1·W1', workspace: 'Linh1' })).text);

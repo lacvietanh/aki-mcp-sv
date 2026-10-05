@@ -405,6 +405,10 @@ const inForce = (e, now) => {
   return Number.isNaN(until) || until > now;
 };
 const scopeOf = (f) => f.scope ?? 'account';
+// One rule with AIObox's request.rs workspace_flagged: a Notion workspace flag, of this profile or of none, naming the workspace by label (trimmed, any case) or id.
+const workspaceFlagged = (f, { label, id, profileId }) =>
+  scopeOf(f) === 'workspace' && (f.provider ?? 'notion') === 'notion' && (!f.profileId || !profileId || f.profileId === profileId) &&
+  ((label != null && String(f.workspace ?? '').trim().toLowerCase() === String(label).trim().toLowerCase()) || (id != null && String(f.workspace ?? '').replace(/-/g, '').toLowerCase() === String(id).replace(/-/g, '').toLowerCase()));
 const coordination = (now = Date.now()) => ({ flags: readFlags().filter((e) => inForce(e, now)).map((e) => ({ ...e, scope: scopeOf(e) })) });
 
 const HOUR_MS = 3_600_000;
@@ -498,10 +502,10 @@ const accountFlag = (flags, profileId, provider) => flags.find((f) => f.scope ==
 function profilesView(now = Date.now()) {
   const doc = readProfiles();
   const { flags } = coordination(now);
-  const workspaceFlag = (label) => flags.find((f) => f.scope === 'workspace' && f.workspace === label) || null;
   const providerView = (profileId) => (pr) => {
     const flag = accountFlag(flags, profileId, pr.id);
-    const workspaces = Array.isArray(pr.workspaces) ? { workspaces: pr.workspaces.map((w) => ({ ...w, flag: workspaceFlag(w.label) })) } : {};
+    const workspaceFlag = (w) => (pr.id === 'notion' && flags.find((f) => workspaceFlagged(f, { label: w.label, id: w.id, profileId }))) || null;
+    const workspaces = Array.isArray(pr.workspaces) ? { workspaces: pr.workspaces.map((w) => ({ ...w, flag: workspaceFlag(w) })) } : {};
     return { ...pr, ...workspaces, flag, eligible: pr.login === 'signed_in' && !flag };
   };
   return { updatedAt: doc.updatedAt ?? null, profiles: (doc.profiles || []).map((p) => ({ ...p, providers: (p.providers || []).map(providerView(p.id)) })) };
@@ -803,6 +807,15 @@ const SWITCH_WORKSPACE_JS = (id) => `(() => {
 const SWITCHED_JS = `(() => ({ ...${NEW_CHAT_READY_JS}, pick: typeof window.akipanel?.scopePick === 'string' ? window.akipanel.scopePick : null }))()`;
 // The id and label matching of akipanel.switchWorkspace: an id with or without dashes, a label trimmed, both case-insensitive.
 const spaceKey = (id) => String(id).replace(/-/g, '').toLowerCase();
+// Notion AI's home (provider/notion/mod.rs home_url) or an empty /chat: not the /<domain> or /p/<id> pages a switch passes through.
+const atNotionAiHome = (url) => {
+  try {
+    const u = new URL(url);
+    return u.pathname === '/ai' || (u.pathname === '/chat' && !u.searchParams.get('t'));
+  } catch {
+    return false;
+  }
+};
 const findWorkspace = (scopes, wanted) => {
   const w = wanted.trim().toLowerCase();
   return scopes.find((s) => spaceKey(s.id) === spaceKey(w) || String(s.label ?? '').trim().toLowerCase() === w) || null;
@@ -915,7 +928,7 @@ const WRITE_OPS = {
     if (seen?.error) throw new Error(`${tab.handle}: ${seen.error}`);
     const scope = findWorkspace(seen.scopes, args.workspace);
     if (!scope) throw new Refusal('no_workspace', `'${args.workspace}' is no workspace of ${tab.handle}'s account`, 'pick one by id or label from aki__aiobox op=state workspaces');
-    const flag = coordination().flags.find((f) => f.scope === 'workspace' && (f.workspace === scope.label || spaceKey(f.workspace) === spaceKey(scope.id)));
+    const flag = coordination().flags.find((f) => workspaceFlagged(f, { label: scope.label, id: scope.id, profileId: tab.profile.id ?? null }));
     if (flag) throw new Refusal('flagged', `${scope.label ?? scope.id} is flagged: ${flag.reason}`, 'pick another workspace from aki__aiobox op=state workspaces');
     const workspace = { id: scope.id, label: scope.label };
     if (seen.pick && spaceKey(seen.pick) === spaceKey(scope.id)) return ok(JSON.stringify({ ...used, workspace, moved: false }, null, 2));
@@ -931,7 +944,7 @@ const WRITE_OPS = {
     let last = null;
     for (const end = Date.now() + SWITCH_WAIT_MS; Date.now() < end; await sleep(NEW_WINDOW_POLL_MS)) {
       last = (await cdp.evaluate({ port: tab.port, target, expression: SWITCHED_JS }).catch(() => null))?.value ?? last;
-      if (last?.ready && chatIdOf(last.url) === null && last.pick && spaceKey(last.pick) === spaceKey(scope.id)) {
+      if (last?.ready && atNotionAiHome(last.url) && last.pick && spaceKey(last.pick) === spaceKey(scope.id)) {
         return ok(JSON.stringify({ ...used, previousChatId: used.chatId, chatId: chatIdOf(last.url), url: last.url, workspace, previousWorkspace, moved: true, next: 'op=send the first message there, then op=state shows its chatId' }, null, 2));
       }
     }
