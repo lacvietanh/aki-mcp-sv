@@ -147,6 +147,20 @@ assert.match(readR1.content[1].text, /^Rules for this path \(same rank as aki__a
 assert.deepEqual(await rulesFor([path.join(path.dirname(tmp), 'elsewhere', 'x.txt')], [r1]), [], 'a path outside every root has no rules');
 assert.deepEqual(await rulesFor([], [tmp]), [], 'no path, no rules');
 assert.deepEqual(await rulesFor([path.join(r1, 'src', 'new', 'deep.txt')], [tmp]), [path.join(tmp, 'CLAUDE.md'), path.join(r1, 'AGENTS.md')], 'a path not created yet walks up from its nearest folder, top-down');
+// S6: a git worktree nested in its repo carries the same CLAUDE.md; it counts once (the worktree's copy), and a receipt covering the repo's copy covers it.
+const wt = path.join(r1, '.claude', 'worktrees', 'w1');
+fs.mkdirSync(path.join(wt, 'src'), { recursive: true });
+fs.writeFileSync(path.join(r1, 'CLAUDE.md'), '# r1 claude\n');
+fs.writeFileSync(path.join(wt, 'CLAUDE.md'), '# r1 claude\n');
+const wtRules = await rulesFor([path.join(wt, 'src', 'x.txt')], [tmp]);
+assert.deepEqual(wtRules.filter((f) => f.endsWith(path.join('r1', 'CLAUDE.md')) || f === path.join(wt, 'CLAUDE.md')), [path.join(wt, 'CLAUDE.md')], 'a worktree nested in its repo gets the same CLAUDE.md once');
+assert.ok(wtRules.includes(path.join(r1, 'AGENTS.md')), 'other rule files on the way up stay');
+const wtReadLine = (await client.callTool({ name: 'aki__read_text_file', arguments: { path: path.join(wt, 'CLAUDE.md') } })).content.at(-1).text;
+assert.equal(wtReadLine.split('CLAUDE.md (sha256 ').length - 1, wtRules.filter((f) => f.endsWith('CLAUDE.md')).length, 'the read line names the copy once');
+const coveringR1 = (await client.callTool({ name: 'aki__akidevrule_context', arguments: { workingPath: r1 } })).structuredContent.receipt;
+const wtWrite = await write(path.join(wt, 'src', 'y.txt'), coveringR1);
+assert.ok(!newReceipt(wtWrite), `a receipt covering the repo's CLAUDE.md covers the worktree's copy: ${text(wtWrite)}`);
+assert.ok(fs.existsSync(path.join(wt, 'src', 'y.txt')));
 const big = path.join(tmp, 'big', 'CLAUDE.md');
 fs.mkdirSync(path.dirname(big));
 fs.writeFileSync(big, `# big\n${'x'.repeat(40 * 1024)}\n`);

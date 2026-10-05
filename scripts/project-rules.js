@@ -41,8 +41,26 @@ async function nearestDir(p) {
   }
 }
 
-// Rule files (real paths, top-down, no repeats) for the given paths; a path outside every root has none.
+// The full sha256 of a file's bytes, or null when it cannot be read.
+export async function contentSha(file) {
+  try { return createHash('sha256').update(await fs.readFile(file)).digest('hex'); } catch { return null; }
+}
+
+// Rule files (real paths, top-down, no repeats) for the given paths; a path outside every root has none. Two files with the same bytes count once, the deepest kept (S6: a git worktree nested in its repo carries a copy of the repo's CLAUDE.md).
 export async function rulesFor(paths, roots = getRoots()) {
+  const found = await rulesFound(paths, roots);
+  const seen = new Set();
+  const kept = [];
+  for (const file of found.reverse()) {
+    const sha = await contentSha(file);
+    if (sha !== null && seen.has(sha)) continue;
+    if (sha !== null) seen.add(sha);
+    kept.push(file);
+  }
+  return kept.reverse();
+}
+
+async function rulesFound(paths, roots) {
   const realRoots = [];
   for (const root of roots) {
     try { realRoots.push(await fs.realpath(root)); } catch { /* unavailable roots hold no rules */ }

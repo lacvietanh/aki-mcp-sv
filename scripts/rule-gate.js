@@ -3,7 +3,7 @@
 // A receipt counts only when this server issued it (aki__akidevrule_context records it here, in memory) and the same call made now still returns it: a changed rule file changes the receipt, so the old one is refused.
 import { z } from 'zod';
 import { assembleRuleContext } from './rule-context.js';
-import { pathsOf, rulesFor, rulesBlock, rulesLine } from './project-rules.js';
+import { pathsOf, rulesFor, rulesBlock, rulesLine, contentSha } from './project-rules.js';
 
 export const RECEIPT_ARG = 'receipt';
 const RECEIPT_RE = /^sha256:[a-f0-9]{64}$/;
@@ -51,10 +51,12 @@ export async function checkReceipt(receipt) {
   return (await verify(receipt)).refused || null;
 }
 
-// The project rule files this call touches that the receipt does not cover yet: a new receipt covering them and the text to show, or null to run the call.
+// The project rule files this call touches that the receipt does not cover yet: a new receipt covering them and the text to show, or null to run the call. A file with the same bytes as one the receipt covers is covered (S6: a worktree's copy of its repo's CLAUDE.md).
 async function uncovered(own, entry, current) {
   const known = new Set((current.sources || []).map((s) => s.path));
-  const missing = (await rulesFor(pathsOf(own))).filter((f) => !known.has(f));
+  const knownSha = new Set((current.sources || []).map((s) => s.sha256).filter(Boolean));
+  const missing = [];
+  for (const f of await rulesFor(pathsOf(own))) if (!known.has(f) && !knownSha.has(await contentSha(f))) missing.push(f);
   if (!missing.length) return null;
   const extraFiles = [...new Set([...entry.extraFiles, ...missing])].sort();
   let next;
