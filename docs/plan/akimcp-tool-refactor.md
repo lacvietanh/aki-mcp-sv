@@ -11,7 +11,7 @@ Bản bền này = docs/plan/akimcp-tool-refactor.md (RULE-docs B1); bản nháp
 
 ## 1. Thứ tự phát hành (bắt buộc)
 P1. D9 log mọi tool — phát hành TRƯỚC bản gom.
-P2. Việc KHÔNG đổi hash định nghĩa tool: sửa phễu/docs (F-list, README, lineage, docs AIObox) + A15 lỗi/next là OUTPUT (chrome_launch no_aiobox, notify_user, NO_SESSION_HINT cdp-mcp.js:10).
+P2. Việc KHÔNG đổi hash định nghĩa tool: sửa phễu/docs (F-list, README, lineage, docs AIObox) + A15 lỗi/next là OUTPUT (chrome_launch no_aiobox, notify_user). Đính chính (challenger #18): NO_SESSION_HINT cdp-mcp.js:10 chỉ nối vào description 3 tool devtools (:22,47,74), không phải lỗi → thuộc P3 (D-L2a).
 P3. Bản gom MỘT LẦN mọi đổi ĐỊNH NGHĨA tool (annotations destructiveHint/readOnly, mô tả, enum, tên) — Claude "Always allow" gắn hash định nghĩa: đổi = hỏi duyệt lại mọi cửa sổ + reconnect (A12, HF-3). Đi kèm cùng lúc: dòng CHANGELOG "reconnect + Claude hỏi lại Always allow" + guide AIObox tăng version. Luật: bước R nào đổi description phải đi trong bản gom. Ví dụ sống (FACT): c0dd305..fc147b7 đổi lẻ mô tả aiobox/aiobox_write → phải reconnect mọi workspace; lượt gọi tool hành động đầu báo RULE_RECEIPT_UNKNOWN, receipt giữ nguyên (akidevrule_context trả unchanged; receipt khác nhau giữa seat là do workingPath).
 P4. R0–R6 trả luật chép về AIObox (không ảnh hưởng người chưa cài AIObox). Mỗi bước R: AIObox phát hành TRƯỚC, AkiMCP SAU; qua cổng akipanel.capabilities; bước chưa qua kiểm thì không sang bước sau (aki-judge-boundary.md:359).
 P5. R7 (kênh hỏi–đáp mới) — chỉ khi cổng mở, kèm câu cho chủ.
@@ -49,7 +49,7 @@ P5. R7 (kênh hỏi–đáp mới) — chỉ khi cổng mở, kèm câu cho ch�
 2. Danh sách kiểm sống (UNVERIFIED trong audit, bắt buộc trước phát hành): C25 AkiMCP một mình (akidevrule_context đúng 1 dòng pitch, aiobox* ẩn); C27 composer chết; C28 Windows; C29 Linux; V6 (4 ca); A12 client Notion/Claude/GPT (annotations, hash); F6(b) kiểm tay mỗi lần phát hành.
 3. Mỗi bước R: AIObox phát hành trước, AkiMCP sau, qua cổng akipanel.capabilities; chưa qua kiểm thì không sang bước sau (P4; boundary :359).
 4. Đích eval ≤5% tổng gọi aiobox_write (báo kèm mẫu số), đo trên ≥200 lượt và ≥3 provider (aiobox-control-ops.md:63). T5′: op mới khi ≥3 lượt cùng mục đích HOẶC lỗi thật từ JS tự viết.
-5. Rào phễu BR-9 F1–F7, mỗi F có lệnh kiểm (aki-judge-boundary.md § 18:19); làm chặt: F7 thêm ca lỗi trên máy giả (bắt NO_SESSION_HINT cdp-mcp.js:10); F6(a) test theo giá trị PITCH (import + regex \b(Mac|macOS|Windows|Linux)\b), không grep 1 dòng; F5(b) spy fetch/http + child_process (curl/open).
+5. Rào phễu BR-9 F1–F7, mỗi F có lệnh kiểm (aki-judge-boundary.md § 18:19); làm chặt: F7 thêm ca lỗi trên máy giả (NO_SESSION_HINT khoá là KNOWN_P3 vì nằm trong description); F6(a) test theo giá trị PITCH (import + regex \b(Mac|macOS|Windows|Linux)\b), không grep 1 dòng; F5(b) spy fetch/http + child_process (curl/open).
 6. Mọi mục SUGGESTED tách riêng (§4), không coi là luật hiện hành.
 7. Quyết cho user: chỉ câu qua 4 kill-test (§5).
 8. Mỗi tiêu chí có lệnh kiểm (§6).
@@ -96,7 +96,7 @@ Sóng 1 (song song, file tách biệt):
 | lane | seat | repo / file sở hữu | việc | xong khi |
 |---|---|---|---|---|
 | L1 D9 log (P1) | aki-hands P1·W28 | aki-mcp-sv: scripts/tool-call-log.js, scripts/tool-calls-report.js, mục log trong setting (userdata.js) + panel/config-page phần log, test log | log mọi tool; basic mặc định; setting mức + ngày giữ 40 + trần MB; dọn theo tuổi | test pass, ST-4 PASS |
-| L2 lỗi/next A15 (P2) | aki-judge -llm-ux P3·W10 | aki-mcp-sv: lỗi chrome_launch (chrome-profile.js/chrome-mcp.js), notify_user (system-mcp.js), NO_SESSION_HINT cdp-mcp.js:10, test F7 ca lỗi | H1/D15, notify ok thật, D3 | test pass, F7 ca lỗi PASS |
+| L2 lỗi/next A15 (P2) | aki-judge -llm-ux P3·W10 | aki-mcp-sv: lỗi chrome_launch (chrome-profile.js/chrome-mcp.js), notify_user (system-mcp.js), test F7 ca lỗi (NO_SESSION_HINT → P3, D-L2a) | H1/D15, notify ok thật, D3 | test pass, F7 ca lỗi PASS |
 | L3 phễu chữ (P2) | aki-judge -history-future P1·W29 | aki-mcp-sv: aiobox-guide.js (PITCH "a desktop app", ?from), docs lineage.md, test F6(a) (README KHÔNG sửa — #17) | F6, HF chữ | grep "Mac app"=0, F6(a) test PASS |
 | L4 docs tool (P2) | aki-judge -subtract P5·W14 | aki-mcp-sv: docs tools.md | ST-1 đủ 38 tên đăng ký, ST-2 cặp dễ nhầm | ST-1/ST-2 PASS |
 | L5 ITEM-8b + AB-7 | aki-judge -boundary P4·W19 | aiobox: file quy tắc mới docs (akimcp-boundary.md) + 1 dòng trỏ trong CLAUDE.md; docs Linux (platform-unify-windows-build.md, positioning.md) | ghi cứng HF/BR/ST/T5′ + lệnh kiểm; đa nền tảng | HF "akimcp-boundary.md có" PASS |
