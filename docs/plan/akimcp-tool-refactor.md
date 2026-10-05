@@ -4,7 +4,7 @@ Session: ~/.aki/agent-council/aiobox/2026.10.05-1430-akimcp-tool-refactor/ · mo
 Bản bền này = docs/plan/akimcp-tool-refactor.md (RULE-docs B1); bản nháp trong session là lịch sử. Decided cho các mục "user chọn" ở checklist.md § REQ-17.
 
 ## 0. Kết luận audit (đã đóng, có challenger)
-- Bề mặt ĐÍCH = 37 tool / 22 op, giữ nguyên tập hiện tại (ITEM-9). 0 tool xoá (ITEM-3; S1–S5 No action, mọi đề xuất bỏ đã qua Chesterton + /akithink).
+- Bề mặt ĐÍCH = giữ nguyên tập hiện tại: đăng ký 38 tool (gồm kiro_read, agy_run) / 22 op; phục vụ = 38 − tool của provider detect=false (máy chủ hôm nay 37 vì kiro-cli không trên PATH, kiro-mcp.js:40) (ITEM-9; đính chính challenger #17). 0 tool xoá (ITEM-3; S1–S5 No action, mọi đề xuất bỏ đã qua Chesterton + /akithink).
 - Việc thật nằm ở: chất lượng định nghĩa (annotations, lỗi có next, mô tả gọn), ranh giới AkiMCP↔AIObox (R0–R7), log mọi tool (D9), phễu nói đúng (BR-9).
 - Phần AIObox trong AkiMCP = PHỄU có chủ đích (REQ-15), không phải rò; coupling kỹ thuật mới xét SRP.
 - Ranh giới (ITEM-10, D13): mặc định (A) adapter hiện tại → dần về (B) AIObox giữ logic, qua R0–R7.
@@ -29,7 +29,7 @@ P5. R7 (kênh hỏi–đáp mới) — chỉ khi cổng mở, kèm câu cho ch�
 - GUIDE_URL (cũng là phễu): 2 bề mặt D7 + fallback guide aiobox-guide.js:19 (fallback không phải pitch). Ngoại lệ có tên: AIOBOX_STEP (:28), chrome-mcp.js:64 "While AIObox runs".
 - Pitch ghi "a desktop app"; tên OS chỉ khi bản đó có link tải. grep "Mac app" = 0.
 - SUGGESTED: GUIDE_URL thêm ?from=akimcp chỉ trên 2 bề mặt D7.
-- lineage.md:26 "not for distribution" → sửa cho khớp phễu. README "38 tools" → 37.
+- lineage.md:26 "not for distribution" → sửa cho khớp phễu. README "38 tools" ĐÚNG (= tên đăng ký; README:96 đã nói tool app chưa cài không phục vụ) → không sửa.
 - config-page.js tab Hosted domain: giữ (phễu). Giá D12 = DEFERRED (owner hoãn, giữ nguyên).
 ### Lỗi & khôi phục (A15, H1/D15)
 - chrome_launch chưa cài AIObox: trả sự thật (chrome-profile.js:163) + đường không cần AIObox (NO_CDP_PORT_MESSAGE :296-297). KHÔNG pitch, KHÔNG GUIDE_URL. no_profile → next.
@@ -88,7 +88,7 @@ Không FAIL mới ngoài các việc đã có trong §2. ITEM-8b chép các bả
 - BR-1..BR-9 (aki-judge-boundary.md): nhãn {AkiMCP-lõi, AIObox-only, AIObox-qua-AkiMCP, bỏ} + hướng phụ thuộc + lệnh kiểm cấp dòng; BR-9 phễu F1–F7.
 - ST-1..ST-5 (aki-judge-subtract.md): mỗi tool/op có "vì sao có / bỏ thì mất gì / ai thay"; bỏ chỉ sau Chesterton + /akithink.
 - T5′ (aki-judge-llm-ux.md): ngưỡng thêm op từ eval.
-- Lệnh kiểm chung: council_verify.py PASS; grep "Mac app" = 0; tools/list = 37 tool khi có AIObox, 35 khi chưa cài (aiobox* ẩn); F1–F7 lệnh như boundary § 18:19.
+- Lệnh kiểm chung: council_verify.py PASS; grep "Mac app" = 0; tools/list = 38 đăng ký − tool của provider detect=false (F7 test tính từ registry, không cứng số); F1–F7 lệnh như boundary § 18:19.
 
 ## 8. Phân việc EXECUTE (lead 2026-10-05 ~18:5xZ, sau REQ-17)
 Quy ước chung checkout: git status trước khi sửa; file bẩn không phải của mình → không đụng, báo lead; commit `git commit -m "…" -- <paths của lane>`; KHÔNG git add -A, KHÔNG push/tag/release/publish/deploy; CHANGELOG chỉ sửa dòng của mình ngay trước commit; lane rủi ro → `git worktree add <repo>/.claude/worktrees/<lane> -b wt-<lane>`. Mỗi lane: Decided các mục mở trong miền mình (4 kill-test + reversibility, ghi because/reopen) → làm → test → commit → báo lead + challenger.
@@ -97,8 +97,8 @@ Sóng 1 (song song, file tách biệt):
 |---|---|---|---|---|
 | L1 D9 log (P1) | aki-hands P1·W28 | aki-mcp-sv: scripts/tool-call-log.js, scripts/tool-calls-report.js, mục log trong setting (userdata.js) + panel/config-page phần log, test log | log mọi tool; basic mặc định; setting mức + ngày giữ 40 + trần MB; dọn theo tuổi | test pass, ST-4 PASS |
 | L2 lỗi/next A15 (P2) | aki-judge -llm-ux P3·W10 | aki-mcp-sv: lỗi chrome_launch (chrome-profile.js/chrome-mcp.js), notify_user (system-mcp.js), NO_SESSION_HINT cdp-mcp.js:10, test F7 ca lỗi | H1/D15, notify ok thật, D3 | test pass, F7 ca lỗi PASS |
-| L3 phễu chữ (P2) | aki-judge -history-future P1·W29 | aki-mcp-sv: aiobox-guide.js (PITCH "a desktop app", ?from), docs lineage.md, README (37 tool), test F6(a) | F6, HF chữ | grep "Mac app"=0, F6(a) test PASS |
-| L4 docs tool (P2) | aki-judge -subtract P5·W14 | aki-mcp-sv: docs tools.md | ST-1 đủ 37 tool, ST-2 cặp dễ nhầm | ST-1/ST-2 PASS |
+| L3 phễu chữ (P2) | aki-judge -history-future P1·W29 | aki-mcp-sv: aiobox-guide.js (PITCH "a desktop app", ?from), docs lineage.md, test F6(a) (README KHÔNG sửa — #17) | F6, HF chữ | grep "Mac app"=0, F6(a) test PASS |
+| L4 docs tool (P2) | aki-judge -subtract P5·W14 | aki-mcp-sv: docs tools.md | ST-1 đủ 38 tên đăng ký, ST-2 cặp dễ nhầm | ST-1/ST-2 PASS |
 | L5 ITEM-8b + AB-7 | aki-judge -boundary P4·W19 | aiobox: file quy tắc mới docs (akimcp-boundary.md) + 1 dòng trỏ trong CLAUDE.md; docs Linux (platform-unify-windows-build.md, positioning.md) | ghi cứng HF/BR/ST/T5′ + lệnh kiểm; đa nền tảng | HF "akimcp-boundary.md có" PASS |
 | review | aki-challenger P8·W17 | — | tấn công từng commit + mọi Decided | mỗi lane có turn duyệt |
 Sóng 2 (sau sóng 1): P3 bản gom định nghĩa tool (llm-ux chủ trì, 1 commit); P4 R0–R6 + AB-1..6 phía AIObox (phối hợp P4·W18, không phá việc dở; AIObox trước, AkiMCP sau). P5 R7 = sàn bảo mật → báo cáo cuối.
