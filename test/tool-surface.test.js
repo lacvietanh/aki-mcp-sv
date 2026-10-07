@@ -14,7 +14,12 @@ fs.mkdirSync(path.join(tmp, 'data'));
 fs.writeFileSync(path.join(tmp, 'data', 'setting.json'), JSON.stringify({ folders: [tmp] }));
 process.env.AKI_MCP_DATA_DIR = path.join(tmp, 'data');
 const { createToolsServer } = await import('../scripts/tools-server.js');
-const { listProviders, setEnabled, redetect } = await import('../scripts/provider-registry.js');
+const { PROVIDERS, listProviders, setEnabled, redetect } = await import('../scripts/provider-registry.js');
+// What's installed decides what's served, so every probe here says installed — the full surface, on every machine; the real probes return after the PATH check below.
+const realDetect = new Map(PROVIDERS.map((p) => [p, p.detect]));
+const pretendInstalled = () => { for (const p of PROVIDERS) if (p.detect) p.detect = () => ({ available: true }); };
+const restoreDetection = () => { for (const [p, detect] of realDetect) p.detect = detect; };
+pretendInstalled();
 
 // JSON.stringify(tools/list .tools).length measured 2026-10-02 at P0 (36 tools, before annotations). Budget = baseline × 1.10; raising it is a deliberate change in the diff, never a silent drift.
 const BASELINE_CHARS = 27207;
@@ -29,6 +34,7 @@ const RAISES = [
   { date: '2026-10-04', why: 'rule receipt gate: every tool that acts takes receipt (docs/plan/rule-receipt-gate.md), and akidevrule_context says so', chars: 2285 },
 ];
 const BUDGET_CHARS = Math.round(BASELINE_CHARS * 1.1) + RAISES.reduce((sum, r) => sum + r.chars, 0);
+// Measured 2026-10-07 on the full surface (38 tools): 34930 chars, 1421 under the budget.
 
 const server = createToolsServer();
 const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
@@ -38,18 +44,23 @@ await client.connect(clientSide);
 const served = async () => (await client.listTools()).tools;
 const servedNames = async () => (await served()).map((t) => t.name);
 
-// What is served depends on what this machine has installed (CI has no agy, Postman or Chrome), so the budget is an upper bound on whatever is available here.
+// `providers` and `tools` are the default state: agy and kiro are opt-in, so the full surface needs them switched on for one listing.
+const providers = listProviders();
 const tools = await served();
-const json = JSON.stringify(tools);
+setEnabled('agy', true);
+setEnabled('kiro', true);
+const full = await served();
+setEnabled('agy', false);
+setEnabled('kiro', false);
+const json = JSON.stringify(full);
 const total = json.length;
-const rows = tools.map((t) => [t.name, JSON.stringify(t).length, (t.description || '').length]).sort((a, b) => b[1] - a[1]);
+const rows = full.map((t) => [t.name, JSON.stringify(t).length, (t.description || '').length]).sort((a, b) => b[1] - a[1]);
 // The hash makes "the surface did not change" checkable across a refactor by comparing one line.
-console.log(`tool surface: ${tools.length} tools, ${total} chars (budget ${BUDGET_CHARS}), sha256 ${createHash('sha256').update(json).digest('hex').slice(0, 16)}`);
+console.log(`tool surface: ${full.length} tools, ${total} chars (budget ${BUDGET_CHARS}), sha256 ${createHash('sha256').update(json).digest('hex').slice(0, 16)}`);
 for (const [name, size, desc] of rows) console.log(`  ${String(size).padStart(6)}  desc ${String(desc).padStart(4)}  ${name}`);
 assert.ok(total <= BUDGET_CHARS, `tools/list is ${total} chars, over the ${BUDGET_CHARS} budget — trim descriptions or raise BASELINE_CHARS deliberately`);
 
-// The rest checks every registered tool, disabled ones included, so the result does not depend on this machine.
-const registered = Object.entries(server._registeredTools).map(([name, t]) => ({ name, ...t }));
+const registered = full;
 
 // readOnlyHint only where the tool cannot write by mechanism; every non-read-only tool also states whether it destroys.
 for (const t of registered) {
@@ -76,12 +87,11 @@ for (const [owner, text] of texts) {
 }
 
 // Every registered tool belongs to exactly one provider.
-const providers = listProviders();
 assert.deepEqual(providers.flatMap((p) => p.tools).sort(), [...names].sort());
 
-// Switching a provider off hides its tools on the next tools/list and refuses calls; switching it back restores them. git is always available, so this holds on any machine; postman also shows the switch on a machine that has it.
+// Switching a provider off hides its tools on the next tools/list and refuses calls; switching back restores them. git is always available (any machine); postman only where installed.
 for (const id of ['git', 'postman']) {
-  const { tools: own, available } = providers.find((p) => p.id === id);
+  const { tools: own } = providers.find((p) => p.id === id);
   setEnabled(id, false);
   const off = await servedNames();
   assert.ok(own.every((n) => !off.includes(n)), `${id} tools still served after setEnabled(false)`);
@@ -90,22 +100,25 @@ for (const id of ['git', 'postman']) {
   assert.equal(JSON.parse(fs.readFileSync(path.join(tmp, 'data', 'setting.json'), 'utf8')).providers[id].enabled, false, 'the switch persists in setting.json');
   setEnabled(id, true);
   const on = await servedNames();
-  if (available) assert.ok(own.every((n) => on.includes(n)), `${id} tools missing after setEnabled(true)`);
+  assert.ok(own.every((n) => on.includes(n)), `${id} tools missing after setEnabled(true)`);
 }
 // agy and kiro are opt-in: off until the owner switches them on, whether or not the CLI is installed.
 for (const id of ['agy', 'kiro']) {
-  const { tools: own, available, enabled } = providers.find((p) => p.id === id);
+  const { tools: own, enabled } = providers.find((p) => p.id === id);
   assert.equal(enabled, false, `${id} is off by default`);
   assert.ok(own.every((n) => !tools.some((t) => t.name === n)), `${id} tools are not served by default`);
   assert.equal(setEnabled(id, true).enabled, true);
   const on = await servedNames();
-  if (available) assert.ok(own.every((n) => on.includes(n)), `${id} tools served once switched on`);
+  assert.ok(own.every((n) => on.includes(n)), `${id} tools served once switched on`);
   setEnabled(id, false);
 }
 for (const id of ['rule', 'filesystem', 'search', 'shell']) assert.throws(() => setEnabled(id, false), /always on/, `${id} must refuse to switch off`);
 assert.throws(() => setEnabled('nope', false), /unknown provider/);
 
 // Detection follows the machine: with an empty PATH neither CLI is found, so their tools are not served; restoring PATH and re-detecting brings back whatever is installed.
+restoreDetection();
+redetect();
+const beforeBlind = await servedNames();
 const savedPath = process.env.PATH;
 process.env.PATH = '';
 const blind = redetect();
@@ -115,7 +128,7 @@ const withoutPath = await servedNames();
 assert.ok(!withoutPath.includes('aki__agy_run') && !withoutPath.includes('aki__kiro_read'), 'CLI tools hidden when their binary is not on PATH');
 process.env.PATH = savedPath;
 redetect();
-assert.deepEqual(await servedNames(), tools.map((t) => t.name), 'the surface is back to where it started');
+assert.deepEqual(await servedNames(), beforeBlind, 'the surface is back to where it started');
 
 // The panel's API drives the same registry, so a switch there reaches this live server.
 const { ROUTES } = await import('../scripts/panel.js');
@@ -126,7 +139,7 @@ assert.ok(!(await servedNames()).includes('aki__git'), 'a panel switch hides the
 await ROUTES['POST /api/providers']({ id: 'git', enabled: true });
 await assert.rejects(ROUTES['POST /api/providers']({ id: 'shell', enabled: false }), /always on/);
 assert.equal((await ROUTES['POST /api/providers']({ redetect: true })).length, providers.length);
-assert.deepEqual(await servedNames(), tools.map((t) => t.name));
+assert.deepEqual(await servedNames(), beforeBlind);
 
 await client.close();
 fs.rmSync(tmp, { recursive: true, force: true });

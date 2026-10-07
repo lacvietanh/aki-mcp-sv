@@ -12,7 +12,7 @@ const before = loadOrCreatePassphrase();
 const after = rotatePassphrase();
 assert.notEqual(after, before, 'a roll must issue a different passphrase');
 assert.equal(loadOrCreatePassphrase(), after, 'the rolled passphrase must be the one read next');
-assert.match(after, /^[a-z2-9]{10}$/);
+for (const p of [before, after]) assert.match(p, /^[abcdefghjkmnpqrstuvwxyz23456789]{10}$/, 'first-load and rolled passphrases use the unambiguous alphabet');
 
 const html = renderPanel({ origin: null, client: {}, passphrase: after, token: 't', accessToken: 'SECRETTOK', repoRoot: '/', rulesDir: '/', userDir: '/' });
 assert.ok(!html.includes(`>${after}<`), 'passphrase must not be visible in the rendered text');

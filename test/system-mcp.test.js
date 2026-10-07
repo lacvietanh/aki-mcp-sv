@@ -3,17 +3,12 @@ import assert from 'node:assert/strict';
 import { mock } from 'node:test';
 import cp from 'node:child_process';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { register, notifyUser, clipboardRead, clipboardWrite } from '../scripts/system-mcp.js';
 
 async function runTests() {
-  // 1. Verify functions exist
-  assert.equal(typeof notifyUser, 'function');
-  assert.equal(typeof clipboardRead, 'function');
-  assert.equal(typeof clipboardWrite, 'function');
-
-  // Hermetic: mock execFile/spawn so this never touches the real OS clipboard/notification
-  // bridge — a CI runner has no pbcopy/xclip/wl-copy/notify-send, and a real spawn there
-  // throws before the module's own error handling can run (real ENOENT crashes the process).
+  // Hermetic: mock execFile so this never touches the real clipboard/notification bridge — CI has no pbcopy/xclip/notify-send, and a real ENOENT there would crash before our own error handling runs.
   const execCalls = [];
   mock.method(cp, 'execFile', (file, args, options, cb) => {
     execCalls.push({ file, args, options });
@@ -25,10 +20,10 @@ async function runTests() {
 
   const spawnCalls = [];
   mock.method(cp, 'spawn', (cmd, args = []) => {
-    spawnCalls.push({ cmd, args });
-    let data = '';
+    const call = { cmd, args, stdin: '' };
+    spawnCalls.push(call);
     return {
-      stdin: { write: (t) => { data += t; }, end() {} },
+      stdin: { write: (t) => { call.stdin += t; }, end() {} },
       on(event, handler) {
         if (event === 'close') setImmediate(() => handler(0));
         return this;
@@ -38,7 +33,8 @@ async function runTests() {
 
   // 2. clipboardWrite spawns the platform clipboard writer without touching real OS state
   await clipboardWrite('aki-test-payload');
-  assert.ok(spawnCalls.length >= 1, 'clipboardWrite must spawn a clipboard writer');
+  assert.equal(spawnCalls.length, 1, 'clipboardWrite spawns one clipboard writer');
+  assert.equal(spawnCalls[0].stdin, 'aki-test-payload', 'the payload reaches the writer on stdin');
 
   // 3. clipboardRead resolves via the mocked execFile, not a real system call
   const readBack = await clipboardRead();
@@ -73,10 +69,13 @@ async function runTests() {
   // 5. Test McpServer tool registration
   const server = new McpServer({ name: 'test-system', version: '2.0.0' });
   register(server);
-
-  assert.ok(server._registeredTools['notify_user']);
-  assert.ok(server._registeredTools['clipboard_read']);
-  assert.ok(server._registeredTools['clipboard_write']);
+  const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+  await server.connect(serverSide);
+  const client = new Client({ name: 'test', version: '0' });
+  await client.connect(clientSide);
+  const served = (await client.listTools()).tools.map((t) => t.name);
+  for (const name of ['notify_user', 'clipboard_read', 'clipboard_write']) assert.ok(served.includes(name), `${name} must be registered`);
+  await client.close();
 
   console.log('system-mcp.test.js: ok');
 }

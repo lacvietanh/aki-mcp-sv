@@ -39,10 +39,10 @@ if (process.platform !== 'win32') {
   fs.writeFileSync(secret, 'a\n');
   fs.chmodSync(secret, 0o600);
   await call('write_file', { path: secret, content: 'b\n' });
+  assert.equal(fs.readFileSync(secret, 'utf8'), 'b\n', 'write_file replaces the content');
   assert.equal(fs.statSync(secret).mode & 0o777, 0o600, 'write_file over a file keeps its mode');
 }
 
 await client.close();
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log('filesystem-mcp: ok');
-process.exit(0);

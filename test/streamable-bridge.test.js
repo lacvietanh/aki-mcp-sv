@@ -14,7 +14,6 @@ process.on('exit', () => { try { fs.rmSync(dataDir, { recursive: true, force: tr
 // `node` allowed whole, so the cancel test below has a command that runs long on every OS.
 fs.writeFileSync(path.join(dataDir, 'setting.json'), JSON.stringify({ folders: [dataDir], shell: { allowlist: { node: true } } }));
 const { handleStreamableMcp } = await import('../scripts/streamable-bridge.js');
-const { VERSION } = await import('../scripts/version.js');
 const pkgVersion = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
 const originalConsoleLog = console.log;
@@ -62,7 +61,6 @@ async function run() {
     assert.match(firstBody.result.instructions, /aki__akidevrule_context/);
     assert.equal(firstBody.result.serverInfo?.name, 'aki-mcp');
     assert.equal(firstBody.result.serverInfo?.version, pkgVersion, 'serverInfo carries the package version');
-    assert.equal(VERSION, pkgVersion);
     assert.ok(firstBody.result.capabilities);
 
     const secondInitialize = await initialize(baseUrl, 2);
@@ -133,16 +131,31 @@ async function run() {
     const post = (sessionId, body) => fetch(baseUrl, { method: 'POST', headers: { 'Content-Type': 'application/json', 'MCP-Session-Id': sessionId }, body: JSON.stringify(body) });
     // run_cmd acts, so it carries the rule receipt (scripts/rule-gate.js); without one it would be refused at once instead of running.
     const { receipt } = (await post(secondSessionId, { jsonrpc: '2.0', id: 76, method: 'tools/call', params: { name: 'aki__akidevrule_context', arguments: {} } }).then((r) => r.json())).result.structuredContent;
-    const slowStarted = Date.now();
-    const slow = post(secondSessionId, { jsonrpc: '2.0', id: 77, method: 'tools/call', params: { name: 'aki__run_cmd', arguments: { command: `node -e "setTimeout(() => {}, 8000)"`, receipt } } }).then((r) => r.json());
-    await new Promise((r) => setTimeout(r, 400));
-    assert.equal((await post(firstSessionId, { jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 77 } })).status, 202);
-    assert.equal(await Promise.race([slow.then(() => 'answered'), new Promise((r) => setTimeout(() => r('waiting'), 400))]), 'waiting', "another client's cancel must not end this request");
-    assert.equal((await post(secondSessionId, { jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 77 } })).status, 202);
-    const cancelled = await slow;
-    assert.equal(cancelled.id, 77);
-    assert.match(cancelled.error.message, /cancelled by the client/);
-    assert.ok(Date.now() - slowStarted < 5000, 'the cancelled request returns without waiting for the command');
+    // The child records its pid, then runs far longer than the test: a leaked child stays alive and fails the `gone` wait below.
+    const pidFile = path.join(dataDir, 'cancelled-child.pid');
+    const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+    const until = async (check, what) => {
+      const deadline = Date.now() + 5000;
+      for (let value = await check(); !value; value = await check()) {
+        assert.ok(Date.now() < deadline, `${what} not reached within 5 s`);
+        await new Promise((r) => setTimeout(r, 20));
+      }
+    };
+    const slow = post(secondSessionId, { jsonrpc: '2.0', id: 77, method: 'tools/call', params: { name: 'aki__run_cmd', arguments: { command: `node -e "require('fs').writeFileSync(process.argv[1], String(process.pid)); setTimeout(() => {}, 30000)" ${pidFile}`, receipt } } }).then((r) => r.json());
+    await until(() => fs.existsSync(pidFile) && fs.readFileSync(pidFile, 'utf8'), 'the command started');
+    const childPid = Number(fs.readFileSync(pidFile, 'utf8'));
+    try {
+      assert.equal((await post(firstSessionId, { jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 77 } })).status, 202);
+      assert.equal(await Promise.race([slow.then(() => 'answered'), new Promise((r) => setTimeout(() => r('waiting'), 400))]), 'waiting', "another client's cancel must not end this request");
+      assert.equal(alive(childPid), true, "another client's cancel must not stop the command");
+      assert.equal((await post(secondSessionId, { jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 77 } })).status, 202);
+      const cancelled = await slow;
+      assert.equal(cancelled.id, 77);
+      assert.match(cancelled.error.message, /cancelled by the client/);
+      await until(() => !alive(childPid), 'the cancelled command gone');
+    } finally {
+      if (alive(childPid)) process.kill(childPid, 'SIGKILL');
+    }
 
     originalConsoleLog(
       `PASS: repeated initialize reused one internal session and tools/list accepted MCP-Session-Id (${response.result.tools.length} tools)`,
@@ -156,13 +169,4 @@ async function run() {
   }
 }
 
-// The bridge intentionally owns a process-lifetime shared InMemoryTransport, so a standalone test exits explicitly after reporting the result instead of changing that production architecture.
-// Exit on the next turn so handles closed above finish closing first (issue #8).
-const exitSoon = (code) => setImmediate(() => process.exit(code));
-run().then(
-  () => exitSoon(0),
-  (error) => {
-    console.error(error);
-    exitSoon(1);
-  },
-);
+await run();

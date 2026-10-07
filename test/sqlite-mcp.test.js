@@ -5,49 +5,74 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { register } from '../scripts/sqlite-mcp.js';
 
+function createDb(dbPath) {
+  const db = new DatabaseSync(dbPath);
+  db.exec(`
+    CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, email TEXT);
+    INSERT INTO users (name, email) VALUES ('Aki', 'aki@example.com'), ('Dev', 'dev@example.com');
+    CREATE INDEX idx_users_name ON users(name);
+  `);
+  db.close();
+}
+
 async function testSqliteMcp() {
-  const tempDir = mkdtempSync(path.join(os.tmpdir(), 'aki-sqlite-test-'));
-  const dbPath = path.join(tempDir, 'test.db');
+  const insideDir = mkdtempSync(path.join(os.homedir(), 'aki-sqlite-test-'));
+  const outsideDir = mkdtempSync(path.join(os.tmpdir(), 'aki-sqlite-outside-'));
+  const dbPath = path.join(insideDir, 'test.db');
+  const outsidePath = path.join(outsideDir, 'outside.db');
 
   try {
-    // Setup temporary sqlite db
-    const initDb = new DatabaseSync(dbPath);
-    initDb.exec(`
-      CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, email TEXT);
-      INSERT INTO users (name, email) VALUES ('Aki', 'aki@example.com'), ('Dev', 'dev@example.com');
-      CREATE INDEX idx_users_name ON users(name);
-    `);
-    initDb.close();
+    createDb(dbPath);
+    createDb(outsidePath);
 
-    // Test tool registration
     const server = new McpServer({ name: 'test', version: '1.0.0' });
     register(server);
+    const [serverSide, clientSide] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverSide);
+    const client = new Client({ name: 'test', version: '1.0.0' });
+    await client.connect(clientSide);
+    const call = async (name, args) => {
+      const result = await client.callTool({ name, arguments: args });
+      return { isError: !!result.isError, text: result.content[0].text };
+    };
 
-    // Test schema inspection
-    const readDb = new DatabaseSync(dbPath, { readOnly: true });
-    const schema = readDb.prepare(`
-      SELECT type, name, tbl_name, sql 
-      FROM sqlite_master 
-      WHERE type IN ('table', 'view', 'index') AND name NOT LIKE 'sqlite_%' 
-      ORDER BY type, name
-    `).all();
-    assert.equal(schema.length, 2);
-    assert.equal(schema[0].name, 'idx_users_name');
-    assert.equal(schema[1].name, 'users');
+    const schema = await call('sqlite_schema', { dbPath });
+    assert.equal(schema.isError, false);
+    assert.deepEqual(JSON.parse(schema.text).map((o) => [o.type, o.name, o.tbl_name]), [
+      ['index', 'idx_users_name', 'users'],
+      ['table', 'users', 'users'],
+    ]);
 
-    // Test read query
-    const rows = readDb.prepare('SELECT id, name, email FROM users ORDER BY id').all();
-    assert.equal(rows.length, 2);
-    assert.equal(rows[0].name, 'Aki');
-    assert.equal(rows[1].name, 'Dev');
+    const select = await call('sqlite_query', { dbPath, query: 'SELECT id, name, email FROM users ORDER BY id' });
+    assert.equal(select.isError, false);
+    const result = JSON.parse(select.text);
+    assert.deepEqual([result.totalRows, result.returnedRows, result.truncated], [2, 2, false]);
+    assert.deepEqual(result.rows.map((r) => r.name), ['Aki', 'Dev']);
 
-    readDb.close();
+    const withParam = await call('sqlite_query', { dbPath, query: 'SELECT name FROM users WHERE email = ?', params: ['dev@example.com'] });
+    assert.deepEqual(JSON.parse(withParam.text).rows, [{ name: 'Dev' }]);
 
+    for (const query of ['DELETE FROM users', 'DROP TABLE users', 'INSERT INTO users (name) VALUES (\'x\')', 'CREATE TABLE t (a)']) {
+      const refused = await call('sqlite_query', { dbPath, query });
+      assert.ok(refused.isError && /strictly read-only/.test(refused.text), query);
+    }
+    const afterRefusals = await call('sqlite_query', { dbPath, query: 'SELECT count(*) AS n FROM users' });
+    assert.deepEqual(JSON.parse(afterRefusals.text).rows, [{ n: 2 }], 'the refused statements changed nothing');
+
+    for (const [tool, args] of [['sqlite_schema', { dbPath: outsidePath }], ['sqlite_query', { dbPath: outsidePath, query: 'SELECT 1' }]]) {
+      const refused = await call(tool, args);
+      assert.ok(refused.isError && /outside the allowed roots/.test(refused.text), `${tool} refuses a database outside the roots`);
+    }
+
+    await client.close();
     console.log('sqlite-mcp.test.js: ok');
   } finally {
-    rmSync(tempDir, { recursive: true, force: true });
+    rmSync(insideDir, { recursive: true, force: true });
+    rmSync(outsideDir, { recursive: true, force: true });
   }
 }
 

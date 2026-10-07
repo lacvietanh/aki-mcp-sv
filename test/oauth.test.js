@@ -56,6 +56,15 @@ async function run() {
       assert.equal(verifyBearer('Bearer ' + first), true);
       assert.equal(verifyBearer('Bearer ' + panelToken), false, 'panel loopback token must not pass verifyBearer');
 
+      const withoutToken = await fetch(base + '/api/access-token');
+      assert.equal(withoutToken.status, 403, 'GET /api/access-token needs the panel token');
+      const wrongToken = await fetch(base + '/api/access-token', { headers: { 'x-panel-token': first } });
+      assert.equal(wrongToken.status, 403, 'the access token itself is not the panel token');
+      const served = await fetch(base + '/api/access-token', { headers: { 'x-panel-token': panelToken } });
+      assert.equal(served.status, 200);
+      assert.deepEqual(await served.json(), { accessToken: first });
+      assert.equal(served.headers.get('access-control-allow-origin'), null, 'no CORS');
+
       const gone = await fetch(base + '/api/access-token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-panel-token': panelToken },
@@ -73,11 +82,4 @@ async function run() {
   }
 }
 
-run().then(
-  () => process.exit(0),
-  (error) => {
-    removeDataDir();
-    console.error(error);
-    process.exit(1);
-  },
-);
+await run();

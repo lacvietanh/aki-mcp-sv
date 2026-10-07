@@ -4,6 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import {
   register,
   taskStart,
@@ -16,14 +18,30 @@ async function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function waitFor(check, what, deadlineMs = 5000) {
+  const deadline = Date.now() + deadlineMs;
+  for (;;) {
+    const value = await check();
+    if (value) return value;
+    assert.ok(Date.now() < deadline, `${what} not reached within ${deadlineMs} ms`);
+    await sleep(20);
+  }
+}
+
 async function runTests() {
   console.log('Testing task-mcp...');
 
   // 1. Verify McpServer registration
   const server = new McpServer({ name: 'test-tasks', version: '2.0.0' });
   register(server);
-  assert.ok(server._registeredTools['task_start'], 'task_start must be registered');
-  assert.ok(server._registeredTools['task_manage'], 'task_manage must be registered');
+  const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+  await server.connect(serverSide);
+  const client = new Client({ name: 'test', version: '0' });
+  await client.connect(clientSide);
+  const served = (await client.listTools()).tools.map((t) => t.name);
+  assert.ok(served.includes('task_start'), 'task_start must be registered');
+  assert.ok(served.includes('task_manage'), 'task_manage must be registered');
+  await client.close();
 
   // 2. Test liveness check function
   assert.equal(isProcessAlive(process.pid), true, 'Current process PID must be alive');
@@ -66,13 +84,12 @@ async function runTests() {
     'Path traversal in taskId must be rejected',
   );
 
-  // 5. Test starting an allowlisted command. `pwd` is a shell builtin with no binary on Windows, so
-  // use a cross-platform executable instead (fix from PR #9 / #10). `git log` is in the default
-  // allowlist and in owner-narrowed ones, and always prints something in this repo.
-  const testId = `test_gitlog_${Date.now()}`;
+  // 5. Starting an allowlisted command under the allowed roots. `node -v` is in the default allowlist, is an executable on every OS, and prints a known line.
+  const testId = `test_nodev_${Date.now()}`;
+  const expectedOutput = `${process.version}\n`;
   const startResult = await taskStart({
-    command: 'git log -1 --oneline',
-    cwd: process.cwd(),
+    command: 'node -v',
+    cwd: os.homedir(),
     taskId: testId,
   });
 
@@ -81,20 +98,18 @@ async function runTests() {
   assert.equal(startResult.status, 'running');
   assert.ok(fs.existsSync(startResult.logFile));
 
-  // Wait for command to complete
-  await sleep(300);
-
   // 6. Test task_manage: status
-  const statusResult = await taskManage({ action: 'status', taskId: testId });
+  const statusResult = await waitFor(async () => {
+    const status = await taskManage({ action: 'status', taskId: testId });
+    return status.status !== 'running' && status;
+  }, 'the finished task status');
   assert.equal(statusResult.taskId, testId);
-  assert.ok(['completed', 'exited'].includes(statusResult.status));
+  assert.equal(statusResult.status, 'completed');
   assert.equal(statusResult.alive, false);
-  assert.ok(statusResult.logSize > 0);
+  assert.equal(statusResult.logSize, Buffer.byteLength(expectedOutput));
 
   // 7. Test task_manage: tail_logs
-  const logOutput = await taskManage({ action: 'tail_logs', taskId: testId });
-  assert.ok(typeof logOutput === 'string');
-  assert.ok(logOutput.includes(process.cwd()) || logOutput.length > 0);
+  assert.equal(await taskManage({ action: 'tail_logs', taskId: testId }), expectedOutput);
 
   // 8. Test task_manage: stop with a long-running process
   const stopTestId = `test_stop_${Date.now()}`;
@@ -113,13 +128,14 @@ async function runTests() {
     assert.equal(stopRes.stopped, true);
     assert.equal(stopRes.wasAlive, true);
 
-    await sleep(200);
+    await waitFor(() => !isProcessAlive(longTask.pid), 'the stopped process exit');
     const afterStopStatus = await taskManage({ action: 'status', taskId: stopTestId });
     assert.equal(afterStopStatus.alive, false);
     assert.equal(afterStopStatus.status, 'stopped');
 
     await taskManage({ action: 'delete', taskId: stopTestId });
   } finally {
+    await taskManage({ action: 'stop', taskId: stopTestId }).catch(() => {});
     try { fs.unlinkSync(dummyFile); } catch {}
   }
 

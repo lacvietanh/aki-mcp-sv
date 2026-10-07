@@ -24,12 +24,15 @@ assert.equal(lock.ingress, 'funnel');
 writeLock({ pid: 1, panelPort: 9998, gatePort: 9999, token: 'panel-token', version: '0.0.0' });
 assert.equal(JSON.parse(read('instance.json')).origin, null, 'no ingress is an explicit null, not a missing key');
 
-// tokens.json: { access: { <token>: { expires } }, refresh: { <token>: { clientId } } }; AIObox takes the first unexpired access token.
+// tokens.json: { access: { <token>: { expires } }, refresh: { <token>: { clientId } } }; AIObox reads it as a fallback until its A3 step.
 const access = getOrIssueAccessToken('contract test');
 const tokens = JSON.parse(read('tokens.json'));
 assert.deepEqual(Object.keys(tokens).sort(), ['access', 'refresh']);
 assert.ok(tokens.access[access].expires > Date.now());
 assert.equal(typeof tokens.refresh, 'object');
+
+// GET /api/access-token: { accessToken } is the token tokens.json holds; AIObox reads it here instead of the file.
+assert.deepEqual(await ROUTES['GET /api/access-token'](), { accessToken: access });
 
 // passphrase.txt: one line, the passphrase itself.
 const passphrase = loadOrCreatePassphrase();

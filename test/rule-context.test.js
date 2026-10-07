@@ -4,8 +4,8 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { assembleRuleContext, RuleContextError } from '../scripts/rule-context.js';
-import { register, MANDATORY_BLOCK, SHARED_WORK, RULE_CONTEXT_DESCRIPTION, RULE_CONTEXT_TITLE, RULE_CONTEXT_TOOL } from '../scripts/rule-context-mcp.js';
-import { AIOBOX_PITCH, GUIDE_FALLBACK, GUIDE_URL } from '../scripts/aiobox-guide.js';
+import { register, MANDATORY_BLOCK, SHARED_WORK, AIOBOX_STEP, RULE_CONTEXT_DESCRIPTION, RULE_CONTEXT_TITLE } from '../scripts/rule-context-mcp.js';
+import { AIOBOX_PITCH, GUIDE_URL } from '../scripts/aiobox-guide.js';
 
 const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'aki-rule-context-'));
 const home = path.join(temp, 'home');
@@ -39,6 +39,7 @@ try {
   assert.ok(positions.every((position) => position >= 0));
   assert.deepEqual([...positions].sort((a, b) => a - b), positions, 'imports and project precedence must preserve deterministic order');
   assert.equal(first.context.includes('inline.md'), true, 'inline code remains literal text');
+  assert.ok(first.context.includes('@./fenced.md'), 'a fenced @import line stays literal text and is not expanded');
   assert.ok(first.warnings.some((warning) => warning.code === 'IMPORT_CYCLE'));
   assert.equal(first.sources.filter((source) => source.path.endsWith('shared.md')).length, 1);
 
@@ -48,7 +49,6 @@ try {
   assert.equal(unchanged.status, 'unchanged');
   assert.equal(unchanged.context, '');
 
-  await new Promise((resolve) => setTimeout(resolve, 5));
   await fs.writeFile(path.join(root, 'demo', 'AGENTS.md'), 'project-agent changed\n');
   const changed = await assembleRuleContext({ workingPath: project }, deps);
   assert.notEqual(changed.receipt, first.receipt);
@@ -81,7 +81,6 @@ register({ registerTool(n, d, h) { name = n; definition = d; handler = h; } }, {
   }),
   aioboxInstalled: () => true,
 });
-assert.equal(name, RULE_CONTEXT_TOOL);
 assert.equal(name, 'akidevrule_context');
 assert.equal(definition.title, RULE_CONTEXT_TITLE);
 assert.equal(definition.description, RULE_CONTEXT_DESCRIPTION);
@@ -91,8 +90,11 @@ assert.equal(output.structuredContent.status, 'ok');
 assert.ok(output.content[0].text.startsWith(`NO YAPPING AT ALL\n${MANDATORY_BLOCK}\n\ncontext loaded: practical-effective · sha256:`), 'the mandatory block comes first, then the receipt');
 assert.ok(output.content[0].text.endsWith(` · 1 sources\nEvery tool that acts needs receipt=sha256:${'a'.repeat(64)}\n\n${SHARED_WORK}\n\nrules`), 'the receipt to pass on every acting tool, then the shared-work convention, then the corpus');
 // G2–G4 of aiobox audit-content-context (owner 2026-10-04): the AIObox guide drops them, so they must ship here.
-for (const must of ['git status', 'someone else', '$HOME/.aki/mcpsv/task/<slug>/working.md', '-- <your paths>', 'git add -A', '.claude/worktrees/<role>', '~/.aki/handoff/', '~/.aki/aiobox/']) assert.ok(SHARED_WORK.includes(must), must);
+for (const must of ['git status', 'someone else', '$HOME/.aki/mcpsv/task/<slug>/working.md', '-- <your paths>', 'git add -A', '.claude/worktrees/<role>', '~/.aki/handoff/']) assert.ok(SHARED_WORK.includes(must), must);
+assert.doesNotMatch(SHARED_WORK, /aiobox|desktop\/CHANGELOG/i, 'the shared-work text goes to every user, AIObox or not');
 assert.equal(/push|release|deploy/.test(SHARED_WORK), false, 'commit and push rules stay in AkiDevRule');
+assert.equal(AIOBOX_STEP, 'A page title starting with a handle like P2·W1 · means you are inside an AIObox window: call aki__aiobox op=state first.');
+assert.deepEqual(output.content[0].text.split('\n').filter((line) => /aiobox/i.test(line)), [], 'with AIObox installed the output carries no pitch and no other AIObox sentence');
 assert.equal(/^\[RULES\] (?!agent \(core\))/m.test(output.content[0].text), false, 'no line of the output is a [RULES] line a model could copy as its receipt');
 for (const must of ['BLOCKING', 'no rule Read, no action', '`[RULES] agent (core) + <topics> (router)`', 'code → coding + pattern', '.md → docs', '→ think', 'agent.B2']) assert.ok(MANDATORY_BLOCK.includes(must), must);
 assert.ok(MANDATORY_BLOCK.length <= 400, `the block stays short (${MANDATORY_BLOCK.length} chars)`);
@@ -101,18 +103,19 @@ assert.equal(output.isError, undefined);
 assert.equal('context' in output.structuredContent, false, 'corpus must ship only in content, never duplicated into structuredContent');
 assert.equal(output.structuredContent.sources.length, 1, 'provenance is preserved in structuredContent');
 
-// Without ~/.aki/aiobox/ one line after the header says what AIObox adds and links the web guide (D7).
+// Without ~/.aki/aiobox/ one line after the header says what AIObox adds and links the web guide (D7); it is the only AIObox sentence (boundary plan § 3 L2).
 let bareHandler;
 register({ registerTool(_n, _d, h) { bareHandler = h; } }, {
   assemble: async () => ({ status: 'ok', parity: 'practical-effective', receipt: `sha256:${'a'.repeat(64)}`, rulesVersion: '1', workingRoot: null, sources: [], warnings: [], context: 'rules' }),
   aioboxInstalled: () => false,
 });
-assert.match((await bareHandler({})).content[0].text, /\ncontext loaded: [^\n]+\nEvery tool that acts needs receipt=sha256:[a-f0-9]{64}\nAIObox \(not installed here\)[^\n]+https:\/\/aiobox\.app\/guide\/aiobox\.md\?from=akimcp\n\nWorking beside other sessions[^]*\n\nrules$/);
-// F6(a): the pitch names no OS (AIObox targets Windows, macOS and Linux) and only it carries from=akimcp; the fallback is read where AIObox is installed.
+const bareText = (await bareHandler({})).content[0].text;
+assert.equal(bareText.split('\n').filter((line) => /aiobox/i.test(line)).length, 1, 'without AIObox the pitch is the one AIObox line');
+assert.match(bareText, /\ncontext loaded: [^\n]+\nEvery tool that acts needs receipt=sha256:[a-f0-9]{64}\nAIObox \(not installed here\)[^\n]+https:\/\/aiobox\.app\/guide\/aiobox\.md\?from=akimcp\n\nWorking beside other sessions[^]*\n\nrules$/);
+// F6(a): the pitch names no OS (AIObox targets Windows, macOS and Linux) and only it carries from=akimcp.
 assert.equal(/\b(Mac|macOS|Windows|Linux)\b/.test(AIOBOX_PITCH), false, `the pitch names an OS: ${AIOBOX_PITCH}`);
 assert.ok(AIOBOX_PITCH.endsWith(`${GUIDE_URL}?from=akimcp`), 'the pitch links the guide with from=akimcp');
 assert.equal(GUIDE_URL.includes('from='), false, 'GUIDE_URL stays bare');
-assert.equal(GUIDE_FALLBACK.includes('from=akimcp'), false, 'the fallback guide keeps the bare link');
 
 let errorHandler;
 register({ registerTool(_n, _d, h) { errorHandler = h; } }, { assemble: async () => { throw new Error('boom'); } });

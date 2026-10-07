@@ -8,11 +8,12 @@ import path from 'node:path';
 process.env.AKI_MCP_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'shell-mcp-test-'));
 process.on('exit', () => fs.rmSync(process.env.AKI_MCP_DATA_DIR, { recursive: true, force: true }));
 const { Shell } = await import('../scripts/shell-mcp.js');
+const { MAX_SHOWN } = await import('../scripts/output-shape.js');
 
 async function run() {
   const shell = new Shell();
 
-  // Fix 2: shell metacharacters INSIDE quotes are inert argv literals (execFile never spawns a shell), so a quoted `|`/`$` must NOT be rejected and must tokenize to the real bin.
+  // Shell metacharacters inside quotes are inert argv literals (execFile never spawns a shell): a quoted `|`/`$` is not rejected and tokenizes to the real bin.
   const parsed = shell.parse("grep -E '^(name|description):' file");
   assert.equal(parsed.bin, 'grep', 'quoted metacharacters must not block the grep command');
   assert.deepEqual(
@@ -71,7 +72,8 @@ async function run() {
   assert.equal(passed.isError, undefined);
   assert.equal(passed.content[0].text, 'fine\n');
   assert.equal((await node('')).content[0].text, '(no output)');
-  const flood = await node('for (let i=0;i<20000;i++) console.log("line "+i+" "+"z".repeat(30))');
+  const floodLines = Math.ceil(MAX_SHOWN / 36);
+  const flood = await node(`for (let i=0;i<${floodLines};i++) console.log("line "+i+" "+"z".repeat(30))`);
   assert.match(flood.content[0].text.split('\n')[0], /^\[output cut: /, 'a flood is cut and announced on line 1');
 
   const missing = await shell.run('aki-no-such-binary-xyz', [], process.cwd());
@@ -95,10 +97,4 @@ async function run() {
   console.log('shell-mcp.test.js: ok');
 }
 
-run().then(
-  () => process.exit(0),
-  (error) => {
-    console.error(error);
-    process.exit(1);
-  },
-);
+await run();

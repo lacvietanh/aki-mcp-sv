@@ -8,6 +8,8 @@ import { spawnSync } from 'node:child_process';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'aki-chrome-profile-'));
 const root = path.join(tmp, 'profiles');
+const home = path.join(tmp, 'home');
+Object.assign(process.env, { HOME: home, USERPROFILE: home, LOCALAPPDATA: path.join(home, 'AppData', 'Local') });
 process.env.AKI_CDP_PROFILES_DIR = root;
 process.env.AKI_MCP_DATA_DIR = path.join(tmp, 'data');
 fs.mkdirSync(process.env.AKI_MCP_DATA_DIR, { recursive: true });
@@ -71,13 +73,26 @@ async function closedPort() {
   return port;
 }
 
+let fakeChromePid;
+
 async function runTests() {
   // Browser and source-profile discovery
   assert.ok(getBrowserInfo('chrome').name.includes('Chrome'));
   assert.ok(getBrowserInfo('brave').name.includes('Brave'));
   assert.ok(getBrowserInfo('edge').name.includes('Edge'));
-  assert.ok(Array.isArray(listInstalledBrowsers()));
-  assert.ok(Array.isArray(listProfiles('chrome')));
+  const chrome = getBrowserInfo('chrome');
+  assert.ok(chrome.userDataDir.startsWith(home), 'the browser user-data dir comes from the fake HOME');
+  assert.deepEqual(listProfiles('chrome'), []);
+  fs.mkdirSync(chrome.userDataDir, { recursive: true });
+  fs.writeFileSync(path.join(chrome.userDataDir, 'Local State'), JSON.stringify({ profile: { info_cache: {
+    Default: { name: 'Person 1', user_name: 'a@example.com', gaia_name: 'A' },
+    'Profile 2': { name: 'Work' },
+  } } }));
+  assert.deepEqual(listProfiles('chrome'), [
+    { id: 'Default', name: 'Person 1', userName: 'a@example.com', gaiaName: 'A', browser: chrome.name, isDefault: true, path: path.join(chrome.userDataDir, 'Default') },
+    { id: 'Profile 2', name: 'Work', userName: '', gaiaName: '', browser: chrome.name, isDefault: false, path: path.join(chrome.userDataDir, 'Profile 2') },
+  ]);
+  assert.deepEqual(listInstalledBrowsers().filter((b) => fs.existsSync(b.userDataDir)), [{ id: 'chrome', ...chrome }]);
 
   // DevToolsActivePort parsing
   const portDir = fs.mkdtempSync(path.join(tmp, 'port-'));
@@ -94,11 +109,14 @@ async function runTests() {
   assert.throws(() => resolveSharedProfile('chrome-profile-14', 'brave'), /belongs to chrome/);
   assert.throws(() => resolveSharedProfile('Profile 14', 'firefox'), /Unsupported browser/);
 
-  // Missing clone: pointed at AIObox, nothing created.
-  await assert.rejects(launchChrome('Profile 99'), /not found .*Create it in AIObox/);
+  // Missing clone: stated as a fact, nothing created.
   // The miss names a code and a next step that works without AIObox: the clones on disk, then attach by port (REQ-15 H1, no pitch).
-  await assert.rejects(launchChrome('Profile 99'), (e) => /\(no_profile; next: open one of chrome-profile-14, or attach .*aki__port_status.*\)$/.test(e.message)
-    && !/aki__aiobox|aiobox\.app|https?:/i.test(e.message));
+  await assert.rejects(launchChrome('Profile 99'), (e) => {
+    assert.match(e.message, /not found in .*does not create them/);
+    assert.match(e.message, /\(no_profile; next: open one of chrome-profile-14, or attach .*aki__port_status.*\)$/);
+    assert.doesNotMatch(e.message, /aiobox|https?:/i);
+    return true;
+  });
   assert.equal(exists(path.join(root, 'chrome-profile-99')), false);
 
   // The rest drives Chrome's POSIX lock (a SingletonLock symlink) and a shebang script as the browser; Windows has neither, so its run ends here.
@@ -163,6 +181,7 @@ s.listen(0, '127.0.0.1', () => fs.writeFileSync(dir + '/DevToolsActivePort', s.a
 `);
   fs.chmodSync(fake, 0o755);
   const launched = await launchChrome('Profile 14', { binary: fake, headless: true, url: 'https://example.com/b', timeoutMs: 5000 });
+  fakeChromePid = launched.pid;
   assert.equal(launched.status, 'ready');
   assert.equal(launched.owned, true);
   assert.equal(exists(path.join(dir, 'SingletonLock')), false);
@@ -184,8 +203,8 @@ s.listen(0, '127.0.0.1', () => fs.writeFileSync(dir + '/DevToolsActivePort', s.a
 
   // A browser binary that cannot start fails at once with its path, not after the port wait.
   const startedAt = Date.now();
-  await assert.rejects(launchChrome('Profile 14', { binary: path.join(tmp, 'no-such-browser'), timeoutMs: 5000 }), /Could not start .*no-such-browser/);
-  assert.ok(Date.now() - startedAt < 3000, 'no port wait when the spawn itself failed');
+  await assert.rejects(launchChrome('Profile 14', { binary: path.join(tmp, 'no-such-browser'), timeoutMs: 1500 }), /Could not start .*no-such-browser/);
+  assert.ok(Date.now() - startedAt < 1000, 'no port wait when the spawn itself failed');
 
   assert.deepEqual(stopChrome(), { stopped: false, pid: null, detail: 'no active session' });
 
@@ -195,5 +214,10 @@ s.listen(0, '127.0.0.1', () => fs.writeFileSync(dir + '/DevToolsActivePort', s.a
 try {
   await runTests();
 } finally {
+  if (fakeChromePid) {
+    try {
+      process.kill(fakeChromePid, 'SIGKILL');
+    } catch {}
+  }
   fs.rmSync(tmp, { recursive: true, force: true });
 }

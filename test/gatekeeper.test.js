@@ -8,8 +8,7 @@ import path from 'node:path';
 // userdata.js reads AKI_MCP_DATA_DIR at import, so the env is set before the gatekeeper loads; the real ~/.aki/mcpsv is never touched.
 const dir = mkdtempSync(path.join(os.tmpdir(), 'aki-gatekeeper-test-'));
 process.env.AKI_MCP_DATA_DIR = dir;
-const port = 38000 + Math.floor(Math.random() * 900);
-process.env.GATEKEEPER_PORT = String(port);
+process.env.GATEKEEPER_PORT = '0';
 const goodToken = 'b'.repeat(64);
 writeFileSync(path.join(dir, 'tokens.json'), JSON.stringify({ access: { [goodToken]: { expires: Date.now() + 3600_000 } }, refresh: {} }));
 
@@ -19,15 +18,15 @@ process.on('unhandledRejection', (e) => unhandled.push(e));
 const { startGatekeeper } = await import('../scripts/gatekeeper.js');
 const server = startGatekeeper('https://example.ts.net');
 await new Promise((resolve) => server.once('listening', resolve));
+const { port } = server.address();
 const base = `http://127.0.0.1:${port}`;
 
 // Declares a 1000-byte body, sends a few bytes, then drops the socket: what a client that loses its connection mid-request looks like.
 const abortedPost = (pathname) => new Promise((resolve) => {
+  server.once('connection', (serverSide) => serverSide.once('close', () => setImmediate(resolve)));
   const socket = net.connect(port, '127.0.0.1', () => {
-    socket.write(`POST ${pathname} HTTP/1.1\r\nHost: x\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: 1000\r\n\r\ngrant_type=`);
-    setTimeout(() => socket.destroy(), 50);
+    socket.write(`POST ${pathname} HTTP/1.1\r\nHost: x\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: 1000\r\n\r\ngrant_type=`, () => socket.destroy());
   });
-  socket.on('close', () => setTimeout(resolve, 100));
 });
 
 for (const pathname of ['/token', '/revoke', '/authorize', '/register']) {
@@ -53,12 +52,8 @@ const storedName = (await named.json()).client_name;
 assert.equal(storedName.length, 64, 'a client name is cut to 64 characters');
 assert.ok(!/[\x00-\x1f]/.test(storedName), 'and carries no control character into the log or the panel');
 
-const { loadOrCreatePassphrase } = await import('../scripts/oauth.js');
-assert.match(loadOrCreatePassphrase(), /^[abcdefghjkmnpqrstuvwxyz23456789]{10}$/);
-
 assert.deepEqual(unhandled, []);
 
 server.close();
 rmSync(dir, { recursive: true, force: true });
 console.log('gatekeeper.test.js: ok');
-process.exit(0);

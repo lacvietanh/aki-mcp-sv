@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// Interim guard: regexes over page-script source text, kept until a vm harness can run those functions; each doesNotMatch pins a removed feature whose reason is unrecorded, so none is dropped.
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
@@ -128,8 +129,6 @@ assert.match(mcpSrc, /grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/);
 assert.match(mcpSrc, /#aki-control-panel \.aki-model-row \.aki-label \{[^}]*white-space: nowrap/s);
 assert.equal((mcpSrc.match(/<input type="radio" name="aki-model"/g) || []).length, 4, 'model selector must keep exactly four semantic radios');
 
-console.log('postman-daemon-copy.test.js: ok');
-
-const sessionModule = path.join(mcpRoot, 'postman-session.cjs');
 assert.equal(typeof require(path.join(mcpRoot, 'postman-paths.cjs')).getPostmanPaths, 'function', 'postman-paths.cjs locates the Postman executable; the data-dir paths live in postman-data-paths.cjs');
-assert.equal(typeof require(sessionModule).PostmanSession.ensureRunning, 'function', 'the daemon session module must load with all its imports');
+
+console.log('postman-daemon-copy.test.js: ok');

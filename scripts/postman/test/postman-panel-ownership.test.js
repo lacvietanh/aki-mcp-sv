@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// Interim guard: regexes over panel-client.js source text, kept until a vm harness can run its functions; the doesNotMatch pins a removed label whose reason is unrecorded, so it is not dropped.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 

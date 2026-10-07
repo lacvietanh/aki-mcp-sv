@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// The MCP Registry record (server.json) and the npm package must agree, or `mcp-publisher publish` fails (plan/mcp-registry-listing.md): name = mcpName, versions = package version, the stdio entry the record names really starts the tools.
+// server.json and the npm package must agree or `mcp-publisher publish` fails (plan/mcp-registry-listing.md): name = mcpName, versions = package version, its stdio entry really starts the tools.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { spawn } from 'node:child_process';
@@ -19,7 +19,7 @@ assert.deepEqual(entry.packageArguments.map((a) => a.value), ['--stdio']);
 assert.ok(pkg.files.includes('bin') && pkg.files.includes('scripts'), 'the stdio entry ships in the tarball');
 
 // `akimcp --stdio` answers initialize on stdout (no gateway, no tunnel), as a registry client would spawn it.
-const child = spawn(process.execPath, [new URL('../bin/akimcp.js', import.meta.url).pathname, '--stdio'], { stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, MCP_DATA_DIR: fs.mkdtempSync('/tmp/akimcp-stdio-') } });
+const child = spawn(process.execPath, [new URL('../bin/akimcp.js', import.meta.url).pathname, '--stdio'], { stdio: ['pipe', 'pipe', 'pipe'] });
 let out = '';
 const reply = new Promise((resolve, reject) => {
   const timer = setTimeout(() => reject(new Error(`no initialize reply in 15s; stdout: ${out.slice(0, 300)}`)), 15_000);

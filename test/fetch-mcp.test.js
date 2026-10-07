@@ -2,6 +2,8 @@
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { register, executeFetch, isBlockedHost } from '../scripts/fetch-mcp.js';
 
 async function runTests() {
@@ -66,7 +68,7 @@ async function runTests() {
     }
     if (req.url === '/big') {
       res.writeHead(200, { 'Content-Type': 'text/plain' });
-      return res.end('x'.repeat(2 * 1024 * 1024));
+      return res.end('x'.repeat(1024 * 1024));
     }
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end('hello from local');
@@ -105,7 +107,7 @@ async function runTests() {
     const big = await executeFetch({ url: `http://127.0.0.1:${port}/big` });
     assert.equal(big.truncated, true);
     assert.equal(big.data.length, 512 * 1024);
-    assert.ok(big.bytesReceived < 2 * 1024 * 1024, 'the rest of the body is not read');
+    assert.ok(big.bytesReceived < 1024 * 1024, 'the rest of the body is not read');
   } finally {
     server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
@@ -114,7 +116,12 @@ async function runTests() {
   // 5. Tool registration in McpServer
   const mcp = new McpServer({ name: 'test-fetch', version: '2.0.0' });
   register(mcp);
-  assert.ok(mcp._registeredTools['local_fetch']);
+  const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+  await mcp.connect(serverSide);
+  const client = new Client({ name: 'test', version: '0' });
+  await client.connect(clientSide);
+  assert.ok((await client.listTools()).tools.some((t) => t.name === 'local_fetch'));
+  await client.close();
 
   console.log('fetch-mcp.test.js: ok');
 }
