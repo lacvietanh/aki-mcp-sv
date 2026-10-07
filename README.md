@@ -106,7 +106,7 @@ claude.ai connects and calls the in-house `aki__*` tool suite (38 tools). Tools 
 - **SQLite Database**: `aki__sqlite_schema`, `aki__sqlite_query`
 - **Agent & Context**: `aki__agy_run`, `aki__kiro_read`, `aki__akidevrule_context`
 - **Postman Control**: `aki__postman_status`, `aki__postman_eval`, `aki__postman_rename_conversation`, `aki__postman_panel_fullwidth`
-- **AIObox windows**: `aki__aiobox` (`op` = `windows` | `read` | `text` | `screenshot`, a window named by its handle such as `P7·W2`, its chat id or its targetId), `aki__aiobox_write` (`op` = `new_window` | `compose` | `eval`)
+- **AIObox windows**: `aki__aiobox` (read) and `aki__aiobox_write` (act); a window is named by its handle such as `P7·W2`, its chat id or its targetId, and `op` is a free string: the ops are whatever AIObox publishes, so call `op=state` first, it returns AIObox's guide and op table
 
 **Note on the connector icon:** claude.ai doesn't read the icon from the MCP server. It queries Google's favicon service with the tailnet's **apex domain**, not your host: `https://t2.gstatic.com/faviconV2?...&url=http://<tailnet>.ts.net&size=32`. `<tailnet>.ts.net` has no public DNS record, so Google returns 404 and claude.ai falls back to a default letter icon. This server serves `/favicon.ico` publicly, but no file placed here can change that result: your subdomain never appears in the query Google receives.
 
@@ -122,11 +122,11 @@ ChatGPT self-registers via DCR (RFC 7591, PKCE, no secret) from `/.well-known/op
 
 ## Connecting from Grok and Gemini
 
-Both ride the same MCP URL and passphrase flow — no separate transport or auth. They differ in *how* the client authenticates, and the connector panel (section 1) prints the exact copy fields for each.
+Both ride the same MCP URL and passphrase flow — no separate transport or auth. They differ in *how* the client authenticates: the connector panel (section 1) lists the steps for each, and the Gemini Client ID/Secret are printed by `akimcp` at start.
 
 **Grok — verified, production-ready:** **self-registers** via the `/register` DCR path like ChatGPT — paste only the MCP URL, no Client ID. Its real `redirect_uri` `https://grok.com/connectors-oauth-exchange-code/` was observed live 2026-08-09 and is allowlisted via `GROK_CALLBACK_PREFIX`. Verified working end to end (`authorize → token` 200). If a future Grok change moves that callback, a rejected registration logs `register REJECTED (redirect_uri not allowlisted): [...]` so the new value can be re-allowlisted.
 
-**Gemini — experimental, connection works but tool use doesn't (yet)** (paid tiers only — Pro / Business / Enterprise; the free tier may not expose custom apps): pastes a **confidential client**, exactly like Claude — set the custom app link to the MCP URL, then under Advanced Settings paste the same Client ID / Client secret. Gemini's redirect goes through Google's OAuth proxy `https://oauth-redirect.googleusercontent.com/r/...` (observed live 2026-08-09), allowlisted by `isAllowedRedirect` in `scripts/oauth.js`. **Caveat:** the OAuth handshake succeeds and Gemini accepts the instruction, but in repeated testing 2026-08-09 it did not reliably discover or drive the MCP tools — connection healthy, tool use unreliable. Claude and Grok are the dependable clients today.
+**Gemini — experimental, connection works but tool use doesn't (yet)** (paid tiers only — Pro / Business / Enterprise; the free tier may not expose custom apps): pastes a **confidential client** (the pre-issued one in `oauth-client.json`) — set the custom app link to the MCP URL, then under Advanced Settings paste the Client ID / Client secret that `akimcp` prints at start. Gemini's redirect goes through Google's OAuth proxy `https://oauth-redirect.googleusercontent.com/r/...` (observed live 2026-08-09), allowlisted by `isAllowedRedirect` in `scripts/oauth.js`. **Caveat:** the OAuth handshake succeeds and Gemini accepts the instruction, but in repeated testing 2026-08-09 it did not reliably discover or drive the MCP tools — connection healthy, tool use unreliable. Claude and Grok are the dependable clients today.
 
 ## Connecting from Notion AI
 
@@ -223,7 +223,7 @@ After that, `npm start` enables Funnel on port 9999 automatically every run.
 
 ```
 Claude web / ChatGPT
-      │  HTTPS + OAuth 2.1 (Claude: paste client ID/secret; ChatGPT: DCR self-register)
+      │  HTTPS + OAuth 2.1 (Claude and ChatGPT: DCR self-register, URL + passphrase only)
       ▼
 Tailscale Funnel        (https://your-machine.your-tailnet.ts.net)
       │
@@ -246,7 +246,7 @@ tools-server.js — one shared McpServer, in-process (InMemoryTransport, no chil
                                   chrome-mcp.js       (shared profile launch/attach, tabs, interact)
                                   chrome-profile.js   (Chrome/Brave/Edge discovery, shared-profile ownership)
                                   cdp-mcp.js          (devtools_targets/eval/screenshot over CDP)
-                                  aiobox-mcp.js       (AIObox windows by handle: list, read chat, text, screenshot, eval)
+                                  aiobox-mcp.js       (AIObox windows by handle: forwards the ops AIObox publishes)
                                   cdp-engine.js       (shared CDP target/eval engine)
                                   fetch-mcp.js        (SSRF-protected localhost/LAN HTTP fetch)
                                   task-mcp.js         (detached background task start/manage)
@@ -262,7 +262,7 @@ panel.js       — 127.0.0.1:9998, never exposed via Funnel
 
 The ingress layer is swappable: Tailscale Funnel is the zero-config default, and the same `/mcp` endpoint can be served through your own Cloudflare named tunnel (recommended: steadier and faster) or any stable public HTTPS edge you already run — see [Exposing to the internet](#exposing-to-the-internet). Everything below the ingress line (gatekeeper, OAuth) is unchanged whichever edge you pick.
 
-OAuth (not token-in-URL) is used because claude.ai always attempts Dynamic Client Registration regardless of configuration (`docs/research/claude-ai-oauth-connector.md`). ChatGPT also expects OAuth; this server advertises `/register` (RFC 7591 DCR) so ChatGPT can self-register while Claude can keep using the pre-issued Client ID/Secret.
+OAuth (not token-in-URL) is used because claude.ai always attempts Dynamic Client Registration regardless of configuration (`docs/research/claude-ai-oauth-connector.md`). ChatGPT also expects OAuth; this server advertises `/register` (RFC 7591 DCR) so Claude and ChatGPT self-register; the pre-issued Client ID/Secret is for Gemini's paste flow.
 
 ## Directory layout
 
@@ -283,7 +283,7 @@ aki-mcp-sv/
 │   ├── security-log.js           # [security] events to console + security.log (rotated at 1 MB)
 │   ├── streamable-bridge.js      # Streamable HTTP shim <-> the in-process tools server (InMemoryTransport)
 │   ├── tools-server.js           # builds the one shared McpServer mounting every tool arm below
-│   ├── tool-call-log.js          # browser/AIObox tool calls to tool-calls.jsonl, never their arguments (rotated at 1 MB)
+│   ├── tool-call-log.js          # every aki__ tool call to tool-calls.jsonl, never their arguments (kept 40 days, a file rolls at 16 MB)
 │   ├── version.js                # the running version, read once from package.json
 │   ├── provider-registry.js      # the list of tool providers: detect once, register all, hide unavailable or switched-off ones
 │   ├── find-on-path.js           # PATH lookup without spawning (PATHEXT on Windows), used by provider detect
@@ -299,7 +299,7 @@ aki-mcp-sv/
 │   ├── chrome-mcp.js             # chrome_profiles/launch/tabs/interact/stop tools
 │   ├── chrome-profile.js         # opens or attaches to shared CDP profiles by Chrome's SingletonLock owner
 │   ├── cdp-mcp.js                # devtools_targets/eval/screenshot tools over CDP
-│   ├── aiobox-mcp.js             # aki__aiobox / aiobox_write: AIObox windows by handle, from ~/.aki/aiobox/cdp/windows.json
+│   ├── aiobox-mcp.js             # aki__aiobox / aiobox_write: AIObox windows by handle, ops routed by the op map AIObox publishes (op=state)
 │   ├── cdp-engine.js             # app-agnostic CDP target/eval engine shared by chrome-mcp/postman-mcp
 │   ├── fetch-mcp.js              # aki__local_fetch: SSRF-protected localhost/LAN HTTP client
 │   ├── task-mcp.js               # aki__task_start/task_manage: detached background task runner
@@ -329,7 +329,7 @@ Your data lives outside the repo, at `~/.aki/mcpsv/` (the same convention CLIs l
 ```
 ~/.aki/mcpsv/
 ├── setting.json          # allowed folders + shell allowlist, edited from the panel
-├── oauth-client.json     # pre-issued client ID + secret, for Claude (0600)
+├── oauth-client.json     # pre-issued client ID + secret, for Gemini's paste flow or any client that wants a static client (0600)
 ├── oauth-dcr-clients.json # clients that self-registered via /register, one per ChatGPT connector (0600)
 ├── passphrase.txt        # passphrase for the /authorize consent screen (0600)
 ├── tokens.json           # access/refresh tokens (0600)
@@ -403,7 +403,7 @@ Use `aki__find_path` to locate a file or directory — it scans the whole tree i
 
 **Convenience first, guardrail second.** AKIMCP is not a fortress and adds no permission layer to configure; its guardrail stops weak or overeager models from doing damage without per-call approval prompts. The whole picture (every surface and its gate, connection limits, what each secret unlocks and how to revoke it) is in [`docs/feat/security.md`](docs/feat/security.md).
 
-- **Remote access** goes through minimal OAuth 2.1: an allowlisted redirect, a 50-bit passphrase at `/authorize`, PKCE S256. Claude uses a pre-issued Client ID/Secret; ChatGPT, Grok and Gemini self-register (DCR). Whoever knows the passphrase can get a token, so treat it like the token.
+- **Remote access** goes through minimal OAuth 2.1: an allowlisted redirect, a 50-bit passphrase at `/authorize`, PKCE S256. Claude, ChatGPT and Grok self-register (DCR); Gemini uses the pre-issued Client ID/Secret. Whoever knows the passphrase can get a token, so treat it like the token.
 - **One shared access token** (1 year) for every client, shown and rolled in panel section 1. *Roll & sign out all clients* is the answer to any leak.
 - **Loopback is not trusted**: the server binds `127.0.0.1` only and still requires the token, so a web page in your browser cannot drive it. The panel binds `127.0.0.1` too and needs its own per-start token.
 - **Wrong credentials get blocked**: default 5 in 60 seconds, then 15 minutes of `429`. Valid tokens are never counted or blocked. Panel section 7 edits every number, lists blocked callers and releases them, shows every registered client (with Remove) and who used the token since the last restart, and shows the security log (`security.log` in the data dir, rotated at 1 MB).

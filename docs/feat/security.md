@@ -1,6 +1,6 @@
 # Security
 
-> updated 2026-10-04 · v3.0.0
+> updated 2026-10-07 · v3.0.0
 
 The one place for akimcp's whole security picture: stance, every surface and its gate, the connection limits, who holds access and who uses it, what each secret on disk unlocks and how to revoke it, and what is logged. README carries a summary and points here. Design record for client activity and the security-only log: `docs/plan/done/client-activity-and-security-log.md`.
 
@@ -24,7 +24,7 @@ Consequences already decided:
 
 | Surface | Who can reach it | Gate | Code |
 |---|---|---|---|
-| OAuth endpoints (`/.well-known/*`, `/register`, `/authorize`, `/token`, `/revoke`) | anyone who learns the public hostname (`503` when no ingress) | redirect allowlist, passphrase, PKCE S256, client secret for Claude; connection limits | `scripts/oauth.js`, `scripts/gatekeeper.js` |
+| OAuth endpoints (`/.well-known/*`, `/register`, `/authorize`, `/token`, `/revoke`) | anyone who learns the public hostname (`503` when no ingress) | redirect allowlist, passphrase, PKCE S256, client secret for the pre-issued client; connection limits | `scripts/oauth.js`, `scripts/gatekeeper.js` |
 | `/mcp` over the ingress | same | Bearer access token | `scripts/gatekeeper.js` |
 | `/mcp` on `127.0.0.1:9999` | processes on this machine, including browser pages | Bearer access token (never skipped on loopback) | `scripts/gatekeeper.js` |
 | Control panel `127.0.0.1:9998` | processes on this machine | per-start panel token in URL and `x-panel-token` header; never exposed through the ingress | `scripts/panel.js` |
@@ -36,7 +36,7 @@ Consequences already decided:
 claude.ai / ChatGPT / Grok / Gemini / Notion
    │  GET /.well-known/oauth-protected-resource, /.well-known/oauth-authorization-server
    │      (/.well-known/openid-configuration is an alias of the latter, so ChatGPT can auto-discover registration_endpoint)
-   │  ChatGPT, Grok, Gemini, Notion (and optionally Claude): POST /register  (DCR)
+   │  Claude, ChatGPT, Grok, Notion: POST /register  (DCR); Gemini uses the pre-issued client
    ▼
 gatekeeper.js  ── /register  → RFC 7591, redirect URI must be allowlisted
                ── /authorize → confirmation page, requires the passphrase
@@ -45,8 +45,8 @@ gatekeeper.js  ── /register  → RFC 7591, redirect URI must be allowlisted
                ── /mcp       → Bearer access token required, else 401 + WWW-Authenticate → tools server (in-process)
 ```
 
-- **Claude (pre-registered):** Client ID/Secret from `oauth-client.json`, shown in panel section 1, pasted into claude.ai's advanced settings. Redirect fixed to `https://claude.ai/api/mcp/auth_callback`, auth method `client_secret_post`.
-- **ChatGPT, Grok, Gemini (DCR):** the provider calls `POST /register`; each connector instance becomes one entry in `oauth-dcr-clients.json`. Auth method `none` (PKCE only). Redirect allowlist (`isAllowedRedirect`): the Claude callback, `chatgpt.com/connector/oauth/*` and the legacy ChatGPT callback, `grok.com/connectors-oauth-exchange-code/*`, `oauth-redirect.googleusercontent.com/r/*`. Registration is open by design: a registered client still has to pass the passphrase.
+- **Pre-issued client (static, confidential):** the Client ID/Secret in `oauth-client.json`, printed by `akimcp` at start. Used by Gemini's paste flow and by any client that wants a static client; it is not shown in the panel and Claude does not use it. Auth method `client_secret_post`; it accepts any allowlisted callback. The panel Clients table lists it as `Claude (pre-registered)` (kind `claude`, a legacy label).
+- **Claude, ChatGPT, Grok (DCR):** the connector needs only the URL and the passphrase; it calls `POST /register` itself, and each connector instance becomes one entry in `oauth-dcr-clients.json`. PKCE S256. Redirect allowlist (`isAllowedRedirect`): the Claude callback, `chatgpt.com/connector/oauth/*` and the legacy ChatGPT callback, `grok.com/connectors-oauth-exchange-code/*`, `oauth-redirect.googleusercontent.com/r/*`. Registration is open by design: a registered client still has to pass the passphrase.
 - **Notion (DCR, confidential):** Notion custom MCP registers with `client_secret_basic` or `client_secret_post` and gets a generated secret. Its callback must be https on exactly one of `notion.so`, `www.notion.so`, `app.notion.so`, `notion.com`, `www.notion.com`, `app.notion.com`, `mcp.notion.com` (parsed hostname; lookalikes, userinfo and `#` rejected). The scope Notion asks for is carried to the token and echoed; a refresh may narrow it, never widen it. It grants nothing extra: tools stay gated by folders and the allowlist. `POST /revoke` from a client drops that client's refresh grant (revoking the shared access token signs only that client out). Ported from PR #7 (TheLucasHenry), except its per-connector access token, which contradicts the single token.
 - **Hardening from the same PR:** a `client_id` such as `constructor` or `__proto__` no longer resolves a prototype member and crashes the process; a `/register` body that is `null`, an array or a scalar returns `400`; a rejected callback logs only its origin, unknown grant types log as `unsupported`, and request logs omit the query string.
 
@@ -110,9 +110,9 @@ Verdict record (`proportion.C1`):
 
 Panel section 7 shows two tables and the security log, refreshed with the section's Refresh buttons.
 
-- **Clients** (`listClients()`, `scripts/oauth.js`): every client record, the Claude pair included, with name (self-declared), kind, redirect host, first seen, last approval, last token grant, and the caller address and User-Agent at that moment. The fields live on the client record itself (`firstSeenAt`, `approvedAt`, `tokenAt`, `lastAddress`, `lastAgent`) and are written only on registration, approval and token grant. The client files are written atomically (temp file, then rename). Records from before tracking show "before tracking". **Signed in** means the client holds a refresh token and can renew access on its own.
+- **Clients** (`listClients()`, `scripts/oauth.js`): every client record, the pre-issued client included, with name (self-declared), kind, redirect host, first seen, last approval, last token grant, and the caller address and User-Agent at that moment. The fields live on the client record itself (`firstSeenAt`, `approvedAt`, `tokenAt`, `lastAddress`, `lastAgent`) and are written only on registration, approval and token grant. The client files are written atomically (temp file, then rename). Records from before tracking show "before tracking". **Signed in** means the client holds a refresh token and can renew access on its own.
 - **Dead clients are cleared** (`pruneClients()`, at start and at every `/register`): a DCR client never approved within 1 hour of registering goes, so strangers cannot fill `maxClients` and lock the owner out; any other DCR client goes once it holds no refresh token and has been idle 30 days (records from before tracking count as idle). The 30 days let a connector reconnect with its stored client ID after Roll & sign out all clients.
-- **Remove / Sign out** (`removeClient()`, `POST /api/clients/remove`): drops the client's refresh tokens and forgets a DCR record; the Claude pair is only signed out, since its ID and secret are pasted into claude.ai. The shared access token the client already holds keeps working until Roll token; the other clients renew on their own after that roll.
+- **Remove / Sign out** (`removeClient()`, `POST /api/clients/remove`): drops the client's refresh tokens and forgets a DCR record; the pre-issued client is only signed out, since its ID and secret are fixed in `oauth-client.json` and may be pasted into a provider. The shared access token the client already holds keeps working until Roll token; the other clients renew on their own after that roll.
 - **Active now** (`scripts/callers.js`): callers that used the valid token since the last restart, keyed by caller address, with User-Agent, first and last seen and request count. Memory only, 64 entries, least recently seen evicted. With one shared token this is the only view of `/mcp` usage; it cannot name the client.
 - **The one action for anything unrecognized:** Roll passphrase, then Roll & sign out all clients (section 1). A client can only have been approved with the passphrase.
 
@@ -123,14 +123,17 @@ All under the data dir (`~/.aki/mcpsv/` by default), mode `0600`, never inside t
 | File | Holds | Leaked alone means | Revoke |
 |---|---|---|---|
 | `passphrase.txt` | consent secret for `/authorize` | anyone can obtain a token | panel section 1: Roll passphrase, then Roll & sign out all clients |
-| `tokens.json` | the shared access token and every refresh token; AIObox's Notion connect macro still reads the access token to paste as Notion's bearer, until it moves to the passphrase flow | full tool access | Roll & sign out all clients (or delete the file and restart) |
-| `oauth-client.json` | Claude's Client ID/Secret | nothing without the passphrase | delete and restart, paste the new pair into claude.ai |
+| `tokens.json` | the shared access token and every refresh token; AIObox gets the access token from `GET /api/access-token` (below), not from this file, to paste as Notion's bearer until it moves to the passphrase flow (AIObox keeps a fallback read of this file during the transition; once it drops that, the format here is free to change) | full tool access | Roll & sign out all clients (or delete the file and restart) |
+| `oauth-client.json` | the pre-issued client's ID/Secret (Gemini's paste flow, or any client that wants a static client) | nothing without the passphrase | delete and restart, paste the new pair into the provider that uses it |
 | `oauth-dcr-clients.json` | registered public clients (no secret) | nothing | delete and restart; every DCR connector reconnects |
 | `setting.json` | folders, allowlist, trusted zones, limits | not secret, but a write widens access | the local owner (panel or editor); also the file tools while the data dir is under an allowed folder (by decision, see Real limitations) |
-| `tool-calls.jsonl` | one line per `aiobox*` / `chrome_*` / `devtools_*` call: time, client, user agent, `op`, `window`, `port`, ok or error, never the arguments' text (rotated at 1 MB) | which AI drove which window, when | delete any time |
-| `aiobox-seen.json` | the AIObox window map last seen (handle per targetId, chat ids), for moved-handle warnings | which chats are open | delete any time; the next call starts a new baseline |
+| `tool-calls.jsonl` | one line per `aki__` tool call (`scripts/tool-call-log.js`): time, client, user agent, tool, `op`, ok or error, never the arguments' text; kept 40 days, the current file rolls to a dated sidecar at 16 MB (both settable) | which AI drove which tool, when | delete any time |
 
 The panel token lives only in memory and changes on every start; `instance.json` (0600) carries it with the panel port and the running ingress origin so AIObox can call the loopback panel, and is removed on shutdown. Which of these files AIObox reads, and in what shape, is pinned in `docs/plan/IMPORTANT-akimcp-aiobox-contract.md` and `test/aiobox-contract.test.js`.
+
+`GET /api/access-token` (`scripts/panel.js`) returns `{accessToken}`, the shared access token from `getOrIssueAccessToken`, so it is never expired. It is gated by `x-panel-token` like `GET /api/security`, listens on loopback only and sends no CORS header. Its reader is AIObox (its Connect AkiMCP macro and its readiness check, which find the panel through `instance.json`). It adds no capability: whoever holds the panel token can already read the passphrase and the token from the panel page; it exists so `tokens.json` stays free to change shape.
+
+AkiMCP writes two things under AIObox's data dir `~/.aki/aiobox/` (never a secret): `requests/<id>.json`, one request envelope v2 `{version: 2, id, op, args, at, deadline (epoch ms), mode}` plus top-level `window?` (the resolved CDP targetId) and `from?` (the caller's own window, for AIObox's `self_target` check) per `request`-channel op, which AIObox runs and answers with a row in its runs table whose `request` column equals the id (AkiMCP deletes its own file when it stops waiting past the deadline, and takes it back when AIObox has not picked it up within 5 s, refusing `app_not_listening`), and `cdp/windows.refresh`, one line holding an id, which asks AIObox to re-read its windows and rewrite `cdp/windows.json` with `answered` set to that id. Everything else there AkiMCP only reads.
 
 ## When something leaks
 
@@ -171,8 +174,8 @@ Volume: idle, nothing; a normal day, tens of lines; under attack, at most `failM
 ## Real limitations
 
 - **One shared access token, so removing a client is not instant revocation:** Remove ends its refresh, but it keeps the current access token until Roll token; a leak is a leak for all. It also means `/mcp` traffic cannot be attributed to a client, only to a caller address.
-- **A fixed-bearer client breaks on every roll:** a custom MCP given the access token as a pasted bearer holds no refresh token, so Roll token (soft or hard) cuts it off until the token is pasted again, and so does the 1-year TTL. Notion is therefore connected with the passphrase, never with a pasted token; AIObox's Notion connect macro still pastes one until it moves to the passphrase flow.
-- **No refresh token rotation** for the pre-registered Claude client (the spec's rotation rule targets public clients).
+- **A fixed-bearer client breaks on every roll:** a custom MCP given the access token as a pasted bearer holds no refresh token, so Roll token (soft or hard) cuts it off until the token is pasted again, and so does the 1-year TTL. Notion is therefore connected with the passphrase, never with a pasted token; AIObox's Notion connect macro still pastes one (taken from `GET /api/access-token`) until it moves to the passphrase flow.
+- **No refresh token rotation** for the pre-issued static client (the spec's rotation rule targets public clients).
 - **The limiter is in memory and keyed per caller:** a restart clears it, a caller who can forge the forwarding headers picks its own key, and an ingress that forwards no address puts every remote caller in one bucket.
 - **DCR stores one client per connector instance**; a connector deleted on the provider's side keeps its refresh token here, so it stays listed as signed in until removed in section 7.
 - **The file tools reach akimcp's own data dir, by decision:** `~/.aki` is a default folder. `setting.json` (folders, shell allowlist, trusted zones) is writable by `write_file` / `edit_file`, so an AI can adjust them when asked; the allowlist therefore guards against a model's mistakes, not against a model that sets out to remove it. The credential files (`tokens.json`, `passphrase.txt`, `oauth-client.json`, `oauth-dcr-clients.json`, `cloudflared-cred.json`) are closed to every tool that takes a path, so a token does not land in the chat with the AI provider by accident: the file tools neither read nor write them, `run_cmd` and `task_start` refuse a command that names one, and `search_content` leaves them out of its results (`scripts/roots.js`). A route no path check sees (`grep -r` over the data dir, a copy in a task log or a spilled output file) still reaches their bytes, so every tool result also passes `redactResult` on its way out (`scripts/provider-registry.js`): each token-shaped value in those files (20+ characters of `[A-Za-z0-9+/=_-]`) and the passphrase come back as `[redacted]`, and so does the panel token in `instance.json` (the file stays readable for its ports and origin, but the token opens the panel, which shows the passphrase and rolls credentials), also before an oversized output is cut (`scripts/output-shape.js`, so a cut cannot split one) and in the message of a handler that throws. This stops a mistake, not a determined model: an encoded copy (compressed, base64) is not recognized, and a model that widens the allowlist to a shell can read anything the owner can. Owner decision, 2026-10-04.
@@ -182,6 +185,6 @@ Volume: idle, nothing; a normal day, tens of lines; under attack, at most `failM
 ## Cross-references
 - `docs/plan/done/client-activity-and-security-log.md` — decisions behind client activity, live callers, the security-only log and pending-registration expiry
 - `docs/plan/done/single-access-token.md` — why one shared access token
-- `docs/research/claude-ai-oauth-connector.md` — research that drove the Claude pre-registered path
+- `docs/research/claude-ai-oauth-connector.md` — research on claude.ai's OAuth handshake (it always attempts DCR first)
 - `docs/ref/claude-connector.md`, `docs/ref/chatgpt-connector.md` — connector dialogs
 - OpenAI Apps SDK auth: https://developers.openai.com/apps-sdk/build/auth

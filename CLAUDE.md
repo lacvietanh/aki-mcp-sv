@@ -21,8 +21,8 @@ Signature: `npm start` is healthy, funnel status says "on", but client reports "
 ## Two client paths, one OAuth server
 
 `scripts/oauth.js` serves both without handler-level branching:
-- **Claude**: Pre-registered confidential client in `oauth-client.json` (`client_secret_post`).
-- **ChatGPT**: Public client via RFC 7591 DCR (`POST /register`), PKCE only, stored in `oauth-dcr-clients.json`.
+- **Claude, ChatGPT, Grok**: URL + passphrase only; they self-register via RFC 7591 DCR (`POST /register`), PKCE only, stored in `oauth-dcr-clients.json`.
+- **Pre-issued confidential client** in `oauth-client.json` (`client_secret_post`): Gemini's paste flow and any client that wants a static client; `scripts/start.js` prints its ID/secret.
 - **Invariants**: `resolveClient()` is the single SSoT lookup for both. Redirect URIs are strictly allowlisted in `isAllowedRedirect` (`claude.ai`, `chatgpt.com`, `googleusercontent.com`, `grok.com`). Auth codes and refresh tokens are bound to their issuing client ID.
 
 ## OS-agnostic by decision, not by accident
@@ -36,7 +36,7 @@ Signature: `npm start` is healthy, funnel status says "on", but client reports "
 Owner 2026-10-05, verbatim (full text: aiobox `docs/arch/akimcp-boundary.md` § 0a): "tôi k thích akimcp phải thay đổi chỉ vì aiobox. cần nó ổn định bất kể aiobox phát triển thế nào đi nữa. muốn tinh gọn hiệu quả nhất chỉ 1 lần v3 này thôi, rồi hanj chế thay đổi nó." · "chứ tôi thấy động tí là edit akimcp là không đúng nguyên tắc".
 
 - **3.x is the last reshaping for AIObox.** After it, AkiMCP changes only for a core need or security. An edit here whose reason is an AIObox feature is refused: the feature belongs in AIObox (code, `akipanel`, its guide).
-- **AIObox internals live only in the AIObox adapter tool.** No other file names AIObox ops, handles, files or rules (funnel and bootstrap lines excepted, aiobox `docs/arch/akimcp-boundary.md` BR-1, BR-9). The adapter forwards generically, so AIObox can add ops without an AkiMCP release; the target is one tool (today two).
+- **AIObox internals live only in the AIObox adapter tool.** No other file names AIObox ops, handles, files or rules (funnel and bootstrap lines excepted, aiobox `docs/arch/akimcp-boundary.md` BR-1, BR-9). The adapter forwards generically, so AIObox can add ops without an AkiMCP release; AIObox is reached through exactly two tools, `op` a free string.
 
 ## Native command, then guide, then tool
 
