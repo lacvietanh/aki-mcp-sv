@@ -46,7 +46,7 @@ export async function contentSha(file) {
   try { return createHash('sha256').update(await fs.readFile(file)).digest('hex'); } catch { return null; }
 }
 
-// Rule files (real paths, top-down, no repeats) for the given paths; a path outside every root has none. Two files with the same bytes count once, the deepest kept (S6: a git worktree nested in its repo carries a copy of the repo's CLAUDE.md).
+// Rule files for the given paths, top-down, no repeats; two files with identical bytes count once, the deepest kept (S6: a worktree's copy of its repo's CLAUDE.md).
 export async function rulesFor(paths, roots = getRoots()) {
   const found = await rulesFound(paths, roots);
   const seen = new Set();

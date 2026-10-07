@@ -152,9 +152,9 @@ export class Shell {
     throw new Error(`"${bin}${args[0] ? ` ${args[0]}` : ''}"${listed}. To allow it, ${HOW_TO_ADD(`"${bin}" (any subcommand) or ["${bin}", "<subcommand>", …]`)}.`);
   }
 
-  run(bin, args, cwd) {
+  run(bin, args, cwd, signal) {
     return new Promise((resolve) => {
-      execFile(...launchOf(bin, args), { cwd, timeout: COMMAND_TIMEOUT_MS, maxBuffer: MAX_CAPTURE_BYTES, windowsHide: true }, (error, stdout, stderr) => {
+      execFile(...launchOf(bin, args), { cwd, timeout: COMMAND_TIMEOUT_MS, maxBuffer: MAX_CAPTURE_BYTES, windowsHide: true, signal }, (error, stdout, stderr) => {
         if (!error) return resolve(ok(shapeForModel(stdout) || '(no output)'));
         // A failing command's stdout is often the useful part (test failures, grep's partial hits), so it is returned with stderr and the reason.
         const reason = error.killed ? `timed out after ${COMMAND_TIMEOUT_MS / 1000}s` : typeof error.code === 'number' ? `exit code ${error.code}` : error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER' ? 'output exceeded the capture limit, the rest was dropped' : error.code === 'ENOENT' ? `"${bin}" is not an executable on PATH (on Windows: grep, tail and the other Unix tools come with Git for Windows; a PowerShell cmdlet or a .cmd shim other than npm and npx cannot be run by this tool)` : error.message;
@@ -163,7 +163,7 @@ export class Shell {
     });
   }
 
-  async execute(command, cwd) {
+  async execute(command, cwd, signal) {
     let bin, args, dir;
     try {
       ({ bin, args } = this.parse(command));
@@ -173,7 +173,7 @@ export class Shell {
     } catch (e) {
       return fail(e);
     }
-    return this.run(bin, args, dir);
+    return this.run(bin, args, dir, signal);
   }
 }
 
@@ -191,6 +191,6 @@ export function register(server) {
       description: 'Run one allowlisted shell command. Default set is inspection-first (ls, cat, grep, head, tail, stat, git status/log/diff/show, …); the owner extends it in the panel. Output is cleaned (ANSI, progress redraws and repeats removed); past ~20k chars only start and end are shown, the full text saved to a file the output names. A failure returns stdout, stderr and exit code. Commands stop after 10s; a dev server or watch fits aki__task_start. Dedicated tools are cheaper: find_path/search_content, read_text_file, git (find is not allowlisted: its flags escape read-only). cwd: absolute path under an allowed root, or relative to the first root. One command per call, no chaining/redirection.',
       inputSchema: { command: z.string(), cwd: z.string().optional() },
     },
-    ({ command, cwd }) => shell.execute(command, cwd),
+    ({ command, cwd }, { signal }) => shell.execute(command, cwd, signal),
   );
 }

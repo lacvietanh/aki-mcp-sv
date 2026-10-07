@@ -2,8 +2,6 @@
 // Discovers profiles, opens or attaches to the shared CDP clones AIObox provisions (stealth Chrome on dynamic port 0),
 // provides interactive typing & scroll-to-center clicking, tab management, and AI session probing.
 import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import { z } from 'zod';
 import { ok, fail } from './mcp-tool.js';
 import cdp from './cdp-engine.js';
@@ -16,12 +14,19 @@ import {
   stopChrome,
   resolvePort,
 } from './chrome-profile.js';
-import { OPEN_RULE } from './aiobox-guide.js';
+import { windowsFile } from './aiobox-guide.js';
 
-// While AIObox runs it owns these clones: a Chrome opened here has no AIObox panel, guard or handle. AIObox now opens a stopped profile itself (aiobox plan aio-control-gaps G1, op=new_window profile+provider); this stays a warning until that is live everywhere, then becomes a refusal.
+// While AIObox runs it owns these clones: a Chrome opened here has no AIObox panel, guard or handle.
 export function aioboxWarning() {
-  if (!fs.existsSync(path.join(os.homedir(), '.aki', 'aiobox', 'cdp', 'windows.json'))) return null;
-  return `AIObox is running and owns these profiles: ${OPEN_RULE} aki__aiobox op=profiles lists where a window can open, aki__aiobox_write op=new_window profile=<id> provider=<id> opens it; a Chrome opened here has no AIObox panel or handle.`;
+  if (!fs.existsSync(windowsFile())) return null;
+  return 'AIObox is running and owns these profiles; a Chrome opened here has no AIObox panel or handle. To open an AIObox window, call aki__aiobox op=state first.';
+}
+
+// Resolved at call time: provider-registry.js imports this module, so a static import would be a cycle.
+async function aioboxServed() {
+  const { listProviders } = await import('./provider-registry.js');
+  const aiobox = listProviders().find((p) => p.id === 'aiobox');
+  return Boolean(aiobox?.available && aiobox?.enabled);
 }
 
 export const provider = {
@@ -61,7 +66,7 @@ export function register(server) {
       title: 'Chromium: open shared profile on a CDP port',
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
       description:
-        'Opens a shared profile clone made by AIObox (logins kept). If another process runs it, attaches to its CDP port (owned false) and opens url as a new tab; else launches stealth Chrome on --remote-debugging-port=0 (owned true). Never clones.',
+        'Opens a shared profile clone (logins kept). If another process runs it, attaches to its CDP port (owned false) and opens url as a new tab; else launches stealth Chrome on --remote-debugging-port=0 (owned true). Never clones.',
       inputSchema: {
         profile: z.string().optional().describe('Profile 14 or shared id chrome-profile-14 (default Default)'),
         browser: z.string().optional().describe('chrome, brave, or edge (default chrome)'),
@@ -76,7 +81,7 @@ export function register(server) {
           url,
           headless: headless ?? false,
         });
-        const warning = aioboxWarning();
+        const warning = (await aioboxServed()) ? aioboxWarning() : null;
         return ok(JSON.stringify(warning ? { ...res, warning } : res, null, 2));
       } catch (e) {
         return fail(e);

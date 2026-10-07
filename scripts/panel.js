@@ -284,6 +284,8 @@ export const ROUTES = {
     return { ok: true, message: 'saved — the next logged call uses it; past lines keep their shape' };
   },
   'GET /api/security': async () => ({ limits: readLimits(), defaults: LIMIT_DEFAULTS, blocked: failures.blockedList(), clients: listClients(), callers: listCallers(), log: readSecurityLog() }),
+  // AIObox's connect and readiness read the bearer token here with x-panel-token instead of tokens.json, so that file's format stays free (docs/plan/akimcp-aiobox-boundary-plan.md § 4 I4).
+  'GET /api/access-token': async () => ({ accessToken: getOrIssueAccessToken() }),
   'POST /api/clients/remove': async (body) => ({ ok: true, message: removeClient(typeof body.clientId === 'string' ? body.clientId : '') }),
   'POST /api/rate-limit': async (body) => {
     setRateLimit(validateLimits(body.limits));

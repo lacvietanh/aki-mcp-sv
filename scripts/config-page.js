@@ -302,7 +302,7 @@ ${secretField('Access token', accessToken)}
     <li>Tick <strong>I understand and want to continue</strong>, then <strong>Create</strong>.</li>
     <li>On connect, enter the <strong>Passphrase</strong>.</li>
   </ol>
-  <p class="helptext">ChatGPT self-registers via DCR (PKCE, no secret). Do not paste Claude's Client ID or Secret here. Write tools may be limited depending on OpenAI's current policy.</p>
+  <p class="helptext">ChatGPT self-registers via DCR (PKCE, no secret). Nothing to paste. Write tools may be limited depending on OpenAI's current policy.</p>
 </div>
 
 <div class="tabpane" id="tab-gemini">
@@ -310,7 +310,7 @@ ${secretField('Access token', accessToken)}
   <ol class="steps">
     <li>Open <a href="${esc(GEMINI_CONNECTOR_URL)}" target="_blank" rel="noopener">custom connected apps</a> (Gemini → paid subscriptions → Custom apps).</li>
     <li>Set the <strong>custom app link / Server URL</strong> = MCP URL.</li>
-    <li>Open <strong>Advanced Settings</strong> and paste the <strong>Client ID</strong> and <strong>Client secret</strong> from the Claude tab (same confidential client).</li>
+    <li>Open <strong>Advanced Settings</strong> and paste the <strong>Client ID</strong> and <strong>Client secret</strong> that <span class="mono">akimcp</span> prints at start (<span class="mono">OAuth Client ID</span> / <span class="mono">OAuth Client Secret</span>).</li>
     <li>Ignore Gemini's <strong>Copy redirect URI</strong> button; the redirect is already allowlisted server-side.</li>
     <li>On <strong>Continue</strong>, enter the <strong>Passphrase</strong>.</li>
   </ol>
@@ -496,7 +496,7 @@ ${field('Widen command', WIDEN_SNIPPET)}
 
 <section id="s9"><h2>9 · Call log</h2>
 <p class="helptext">Every tool call is written to <span class="mono">${esc(path.join(userDir, 'tool-calls.jsonl'))}</span> as one JSON line: when, which tool and op, ok or not, how long, which client. No prompt, expression or argument text is ever written.</p>
-<p class="helptext"><strong>Basic</strong> (the default) keeps a short error code; <strong>Detail</strong> adds the full error text, the chat it acted on (from), the macro it ran and a hash of eval expressions. Keep days is how long past day-files stay before being deleted; the MB cap rolls the current file over to a dated one when it grows.</p>
+<p class="helptext"><strong>Basic</strong> (the default) keeps a short error code; <strong>Detail</strong> adds the full error text, the chat it acted on (from) and a hash of eval expressions. Keep days is how long past day-files stay before being deleted; the MB cap rolls the current file over to a dated one when it grows.</p>
 <label class="chk"><input type="checkbox" data-log="enabled"> Logging on</label>
 <div class="limits">
   <label>Detail level<select data-log="level"><option value="basic">basic — enough</option><option value="detail">detail</option></select></label>

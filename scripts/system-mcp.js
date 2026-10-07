@@ -5,8 +5,8 @@ import { z } from 'zod';
 import cp from 'node:child_process';
 import { ok, fail } from './mcp-tool.js';
 
-// Not `promisify(cp.execFile)`: it carries a `util.promisify.custom` symbol that routes straight to the real implementation, so a test mocking `cp.execFile` would never intercept it.
-// execFile, never exec: the notification text comes from the model, and no shell may parse it.
+// Not `promisify(cp.execFile)`: its `util.promisify.custom` symbol would route straight past a test's mock of `cp.execFile`.
+// `execFile`, never `exec`: the notification text comes from the model, and no shell may parse it.
 const run = (file, args = [], options = {}) => new Promise((resolve, reject) => {
   cp.execFile(file, args, { windowsHide: true, ...options }, (err, stdout, stderr) => (err ? reject(err) : resolve({ stdout, stderr })));
 });
@@ -23,7 +23,7 @@ const WINDOWS_TOAST = `
 `.replace(/\n\s+/g, ' ');
 
 // Title and message travel as data on every platform (script arguments, environment, argv), never inside a script or command line.
-// notified is true only when a banner was shown: a beep alone or a missing notifier must not read as delivered (A15).
+// `notified` is true only when a banner was shown: a beep alone or a missing notifier must not read as delivered (A15).
 export async function notifyUser({ message, title = 'Aki MCP', sound = true } = {}, platform = process.platform) {
   if (!message) throw new Error('message is required');
   const text = String(message);

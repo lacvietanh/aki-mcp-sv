@@ -26,7 +26,7 @@ export function isPidAlive(pid) {
   }
 }
 
-// AIObox reads panelPort, token and origin from this file (docs/plan/IMPORTANT-akimcp-aiobox-contract.md): origin is the ingress this process serves in every mode, ingress.json only the panel's saved pick.
+// AIObox reads panelPort/token/origin from here (contract: docs/plan/IMPORTANT-akimcp-aiobox-contract.md); origin is the serving ingress, ingress.json only the panel's saved pick.
 export function writeLock({ pid, panelPort, gatePort, token, version, origin = null, ingress = null }) {
   writeFileSync(LOCK_PATH, JSON.stringify({ pid, panelPort, gatePort, token, version, origin, ingress, startedAt: new Date().toISOString() }), { mode: 0o600 });
 }

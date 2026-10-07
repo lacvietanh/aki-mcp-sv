@@ -13,9 +13,9 @@ import { createToolsServer } from './tools-server.js';
 import { isLoggedTool, logToolCall } from './tool-call-log.js';
 import { VERSION } from './version.js';
 
-// A client that cached an older tools/list sends ops or fields this server no longer (or not yet) has; the SDK's -32602 then reads like the caller's typo. Name the likely cause once, here, for every tool.
+// A client with a cached older tools/list sends an op/field this server no longer (or not yet) has; the SDK's -32602 then reads like a typo. Name the likely cause here, once, for every tool.
 const STALE_SCHEMA_HINT = ` (akimcp ${VERSION}: if the tool description lists what you sent, your client's tool schema is stale; reconnect AkiMCP or start a new chat)`;
-// Only an argument this server's schema takes can point at a stale client schema (a value or op it lacks); an argument it does not take is the caller's own wrong name, so the hint names the arguments instead.
+// A value the schema takes but the client lacks points at a stale client schema; one the schema itself rejects is just the caller's own wrong name — so the hint names the valid arguments instead.
 async function invalidArgsHint(session, params) {
   let properties = null;
   try {
@@ -33,7 +33,7 @@ async function invalidArgsHint(session, params) {
 let shared = null;
 let sharedBoot = null; // in-flight boot promise — collapses concurrent first-initializes onto one session
 let nextUpstreamId = 1; // globally-unique id per forwarded request; the remap that lets clients share one session
-// Minted external session ids, for protocol-correct 404-on-stale. claude.ai mints a new one every ~10 s per conversation and never returns the old ones, so the set keeps the most recently used and drops the rest; a dropped id gets a 404 and its client re-initializes, which is cheap.
+// Minted external session ids, for a protocol-correct 404-on-stale. claude.ai mints a new one every ~10s, never reused; keep only the most recent, so a dropped id just re-initializes.
 const externalIds = new Set();
 const MAX_EXTERNAL_IDS = 2000;
 // A client's request id → the upstream id it was remapped to, while the request is in flight: what a client's cancel notice has to name.
@@ -173,7 +173,7 @@ export async function handleStreamableMcp(req, res) {
     return res.end();
   }
 
-  // A cancel names the client's own request id, which means nothing upstream (ids are remapped) or, worse, names another client's request. Translate it, end the waiting request here, and drop a cancel that matches nothing of this client's.
+  // A cancel names the client's own request id, meaningless upstream (remapped) or worse, another client's. Translate it, end the waiting request here, drop one matching nothing of this client's.
   if (method === 'notifications/cancelled') {
     const upstreamId = inFlight.get(inFlightKey(externalSessionId, message.params?.requestId));
     if (upstreamId !== undefined) {

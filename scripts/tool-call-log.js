@@ -1,5 +1,5 @@
 // One JSON line per tool call, for every tool, so misuse is measured instead of guessed: which client, which op, ok or not, how long. Written at the bridge, the only layer that sees the external session id and user agent. Never the arguments' text: no prompt, expression or compose text reaches this file.
-// The shape follows the owner's call-log decision (docs/plan/akimcp-tool-refactor.md § D9): every tool is logged, the default line is lean (basic), a detail level adds the full error text plus the from chat and macro, and keep-by-age cleanup (default 40 days) replaces the old 1 MB size rotation.
+// The shape follows the owner's call-log decision (docs/plan/akimcp-tool-refactor.md § D9): every tool is logged, the default line is lean (basic), a detail level adds the full error text plus the from chat and the eval hash, and keep-by-age cleanup (default 40 days) replaces the old 1 MB size rotation.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -9,10 +9,10 @@ import { VERSION } from './version.js';
 
 export const TOOL_CALLS_PATH = path.join(USER_DIR, 'tool-calls.jsonl');
 
-// The owner-decided defaults (D9). maxMB is this seat's proposal: keep-days is the real retention, and this only rolls the current file to a dated sidecar when it grows large, so report and tail reads never load one giant file.
+// Owner-decided defaults (D9): keep-days is the real retention; maxMB only rolls the current file to a dated sidecar when it grows large, so report/tail reads never load one giant file.
 export const LOG_DEFAULTS = Object.freeze({ enabled: true, level: 'basic', days: 40, maxMB: 16 });
 
-// The bridge still gates on this name (streamable-bridge.js:218). D9 logs every tool, so the only filter left is that the name is a tool: every aki__ tool passes, non-string names (non-tool messages) do not.
+// D9 logs every tool, so the only filter left is that the name is a tool: every `aki__` tool passes, non-string names (non-tool messages) do not.
 export const isLoggedTool = (name) => typeof name === 'string' && name.startsWith('aki__');
 
 const DATED_NAME = /^tool-calls-(\d{4}-\d{2}-\d{2})(?:-\d+)?\.jsonl$/;
@@ -42,7 +42,7 @@ export function loadLogSettings() {
   }
 }
 
-// What a client's tracing headers reduce to: a 12-hex SHA-256 of baggage (never its text) and the W3C trace id. The same value on every call of one chat would let a call name its own chat without op=whoami.
+// A client's tracing headers reduce to a 12-hex SHA-256 of baggage (never its text) plus the W3C trace id — the same value across a chat's calls lets a call name its own chat without asking AIObox.
 const TRACEPARENT = /^[\da-f]{2}-([\da-f]{32})-[\da-f]{16}-[\da-f]{2}$/;
 export function traceFields({ baggage, traceparent } = {}) {
   const out = {};
@@ -68,7 +68,7 @@ const exprHashOf = (expression) => (typeof expression === 'string' && expression
 // Short scalar fields only, cut to fixed lengths; a non-string window or op is dropped, not stringified.
 const short = (v, n) => (typeof v === 'string' ? v.slice(0, n) : typeof v === 'number' ? v : undefined);
 
-// One entry per call, assembled without fs so the level split is unit-testable. Basic keeps the error code only; detail adds the full error text, the from chat, the macro and a 12-hex hash of the eval expression.
+// One entry per call, built without fs so the level split is unit-testable. Basic keeps the error code only; detail adds the full error text, the from chat and a 12-hex hash of the eval expression.
 export function buildLogEntry({ sessionId, agent, headerNames, trace, params, response, ms }, settings, headersLogged = new Set()) {
   const args = params?.arguments || {};
   const result = response?.result;
@@ -93,7 +93,6 @@ export function buildLogEntry({ sessionId, agent, headerNames, trace, params, re
   if (settings.level === 'detail') {
     entry.error = errorText;
     entry.from = short(args.from, 48);
-    entry.macro = short(args.macro, 48);
     entry.exprHash = exprHashOf(args.expression);
   }
   if (sessionId && !headersLogged.has(sessionId)) {

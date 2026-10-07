@@ -61,7 +61,7 @@ export async function checkReceipt(receipt) {
   return (await verify(receipt)).refused || null;
 }
 
-// The project rule files this call touches that the receipt does not cover yet: a new receipt covering them and the text to show, or null to run the call. A file with the same bytes as one the receipt covers is covered (S6: a worktree's copy of its repo's CLAUDE.md).
+// Rule files this call touches not yet covered by the receipt: a new covering receipt plus the text to show, or null to just run. A same-bytes file as one covered counts as covered (S6).
 async function uncovered(own, entry, current) {
   const known = new Set((current.sources || []).map((s) => s.path));
   const knownSha = new Set((current.sources || []).map((s) => s.sha256).filter(Boolean));
@@ -84,7 +84,7 @@ async function uncovered(own, entry, current) {
   return { receipt: next.receipt, files: paths.filter((p) => !known.has(p)), shaOf };
 }
 
-// Splits the files to show into those no result showed with this receipt in the last SHOWN_MS (marked shown now) and those one just did. Synchronous, so of calls made together the first to get here shows them.
+// Splits files into ones no result showed with this receipt in the last SHOWN_MS (now marked shown) vs ones just shown; synchronous, so of simultaneous calls the first here wins.
 function claimShown(receipt, files, shaOf) {
   const t = now();
   const fresh = [];

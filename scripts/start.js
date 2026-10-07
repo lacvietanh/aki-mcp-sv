@@ -52,6 +52,7 @@ if (existingLock && existingLock.pid !== process.pid && isPidAlive(existingLock.
   }
 }
 
+// AIObox spawns `akimcp --no-browser --port <n>`: --port winning is frozen in docs/plan/IMPORTANT-akimcp-aiobox-contract.md.
 const gatePort = customGatePort || process.env.GATEKEEPER_PORT || (isDev ? '9997' : '9999');
 const panelPort = customPanelPort || process.env.PANEL_PORT || (isDev ? '9996' : '9998');
 
@@ -119,7 +120,7 @@ if (origin) {
   console.log(`[start] Remote MCP server URL: ${origin}/mcp`);
   console.log(`[start] OAuth Client ID: ${client.clientId}`);
   console.log(`[start] OAuth Client Secret: ${client.clientSecret}`);
-  console.log('[start] paste all 3 values above into Add custom connector (URL + Advanced settings)');
+  console.log('[start] Client ID/Secret above are for Gemini or any client that needs a static client; Claude and ChatGPT need only the URL and the passphrase');
   console.log(`[start] Passphrase (enter it when the browser opens the confirmation page): ${passphrase}`);
 }
 

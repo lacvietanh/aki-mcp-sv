@@ -24,7 +24,7 @@ const CHATGPT_CALLBACK_PREFIX = 'https://chatgpt.com/connector/oauth/';
 const GEMINI_CALLBACK_PREFIX = 'https://oauth-redirect.googleusercontent.com/r/';
 // Grok self-registers (DCR) with this callback — observed live 2026-08-09 from the register-REJECTED log: redirect_uris=["https://grok.com/connectors-oauth-exchange-code/"]. Note: NOT a /connector/oauth/ path.
 const GROK_CALLBACK_PREFIX = 'https://grok.com/connectors-oauth-exchange-code/';
-// Notion custom MCP self-registers (DCR) as a confidential client on one of these hosts, matched on the parsed hostname so lookalikes fail (verified against a real workspace 2026-09-22; Notion already moved one host to app.notion.com).
+// Notion DCR self-registers as a confidential client on one of these hosts, matched on the parsed hostname so lookalikes fail (verified live 2026-09-22).
 const NOTION_CALLBACK_HOSTS = new Set(['notion.so', 'www.notion.so', 'app.notion.so', 'notion.com', 'www.notion.com', 'app.notion.com', 'mcp.notion.com']);
 const CLIENT_AUTH_METHODS = ['none', 'client_secret_post', 'client_secret_basic'];
 const CODE_TTL_MS = 5 * 60 * 1000;
@@ -99,7 +99,7 @@ function dropRefreshTokens(shouldDrop) {
   return dropped;
 }
 
-// AIObox's Notion macro reads the first unexpired access token here until it moves to the passphrase flow (docs/plan/IMPORTANT-akimcp-aiobox-contract.md).
+// AIObox reads the token through GET /api/access-token and keeps this file as a fallback until its A3 step, so the format is free after that (docs/plan/akimcp-aiobox-boundary-plan.md § 4 I4).
 function saveTokens() {
   const body = { access: Object.fromEntries(accessTokens), refresh: Object.fromEntries(refreshTokens) };
   writeFileSync(TOKENS_FILE, JSON.stringify(body), { mode: 0o600 });
@@ -527,8 +527,7 @@ export async function handleToken(req, res) {
   return json(res, 400, { error: 'unsupported_grant_type' });
 }
 
-// RFC 7009. Every client shares one access token, so revoking it here would sign every other client out:
-// a revoke only ends the calling client's own refresh grant, and the shared token keeps working until the panel rolls it.
+// RFC 7009: every client shares one access token, so a revoke only ends the calling client's own refresh grant — the shared token itself keeps working until the panel rolls it.
 export async function handleRevoke(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   const body = new URLSearchParams(await readBody(req, MAX_BODY_BYTES));

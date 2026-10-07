@@ -7,7 +7,7 @@ import { ok, okImage, fail } from './mcp-tool.js';
 import cdp from './cdp-engine.js';
 import { resolvePort } from './chrome-profile.js';
 
-// Served without AIObox too, so it names no aiobox tool (P3, D-L2a); aki__aiobox's own description says how an AIObox window is reached.
+// Served without AIObox too, so it names no aiobox tool (P3, D-L2a).
 const NO_SESSION_HINT = 'A window not launched by aki__chrome_launch has no active session: find its port with aki__port_status first, then pass port.';
 
 // No detect: it also serves Postman, VS Code and AIObox's Chrome, so hiding it by "no session running" would hide it exactly when an attach needs it.

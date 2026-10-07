@@ -38,9 +38,7 @@ export function readDevToolsPort(app = 'postman') {
   }
 }
 
-// A short-lived CDP client whose socket drops (target closed, app quit mid-call) emits 'error' on
-// the client EventEmitter; with no listener Node treats that as an uncaught exception and the whole
-// MCP server exits. Log it and let the pending call reject on its own.
+// A dropped CDP socket emits 'error'; with no listener Node treats that as an uncaught exception and kills the whole MCP server — log it and let the pending call reject on its own.
 async function openClient(opts) {
   const client = await CDP(opts);
   client.on('error', (e) => console.error(`[cdp-engine] socket error: ${e?.message || e}`));
@@ -48,7 +46,7 @@ async function openClient(opts) {
   return client;
 }
 
-// A client gives up on a tool call after about a minute and then gets nothing (S7, 2026-10-05: 24 logged calls ended at ~60 000 ms), and a frozen renderer never answers at all. So every call here ends within CALL_BOUND_MS from its start, finding the target and connecting included, and says so with code timeout and the step that is safe next.
+// S7, 2026-10-05: 24 logged calls ended at ~60s with nothing back. Every call here ends within CALL_BOUND_MS (lookup + connect included), refusing with code timeout and a safe next step.
 export const CALL_BOUND_MS = 50_000;
 function timeoutError(message, next) {
   const e = new Error(`${message}; code timeout; next: ${next}`);

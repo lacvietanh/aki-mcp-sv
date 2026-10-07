@@ -103,7 +103,7 @@ export function refuseCredentialArgs(args, cwd) {
   for (const arg of args) refuseCredentialFile(path.resolve(cwd, arg));
 }
 
-// A path check sees only a file named directly; a directory search (grep -r over the data dir), a spilled output file or a task log reaches the same bytes. Every tool result leaves through provider-registry.js, which passes it here, so a credential value never reaches a chat whatever the route.
+// A path check alone misses a grep -r, a spilled file or a task log reaching the same bytes; every result passes through provider-registry.js into this filter first, so no route leaks a credential.
 const SECRET_SHAPE = /^[A-Za-z0-9+/=_-]{20,}$/;
 function credentialSecrets() {
   const found = new Set();

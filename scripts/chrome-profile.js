@@ -160,10 +160,10 @@ export function resolveSharedProfile(profile = 'Default', browser) {
   const id = canonical ? raw : `${key}-${slug(raw)}`;
   const dir = path.join(profilesRoot(), id);
   if (!fs.existsSync(path.join(dir, 'Local State'))) {
-    // States the fact and the next step that works without AIObox; no install pitch (REQ-15 H1).
+    // States the fact and the next step that works on any machine; names no AIObox (REQ-15 H1).
     const shared = listSharedProfiles();
     const open = shared.length ? `open one of ${shared.join(', ')}, or ` : '';
-    throw new Error(`Profile "${id}" not found in ${profilesRoot()}. Create it in AIObox first; AkiMCP opens shared profiles but no longer clones them. (no_profile; next: ${open}${ATTACH_PATH})`);
+    throw new Error(`Profile "${id}" not found in ${profilesRoot()}. AkiMCP opens existing shared profiles and does not create them. (no_profile; next: ${open}${ATTACH_PATH})`);
   }
   return { id, dir, browser: key };
 }
