@@ -30,7 +30,7 @@
     "start": "node ./scripts/start.js",
     "dev": "node ./scripts/start.js --dev",
     "tool-calls": "node ./scripts/tool-calls-report.js",
-    "test": "node --test --test-concurrency=1 --test-reporter=spec \"test/*.test.js\" \"scripts/postman/test/*.test.*\""
+    "test": "node --test --import ./test/setup.js --test-concurrency=1 --test-reporter=spec \"test/*.test.js\" \"scripts/postman/test/*.test.*\""
   },
   "dependencies": {
     "@fortawesome/fontawesome-free": "7.3.1",
