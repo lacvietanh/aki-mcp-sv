@@ -179,3 +179,9 @@ Chủ máy, 2026-10-07, nguyên văn: "máy này là máy chỉ code. git acc n�
 
 - Rủi ro: thay đổi chưa commit trên máy dev có thể bị ghi đè khi Mac sync về, nên bàn giao từng bước, không dồn tới cuối.
 - Reopen if: một bước cần sửa lịch sử git (rebase, tách commit cũ); khi đó làm trên Mac trước rồi sync.
+
+## Nhánh D14a đã gỡ (2026-10-10)
+
+- Nhánh `wt-batch-d14` (10 commit, tip `69f54f1`, adapter một tool theo C-D14 rev 2.1) và `wt-p7w38-s5b` bị xóa: thiết kế D14a đã bị kế hoạch này thay, chủ duyệt 2026-10-07. Hai commit còn giá trị đã sang main: quy ước "không tạo worktree" của chủ 2026-10-06 (`scripts/rule-context-mcp.js`) và thông báo timeout CDP gọi đúng endpoint khi chưa tới trang (`scripts/cdp-engine.js`).
+- Không mang sang, có lý do: `expect` trên `devtools_*` (là việc của AIObox theo `CLAUDE.md` § Stable core; `aiobox` đã có `expect`), giới hạn tổng cho `/json/*` (endpoint loopback, không có động cơ), dòng "S9" (main đã viết lại và có test), dòng enum trong `aiobox-control-ops.md` (plan đã superseded).
+- Reopen if: chủ đảo lại ranh giới, hoặc bảng op của AIObox không bao giờ ra; lúc đó lấy lại tip `69f54f1` qua `git reflog` (còn tới khi git dọn rác).
