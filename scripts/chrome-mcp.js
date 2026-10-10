@@ -17,7 +17,7 @@ import {
 import { windowsFile } from './aiobox-guide.js';
 
 // While AIObox runs it owns these clones: a Chrome opened here has no AIObox panel, guard or handle.
-export function aioboxWarning() {
+function aioboxWarning() {
   if (!fs.existsSync(windowsFile())) return null;
   return 'AIObox is running and owns these profiles; a Chrome opened here has no AIObox panel or handle. To open an AIObox window, call aki__aiobox op=state first.';
 }

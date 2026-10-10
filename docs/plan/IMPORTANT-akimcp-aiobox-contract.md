@@ -2,7 +2,7 @@
 
 > Nhãn workspace trong file này ẩn danh thành workspace A, B… (cùng chữ = cùng một workspace giữa các doc).
 
-> **IMPORTANT, ràng buộc cả hai repo.** Bản sinh đôi: `aki-mcp-sv: docs/plan/IMPORTANT-akimcp-aiobox-contract.md`; hai bản giống nhau trừ dòng này, sửa một bản thì sửa luôn bản kia trong cùng phiên. Cùng nhóm: `docs/plan/IMPORTANT-shared-cdp-profiles.md` (một thư mục CDP profile chung).
+> **IMPORTANT, ràng buộc cả hai repo.** Bản sinh đôi: `aiobox: docs/plan/IMPORTANT-akimcp-aiobox-contract.md`; hai bản giống nhau trừ dòng này, sửa một bản thì sửa luôn bản kia trong cùng phiên. Cùng nhóm: `docs/plan/IMPORTANT-shared-cdp-profiles.md` (một thư mục CDP profile chung).
 
 Trạng thái: phần AIObox của luật đặt tên đã triển khai (2026-10-01); § Hợp đồng AkiMCP đọc từ AIObox đã làm ở cả hai phía (AkiMCP `aki__aiobox`, `aki__aiobox_write`, 2026-10-02); § Việc phía AkiMCP: tên `AkiMCP`, `origin` cho mọi mode trong `instance.json`, test giữ hình dạng đã làm phía AkiMCP (2026-10-03), identity theo client đã bỏ (chủ, 2026-10-03); AIObox đã đọc URL connector từ `instance.json` `origin` (2026-10-03, aiobox 4bd14f7), `ingress.json` ra khỏi hợp đồng · Luật macro: aiobox `docs/feat/akimcp-connect.md`. Hai bản T1 đã gộp ngày 2026-10-07 ở bản AIObox (mỗi dòng thiếu của một bản đã đối chiếu với code AIObox hiện tại); bản aki-mcp-sv chép nguyên byte bản này, trừ dòng 3.
 
