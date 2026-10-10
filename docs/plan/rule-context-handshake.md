@@ -4,7 +4,7 @@ Status: active; Gate 0 (assembler + `aki__akidevrule_context` tool) implemented 
 
 ## Outcome and boundary
 
-Enforcement (2026-10-04): the receipt is no longer only a signal. Every tool that acts refuses a call without the current one; see `rule-receipt-gate.md`.
+Enforcement (2026-10-04): the receipt is no longer only a signal. Every tool that acts refuses a call without the current one; see `done/rule-receipt-gate.md`.
 
 Implement the architecture in `docs/arch/rule-context-delivery.md` as two separately proven gates, never one inferred success:
 

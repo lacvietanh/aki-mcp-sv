@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Every tool that acts refuses a call without the current rule receipt (scripts/rule-gate.js, docs/plan/rule-receipt-gate.md); read-only tools never ask for one.
+// Every tool that acts refuses a call without the current rule receipt (scripts/rule-gate.js, docs/plan/done/rule-receipt-gate.md); read-only tools never ask for one.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';

@@ -31,7 +31,7 @@ const RAISES = [
   { date: '2026-10-03', why: 'aiobox: handles are renumbered on AIObox restart, so window takes a chat id, expect guards the target, op=windows names stable ids', chars: 207 },
   { date: '2026-10-03', why: 'aiobox: op=state (guide in the result, not the description), whoami, wait_idle, run_macro, from', chars: 595 },
   { date: '2026-10-03', why: 'aiobox_write op=send (akipanel send v1) and its wait argument', chars: 157 },
-  { date: '2026-10-04', why: 'rule receipt gate: every tool that acts takes receipt (docs/plan/rule-receipt-gate.md), and akidevrule_context says so', chars: 2285 },
+  { date: '2026-10-04', why: 'rule receipt gate: every tool that acts takes receipt (docs/plan/done/rule-receipt-gate.md), and akidevrule_context says so', chars: 2285 },
 ];
 const BUDGET_CHARS = Math.round(BASELINE_CHARS * 1.1) + RAISES.reduce((sum, r) => sum + r.chars, 0);
 // Measured 2026-10-07 on the full surface (38 tools): 34930 chars, 1421 under the budget.

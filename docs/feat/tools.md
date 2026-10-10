@@ -33,7 +33,7 @@ Each tool module is a provider (`scripts/provider-registry.js`; contract: [`arch
 
 ## Rule receipt gate
 
-Every tool whose `readOnlyHint` is not `true` takes `receipt` and refuses a call without the receipt of the rules in force (`scripts/rule-gate.js`, wired once in `mountProviders`; plan [`plan/rule-receipt-gate.md`](../plan/rule-receipt-gate.md)). The receipt is the `sha256:…` that `aki__akidevrule_context` returns; it counts only when this server issued it since it started and the same call (same `mode` and `workingPath`) still returns it, so a changed rule file refuses the old one. The refusal is a tool error `RULE_RECEIPT_MISSING | INVALID | UNKNOWN | STALE | UNCHECKED: … call aki__akidevrule_context, then call this tool again with receipt=<…>`; the tool never runs. `receipt` is stripped before the tool sees its input. Read-only tools and `akidevrule_context` take none.
+Every tool whose `readOnlyHint` is not `true` takes `receipt` and refuses a call without the receipt of the rules in force (`scripts/rule-gate.js`, wired once in `mountProviders`; plan [`plan/done/rule-receipt-gate.md`](../plan/done/rule-receipt-gate.md)). The receipt is the `sha256:…` that `aki__akidevrule_context` returns; it counts only when this server issued it since it started and the same call (same `mode` and `workingPath`) still returns it, so a changed rule file refuses the old one. The refusal is a tool error `RULE_RECEIPT_MISSING | INVALID | UNKNOWN | STALE | UNCHECKED: … call aki__akidevrule_context, then call this tool again with receipt=<…>`; the tool never runs. `receipt` is stripped before the tool sees its input. Read-only tools and `akidevrule_context` take none.
 
 ## Layout of `scripts/postman/` (Postman only)
 
