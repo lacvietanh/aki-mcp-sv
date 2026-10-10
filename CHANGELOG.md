@@ -2,6 +2,11 @@
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning per [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **A failed `aki__task_start` spawn no longer crashes the server** (`scripts/task-mcp.js`, PR #17 by drawliu2025-eng): a missing working directory or a missing or non-executable binary emitted an `error` event that nothing listened to yet, so the whole process exited and every connected client lost its tools. The call now rejects with the reason, for example `Failed to spawn background task process: ENOENT`.
+
 ## [3.0.0] - 2026-10-07
 
 Major because `chrome_launch` no longer clones profiles and lost `refresh` (see Changed, Removed). Reconnect AkiMCP in every client after updating (see Changed).
