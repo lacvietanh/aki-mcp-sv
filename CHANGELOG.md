@@ -14,6 +14,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 
 ### Security
 - **A caller can no longer pick its own rate-limit key behind Tailscale Funnel** (`scripts/rate-limit.js`, `scripts/start.js`): the key came from `CF-Connecting-IP` first on every ingress, but only Cloudflare writes that header, so on Funnel any client could send its own and dodge the failed-credential block, the `/register` limit and so fill the 500 stored clients. Each ingress now reads only the header it writes itself: Cloudflare tunnel `CF-Connecting-IP`, Funnel the last `X-Forwarded-For` entry; `PUBLIC_ORIGIN` keeps both.
+- **Four `npm audit` findings are gone from the lockfile** (`package-lock.json`, PR #16 by anupamme asked for the `proxy-addr` one): `proxy-addr` 2.0.7 → 2.0.8, `@modelcontextprotocol/sdk` 1.30.0 → 1.32.1, `ip-address` 10.4.0 → 10.7.3 and `fast-uri` 3.1.7 → 3.1.8, all within the ranges `package.json` already allows; `npm audit` reports 0 and the full suite passes. The server runs on plain `node:http` and never calls the affected `proxy-addr` function, so this is hygiene, not a fix for a reachable hole.
 
 ## [3.0.0] - 2026-10-07
 
