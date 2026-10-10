@@ -12,6 +12,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 - **A Postman app that cannot be launched no longer kills the Postman daemon** (`scripts/postman/postman-session.cjs`): the same unhandled `error` event on a failed `spawn` (missing or non-executable Postman binary) ended the daemon process, and a launch that failed otherwise waited out the full readiness timeout. The launch now rejects at once with the reason, for example `Failed to launch Postman: EACCES`.
 - **`aki__devtools_eval` that times out before it reaches the page names the CDP endpoint, not "the script may have run"** (`scripts/cdp-engine.js`): out of time while still listing targets or connecting, nothing ran, so the error now says the endpoint did not answer and to check the app with `aki__port_status`; once connected, a frozen tab keeps the old text.
 
+### Security
+- **A caller can no longer pick its own rate-limit key behind Tailscale Funnel** (`scripts/rate-limit.js`, `scripts/start.js`): the key came from `CF-Connecting-IP` first on every ingress, but only Cloudflare writes that header, so on Funnel any client could send its own and dodge the failed-credential block, the `/register` limit and so fill the 500 stored clients. Each ingress now reads only the header it writes itself: Cloudflare tunnel `CF-Connecting-IP`, Funnel the last `X-Forwarded-For` entry; `PUBLIC_ORIGIN` keeps both.
+
 ## [3.0.0] - 2026-10-07
 
 Major because `chrome_launch` no longer clones profiles and lost `refresh` (see Changed, Removed). Reconnect AkiMCP in every client after updating (see Changed).

@@ -21,6 +21,7 @@ import { randomBytes } from 'node:crypto';
 import { openBrowser } from './open-browser.js';
 import { loadOrCreateClient, loadOrCreatePassphrase } from './oauth.js';
 import { startGatekeeper } from './gatekeeper.js';
+import { useIngress } from './rate-limit.js';
 import { startPanel } from './panel.js';
 import { warmToolsServer } from './streamable-bridge.js';
 import { checkForUpdate, writeStatusFile } from './update-check.js';
@@ -165,6 +166,7 @@ if (ingressMode === 'cloudflared') cloudflared = spawnCloudflared(cloudflaredCre
 // In-process gatekeeper (docs/plan/done/consolidate-mcp-tool-processes.md, Part B); a fatal listen error tears the whole stack down via shutdown, leaving no orphan.
 // Always binds 127.0.0.1:<port> so local tools connect with or without a public ingress; a resolved `origin` makes OAuth discovery live from boot.
 let gateServer = null;
+useIngress(ingressMode);
 try {
   gateServer = startGatekeeper(origin, () => shutdown(1));
 } catch (e) {

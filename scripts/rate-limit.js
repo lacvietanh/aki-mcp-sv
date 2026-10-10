@@ -97,16 +97,23 @@ export const registrations = createLimiter({
   },
 });
 
-// Tunnelled traffic reaches the gatekeeper from the tunnel client on loopback, so the socket address alone would put every remote caller in one bucket.
-// The forwarding headers are read only when the peer is loopback (a local process is already inside the trust boundary); the last X-Forwarded-For entry is the one the nearest proxy appended.
-// The key is caller-controlled text once it comes from a header, so it is length-bounded here and must be rendered as text, never markup.
+// Tunnelled traffic arrives from loopback, so the key is the one header the running ingress writes itself (docs/feat/security.md § Rate limiting); any other header is client text there.
+// A header key is caller-controlled: length-bounded here, rendered as text, never markup.
+const OWN_EDGE = ['cf-connecting-ip', 'x-forwarded-for'];
+const EDGE_HEADERS = { cloudflared: ['cf-connecting-ip'], funnel: ['x-forwarded-for'] };
+let addressHeaders = OWN_EDGE;
+
+export function useIngress(mode) {
+  addressHeaders = EDGE_HEADERS[mode] ?? OWN_EDGE;
+}
+
 export function clientKey(req) {
   const peer = req.socket.remoteAddress || 'unknown';
   if (!LOOPBACK.has(peer)) return peer;
-  const cloudflare = req.headers['cf-connecting-ip'];
-  const forwarded = req.headers['x-forwarded-for'];
   let key = 'loopback';
-  if (typeof cloudflare === 'string' && cloudflare) key = cloudflare.trim();
-  else if (typeof forwarded === 'string' && forwarded) key = forwarded.split(',').pop().trim();
+  for (const name of addressHeaders) {
+    const value = req.headers[name];
+    if (typeof value === 'string' && value) { key = value.split(',').pop().trim(); break; }
+  }
   return key.slice(0, MAX_KEY_LENGTH) || 'loopback';
 }

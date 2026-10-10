@@ -12,7 +12,7 @@ process.env.GATEKEEPER_PORT = '0';
 const goodToken = 'a'.repeat(64);
 writeFileSync(path.join(dir, 'tokens.json'), JSON.stringify({ access: { [goodToken]: { expires: Date.now() + 3600_000 } }, refresh: {} }));
 
-const { createLimiter, clientKey, readLimits, validateLimits, LIMIT_DEFAULTS } = await import('../scripts/rate-limit.js');
+const { createLimiter, clientKey, useIngress, readLimits, validateLimits, LIMIT_DEFAULTS } = await import('../scripts/rate-limit.js');
 const { startGatekeeper } = await import('../scripts/gatekeeper.js');
 
 let clock = 0;
@@ -45,6 +45,16 @@ assert.equal(clientKey(fake('203.0.113.9', { 'x-forwarded-for': '1.1.1.1' })), '
 assert.equal(clientKey(fake('127.0.0.1', { 'cf-connecting-ip': '198.51.100.7' })), '198.51.100.7');
 assert.equal(clientKey(fake('::1', { 'x-forwarded-for': 'spoofed, 198.51.100.8' })), '198.51.100.8');
 assert.equal(clientKey(fake('::ffff:127.0.0.1')), 'loopback');
+
+// Behind an ingress that writes one of the two headers, the other is client text and never becomes the key.
+const forged = { 'cf-connecting-ip': '198.51.100.99', 'x-forwarded-for': '198.51.100.8' };
+useIngress('funnel');
+assert.equal(clientKey(fake('127.0.0.1', forged)), '198.51.100.8');
+assert.equal(clientKey(fake('127.0.0.1', { 'cf-connecting-ip': '198.51.100.99' })), 'loopback');
+useIngress('cloudflared');
+assert.equal(clientKey(fake('127.0.0.1', { ...forged, 'cf-connecting-ip': '198.51.100.7' })), '198.51.100.7');
+assert.equal(clientKey(fake('127.0.0.1', { 'x-forwarded-for': '198.51.100.8' })), 'loopback');
+useIngress('public-origin');
 
 const printed = [];
 const consoleLog = console.log;

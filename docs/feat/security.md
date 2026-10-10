@@ -1,6 +1,6 @@
 # Security
 
-> updated 2026-10-07 · v3.0.0
+> updated 2026-10-11 · v3.0.0
 
 The one place for akimcp's whole security picture: stance, every surface and its gate, the connection limits, who holds access and who uses it, what each secret on disk unlocks and how to revoke it, and what is logged. README carries a summary and points here. Design record for client activity and the security-only log: `docs/plan/done/client-activity-and-security-log.md`.
 
@@ -85,7 +85,7 @@ Use the literal `127.0.0.1`, never `localhost`: on macOS `localhost` can resolve
 - **When a block ends:** by itself after `blockMinutes` (the counter restarts from zero), when the owner presses Release (one caller, or everyone) in panel section 7, when limits are turned off, or on restart. The panel lists every blocked caller with its remaining time.
 - **Valid Bearer always passes:** a caller that is blocked but holds the real token keeps working, so an attacker's failures from a shared address never cut an existing connection.
 - **Settings are read on every request**: a save applies at once. A missing or malformed value falls back to its default (`LIMIT_DEFAULTS`).
-- **Caller key:** the socket address; when the peer is loopback (tunnelled traffic), `CF-Connecting-IP`, else the last `X-Forwarded-For` entry, else the single bucket `loopback`. Headers are read only from a loopback peer, and the key is cut to 64 characters.
+- **Caller key:** the socket address; when the peer is loopback (tunnelled traffic), the header the running ingress writes itself, else the single bucket `loopback`. Cloudflare tunnel: `CF-Connecting-IP` only (Cloudflare sets it; seen live). Tailscale Funnel: the last `X-Forwarded-For` entry only (tailscaled replaces the header with the source address, read from its source, not seen live); a client-sent `CF-Connecting-IP` is ignored there. `PUBLIC_ORIGIN` (your own edge): `CF-Connecting-IP`, else the last `X-Forwarded-For` entry, trusting what your edge writes. The ingress is fixed at start (`useIngress` in `scripts/rate-limit.js`). Headers are read only from a loopback peer, and the key is cut to 64 characters.
 - **Footprint:** in memory only, at most 10,000 caller keys per limiter, a few timestamps each.
 
 Verdict record (`proportion.C1`):
@@ -98,7 +98,7 @@ Verdict record (`proportion.C1`):
 | Blast radius | brute force cannot succeed (49.5-bit passphrase, 256-bit token; at 1,000 guesses per second trying every passphrase takes about 26,000 years, calculated; at the default 5 per minute per address, far longer); the reachable harm is a disk and CPU flood through unauthenticated `/register` and log noise, recoverable |
 | Rung | 2: enforced once at the gatekeeper, the trust boundary that already exists |
 
-**Reopen when** the ingress is confirmed to forward no client address (then per-caller keys need another source or a global cap), a second user or a shared host is added, or the passphrase becomes user-chosen.
+**Reopen when** a live Funnel request shows `X-Forwarded-For` holding anything but the caller's address, or the ingress is confirmed to forward no client address (then per-caller keys need another source or a global cap), a second user or a shared host is added, or the passphrase becomes user-chosen.
 
 ## Tool reach — folders, shell allowlist, trusted zones
 
@@ -176,7 +176,7 @@ Volume: idle, nothing; a normal day, tens of lines; under attack, at most `failM
 - **One shared access token, so removing a client is not instant revocation:** Remove ends its refresh, but it keeps the current access token until Roll token; a leak is a leak for all. It also means `/mcp` traffic cannot be attributed to a client, only to a caller address.
 - **A fixed-bearer client breaks on every roll:** a custom MCP given the access token as a pasted bearer holds no refresh token, so Roll token (soft or hard) cuts it off until the token is pasted again, and so does the 1-year TTL. Notion is therefore connected with the passphrase, never with a pasted token; AIObox's Notion connect macro still pastes one (taken from `GET /api/access-token`) until it moves to the passphrase flow.
 - **No refresh token rotation** for the pre-issued static client (the spec's rotation rule targets public clients).
-- **The limiter is in memory and keyed per caller:** a restart clears it, a caller who can forge the forwarding headers picks its own key, and an ingress that forwards no address puts every remote caller in one bucket.
+- **The limiter is in memory and keyed per caller:** a restart clears it, behind your own `PUBLIC_ORIGIN` edge a caller who can forge the headers it does not overwrite picks its own key, and an ingress that forwards no address puts every remote caller in one bucket.
 - **DCR stores one client per connector instance**; a connector deleted on the provider's side keeps its refresh token here, so it stays listed as signed in until removed in section 7.
 - **The file tools reach akimcp's own data dir, by decision:** `~/.aki` is a default folder. `setting.json` (folders, shell allowlist, trusted zones) is writable by `write_file` / `edit_file`, so an AI can adjust them when asked; the allowlist therefore guards against a model's mistakes, not against a model that sets out to remove it. The credential files (`tokens.json`, `passphrase.txt`, `oauth-client.json`, `oauth-dcr-clients.json`, `cloudflared-cred.json`) are closed to every tool that takes a path, so a token does not land in the chat with the AI provider by accident: the file tools neither read nor write them, `run_cmd` and `task_start` refuse a command that names one, and `search_content` leaves them out of its results (`scripts/roots.js`). A route no path check sees (`grep -r` over the data dir, a copy in a task log or a spilled output file) still reaches their bytes, so every tool result also passes `redactResult` on its way out (`scripts/provider-registry.js`): each token-shaped value in those files (20+ characters of `[A-Za-z0-9+/=_-]`) and the passphrase come back as `[redacted]`, and so does the panel token in `instance.json` (the file stays readable for its ports and origin, but the token opens the panel, which shows the passphrase and rolls credentials), also before an oversized output is cut (`scripts/output-shape.js`, so a cut cannot split one) and in the message of a handler that throws. This stops a mistake, not a determined model: an encoded copy (compressed, base64) is not recognized, and a model that widens the allowlist to a shell can read anything the owner can. Owner decision, 2026-10-04.
 - **`local_fetch` checks the host it is given, not what a DNS name resolves to:** a name pointing at a link-local address is not caught.
