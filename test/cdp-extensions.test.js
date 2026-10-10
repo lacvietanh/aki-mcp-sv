@@ -54,7 +54,11 @@ async function testCdpExtensions() {
   await new Promise((resolve) => silent.listen(0, '127.0.0.1', resolve));
   const silentPort = silent.address().port;
   const listAt = Date.now();
-  await assert.rejects(cdp.evaluate({ port: silentPort, target: 'T-NONE', expression: '1', timeoutMs: 50 }), /the page did not answer within 0\.05s.*code timeout/);
+  await assert.rejects(cdp.evaluate({ port: silentPort, target: 'T-NONE', expression: '1', timeoutMs: 50 }), (e) => {
+    assert.match(e.message, /the CDP endpoint 127\.0\.0\.1:\d+ did not answer within 0\.05s; code timeout/);
+    assert.doesNotMatch(e.message, /may have run/);
+    return true;
+  });
   await assert.rejects(cdp.listTargets({ port: silentPort, timeoutMs: 50 }), /the CDP endpoint 127\.0\.0\.1:\d+ did not answer within 0\.05s; code timeout; next: check the app is running with aki__port_status/);
   assert.ok(Date.now() - listAt < 3000, 'a silent endpoint ends at the bound');
   silent.closeAllConnections();

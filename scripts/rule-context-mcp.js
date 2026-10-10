@@ -20,7 +20,7 @@ export const SHARED_WORK = [
   "- Every session edits the same checkout. Before editing: `git status`. A file already dirty that you did not change is someone else's: do not edit, stash, check out or commit it; ask the coordinator whose it is.",
   "- Your task's working file: `$HOME/.aki/mcpsv/task/<slug>/working.md` (goal, progress, next step, the files you edit). Drafts and notes go there or in /tmp, never in `~/.aki/` itself.",
   '- Files everyone touches (`CHANGELOG.md`, `working.md`): edit only your own lines, right before committing. Commit with `git commit -m "…" -- <your paths>`, never `git add -A` or `.`.',
-  '- Long or risky work on paths others touch too: `git worktree add <repo>/.claude/worktrees/<role> -b wt-<role>`, merged into main locally when done.',
+  '- Work in the shared checkout in turns, committing `-- <your paths>`. Create no worktree, build folder, clone or `node_modules` unless the work cannot be done without it (ask the coordinator first); whoever merges removes what was created in that same turn.',
   "- Handing work over: a letter in `~/.aki/handoff/` named for the successor's role. The successor reads it, the working.md and the old chat, takes over the working.md file list and tells the related sessions.",
 ].join('\n');
 // The gate (scripts/rule-gate.js): every tool that acts refuses a call without the current receipt.

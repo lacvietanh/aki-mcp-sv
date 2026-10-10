@@ -90,7 +90,8 @@ assert.equal(output.structuredContent.status, 'ok');
 assert.ok(output.content[0].text.startsWith(`NO YAPPING AT ALL\n${MANDATORY_BLOCK}\n\ncontext loaded: practical-effective · sha256:`), 'the mandatory block comes first, then the receipt');
 assert.ok(output.content[0].text.endsWith(` · 1 sources\nEvery tool that acts needs receipt=sha256:${'a'.repeat(64)}\n\n${SHARED_WORK}\n\nrules`), 'the receipt to pass on every acting tool, then the shared-work convention, then the corpus');
 // G2–G4 of aiobox audit-content-context (owner 2026-10-04): the AIObox guide drops them, so they must ship here.
-for (const must of ['git status', 'someone else', '$HOME/.aki/mcpsv/task/<slug>/working.md', '-- <your paths>', 'git add -A', '.claude/worktrees/<role>', '~/.aki/handoff/']) assert.ok(SHARED_WORK.includes(must), must);
+for (const must of ['git status', 'someone else', '$HOME/.aki/mcpsv/task/<slug>/working.md', '-- <your paths>', 'git add -A', 'Create no worktree, build folder, clone or `node_modules`', 'ask the coordinator first', 'removes what was created in that same turn', '~/.aki/handoff/']) assert.ok(SHARED_WORK.includes(must), must);
+assert.equal(SHARED_WORK.includes('git worktree add'), false, 'no instruction to create a worktree');
 assert.doesNotMatch(SHARED_WORK, /aiobox|desktop\/CHANGELOG/i, 'the shared-work text goes to every user, AIObox or not');
 assert.equal(/push|release|deploy/.test(SHARED_WORK), false, 'commit and push rules stay in AkiDevRule');
 assert.equal(AIOBOX_STEP, 'A page title starting with a handle like P2·W1 · means you are inside an AIObox window: call aki__aiobox op=state first.');

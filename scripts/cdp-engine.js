@@ -99,10 +99,14 @@ export async function evaluate({
   awaitPromise = true, returnByValue = true, userGesture = true, timeoutMs = CALL_BOUND_MS,
 } = {}) {
   if (!expression) throw new Error('evaluate requires an expression');
-  const onTimeout = () => timeoutError(`the page did not answer within ${timeoutMs / 1000}s (the tab is frozen, or the script is still running)`, 'the script may have run: check with a short read-only expression before running it again; still no answer: the tab is frozen, tell the owner');
+  let connected = false;
+  const onTimeout = () => (connected
+    ? timeoutError(`the page did not answer within ${timeoutMs / 1000}s (the tab is frozen, or the script is still running)`, 'the script may have run: check with a short read-only expression before running it again; still no answer: the tab is frozen, tell the owner')
+    : endpointTimeout(host, port, timeoutMs)());
   return bounded(timeoutMs, onTimeout, async (adopt) => {
     const resolved = await resolveTarget({ host, port, target, filter });
     const client = await adopt(await openClient({ host, port, target: resolved.webSocketDebuggerUrl || resolved.id }));
+    connected = true;
     await client.Runtime.enable().catch(() => {});
     const { result, exceptionDetails } = await client.Runtime.evaluate({ expression, awaitPromise, returnByValue, userGesture, includeCommandLineAPI: true });
     if (exceptionDetails) {
