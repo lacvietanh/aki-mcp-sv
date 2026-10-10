@@ -150,7 +150,18 @@ export async function taskStart({ command, cwd, taskId: requestedId }) {
 
   const pid = child.pid;
   if (!pid) {
-    throw new Error('Failed to spawn background task process');
+    // A failed spawn (missing cwd, non-executable or missing binary) emits 'error' on the next tick.
+    // The handler below is registered only on success, so without this listener that event is
+    // unhandled and takes the whole server down. Wait for it and report the reason instead.
+    const reason = await new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(null), 1000);
+      child.once('error', (e) => {
+        clearTimeout(timer);
+        resolve(e);
+      });
+    });
+    const detail = reason ? `: ${reason.code || reason.message}` : '';
+    throw new Error(`Failed to spawn background task process${detail}`);
   }
 
   child.unref();

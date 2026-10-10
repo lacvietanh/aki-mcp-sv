@@ -84,6 +84,17 @@ async function runTests() {
     'Path traversal in taskId must be rejected',
   );
 
+  // 4b. A failed spawn must reject with its reason and must not crash the process (regression:
+  // the child's 'error' event used to be unhandled, so a missing cwd or a non-executable file
+  // killed the whole server). Reaching the next line at all proves the process survived.
+  const missingCwd = path.join(os.homedir(), `missing-cwd-${Date.now()}`);
+  await assert.rejects(
+    () => taskStart({ command: 'node -v', cwd: missingCwd, taskId: `test_badcwd_${Date.now()}` }),
+    /Failed to spawn background task process: ENOENT/,
+    'A missing cwd must be reported, not crash the server',
+  );
+  await sleep(200);
+
   // 5. Starting an allowlisted command under the allowed roots. `node -v` is in the default allowlist, is an executable on every OS, and prints a known line.
   const testId = `test_nodev_${Date.now()}`;
   const expectedOutput = `${process.version}\n`;
