@@ -70,4 +70,4 @@ The same applies to the Notion-window failure wave of that morning (seven accoun
 - [x] Merge PR #17 as a merge commit; trailer stripped; `CHANGELOG.md` entry worded here (local only: not pushed, PR #17 stays Open until the owner pushes)
 - [x] Keep `test/task-mcp.test.js` case 4b; confirm it fails on the pre-fix tree (red on 9e99fdc, green on 627a755)
 - [x] Same fix for the Postman launch spawn (`postman-session.cjs`)
-- [ ] Filed in AIObox, not here: the restart gap leaving AkiMCP stopped without telling the owner; append-mode/rotated `akimcp.log`; the interrupted-account wave
+- [x] Filed in AIObox, not here (`aiobox: docs/plan/remaining-0.11.1.md` O5, 2026-10-11, uncommitted there): the restart gap leaving AkiMCP stopped without telling the owner; the log emptied at each Start. Still not filed: the interrupted-account wave of that morning
