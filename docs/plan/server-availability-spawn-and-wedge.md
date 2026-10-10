@@ -55,7 +55,7 @@ Reopen if a client reports that `tools/list` hangs while the panel answers 200 a
 
 ## Out of scope for this repo
 
-**What happens after a second exit is AIObox's.** The restart gap is a deliberate AIObox policy; changing it, or telling the owner when AkiMCP stopped by surprise and was not restarted (`stopped_unexpectedly_at_ms` exists in `process.rs`; no frontend use found), belongs in an AIObox plan.
+**What happens after a second exit is AIObox's.** The restart gap is a deliberate AIObox policy; changing it belongs in an AIObox plan. AIObox already shows the stop in its own window (`stopped_unexpectedly_at_ms` → titlebar chip and AkiMCP page with time, log and Start, `desktop/src/domain/akimcp.ts`), but sends no OS notification and never says "not restarted", so the owner learned of the 2026-10-10 stop only from chat errors in the AI windows.
 
 **The lost log is AIObox's too.** `~/.aki/aiobox/akimcp.log` is written by AIObox (`process.rs` `open_log`), documented in `aiobox/docs/feat/akimcp-connect.md:96` as "emptied at each Start and once past 1 MB", so the restart that recovered the server erased its last lines.
 
