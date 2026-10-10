@@ -47,11 +47,15 @@ AIObox restarts an AkiMCP that ends by surprise **at most once per 10 minutes** 
 
 Verdict: SUGGESTED, high confidence. The exit lines themselves are gone, so it is not CERTAIN. What would overturn it: any tool call answered between 12:21 and 12:48.
 
+The proof is correlation across episodes, not millisecond timings (successful `task_start` calls also take 5–550 ms): a slow `task_start` error is followed within seconds by a burst of "new caller" lines, i.e. a fresh process, at 09:06, 10:18, 12:20, 13:24, 14:55 and 15:09 on 2026-10-10. The same shape caused a second outage the same day, 13:24:52–14:55:21 (90 min), and a third restart pair at 15:09. "Not a wedge" holds for this incident only.
+
 ### Decision — R1 closed, no action
 
 R1 (null the shared bridge session when a forwarded request times out) guarded a state no log has ever shown across ~12,400 logged calls in 5 days. It would also fire on any legitimate long tool call (`MCP_REQUEST_TIMEOUT_MS`, 10 min), tearing down the one session every client shares. `pattern.A8`, `proportion.B4`. One shared session stays (`CLAUDE.md` § Session lifecycle; `done/bridge-session-churn.md`); per-client sessions and an `MCP_MAX_SESSIONS` cap stay forbidden.
 
-Reopen if a client reports that `tools/list` hangs while the panel answers 200 and `tool-calls.jsonl` shows no entries. The first step then is a durable one-line record of the timeout (detect), not a teardown.
+Reopen if clients go silent while the panel answers 200 and `security.log` shows no new-caller burst (a crash shows one). `tool-calls.jsonl` records tool calls only, never `tools/list`, so empty there proves nothing; check the panel and read `akimcp.log` **before** restarting, because AIObox empties that log on every start. The first step then is a durable one-line record of the timeout (detect), not a teardown.
+
+Unexplained, not investigated: the live process (started 15:18:07) logged 30 cloudflared `connection reset by peer` errors reading `127.0.0.1:9999` between 15:21 and 16:12.
 
 ## Out of scope for this repo
 
