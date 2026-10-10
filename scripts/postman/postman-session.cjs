@@ -102,7 +102,10 @@ class PostmanSession {
       ? () => options.port
       : () => PostmanSession.getDevToolsPort(null) || launchPort;
 
-    const endpoint = await PostmanSession.waitUntilReady(resolvePort, { ...options, cdp });
+    const spawnFailed = new Promise((_, reject) => {
+      child.once('error', (e) => reject(new Error(`Failed to launch Postman: ${e.code || e.message}`)));
+    });
+    const endpoint = await Promise.race([spawnFailed, PostmanSession.waitUntilReady(resolvePort, { ...options, cdp })]);
     return { ...endpoint, launched: true, launchProcessPid: child.pid || null };
   }
 }

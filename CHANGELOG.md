@@ -6,6 +6,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 
 ### Fixed
 - **A failed `aki__task_start` spawn no longer crashes the server** (`scripts/task-mcp.js`, PR #17 by drawliu2025-eng): a missing working directory or a missing or non-executable binary emitted an `error` event that nothing listened to yet, so the whole process exited and every connected client lost its tools. The call now rejects with the reason, for example `Failed to spawn background task process: ENOENT`.
+- **A Postman app that cannot be launched no longer kills the Postman daemon** (`scripts/postman/postman-session.cjs`): the same unhandled `error` event on a failed `spawn` (missing or non-executable Postman binary) ended the daemon process, and a launch that failed otherwise waited out the full readiness timeout. The launch now rejects at once with the reason, for example `Failed to launch Postman: EACCES`.
 
 ## [3.0.0] - 2026-10-07
 
