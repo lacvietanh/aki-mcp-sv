@@ -231,7 +231,7 @@ function readPortFile(dir) {
 }
 
 /** True when a CDP endpoint answers /json/version on the port; a leftover DevToolsActivePort alone proves nothing. */
-export function probeCdp(port, timeoutMs = 1500) {
+function probeCdp(port, timeoutMs = 1500) {
   return new Promise((resolve) => {
     const req = http.get({ host: '127.0.0.1', port, path: '/json/version', timeout: timeoutMs }, (res) => {
       let body = '';

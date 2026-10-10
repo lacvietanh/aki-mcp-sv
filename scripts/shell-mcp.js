@@ -10,10 +10,10 @@ import { ok, err, fail } from './mcp-tool.js';
 import { shapeForModel } from './output-shape.js';
 import { launchOf } from './find-on-path.js';
 
-// Interpreters run a script file passed as an argument, so trust must follow the script's path, not the interpreter binary (which lives on PATH, outside the trusted zones). Shells (sh/bash/zsh) are excluded on purpose — their argument is arbitrary code, not a file to locate under a zone.
+// Interpreters run a script argument, so trust follows the script's path, not the binary on PATH; shells are excluded because their argument is arbitrary code, not a file.
 const INTERPRETERS = new Set(['node', 'python', 'python3', 'bun', 'deno', 'tsx', 'ruby', 'perl', 'php']);
 
-// ls-remote requires zero extra args — a repository/URL argument lets git's own ext:: transport helper spawn an arbitrary process before anything "read-only" happens; bare invocation only queries the configured remote.
+// ls-remote takes no arguments: a URL argument lets git's ext:: transport spawn an arbitrary process; the bare form only queries the configured remote.
 const GIT_NO_ARGS_SUBCOMMANDS = new Set(['ls-remote']);
 
 // Where a refused command can be added. setting.json is read on every call, so an entry added there works on the next one, no restart (owner: an AI adds a missing command itself instead of asking).
@@ -31,7 +31,7 @@ const GIT_READ_FORMS = {
   remote: (a) => a.length === 0 || (a.length === 1 && a[0] === '-v') || (['show', 'get-url'].includes(a[0]) && a.length === 2 && !a[1].startsWith('-')),
 };
 
-// A zone that does not exist yet (skills not installed) stays as typed; one that is or sits under a symlink (macOS /var, a linked ~/.claude) must compare in real form, or no script inside it would ever match.
+// A zone under a symlink (macOS /var, a linked ~/.claude) must compare in real form or no script in it matches; a zone that does not exist yet stays as typed.
 const realOrSelf = (dir) => {
   try {
     return fs.realpathSync(dir);
@@ -74,9 +74,7 @@ export class Shell {
   // No backslash: `execFile` never spawns a shell, so it is an inert literal everywhere and a path separator on Windows.
   static DANGEROUS_CHARS = /[;&|`$<>\n]/;
 
-  // Only metacharacters OUTSIDE quotes can chain/redirect. execFile never spawns a shell, so a quoted
-  // occurrence (grep -E '^(name|description):' , grep -E 'foo$') is an inert argv literal. Validate a
-  // quote-stripped view — mirrors tokenize()'s quote model so the two agree — not the raw command.
+  // Only metacharacters outside quotes can chain or redirect (execFile spawns no shell, so `grep -E 'foo$'` is inert); validate a quote-stripped view matching tokenize()'s quote model.
   static unquotedView(command) {
     let out = '';
     let quote = null;

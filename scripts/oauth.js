@@ -1,7 +1,5 @@
 #!/usr/bin/env node
-// Minimal OAuth 2.1 authorization server.
-// Claude: pre-registered confidential client (paste Client ID/Secret), or DCR if it self-registers.
-// ChatGPT: RFC 7591 DCR + public client (token_endpoint_auth_method: none) + chatgpt.com redirect URIs.
+// Minimal OAuth 2.1 authorization server: a pre-registered confidential client (paste flow) plus RFC 7591 DCR public clients (token_endpoint_auth_method: none).
 import { randomBytes, randomInt, createHash, timingSafeEqual } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync, renameSync, rmSync } from 'node:fs';
 import os from 'node:os';
@@ -20,9 +18,9 @@ import { readLimits, clientKey } from './rate-limit.js';
 const CLAUDE_CALLBACK = 'https://claude.ai/api/mcp/auth_callback';
 const CHATGPT_LEGACY_CALLBACK = 'https://chatgpt.com/connector_platform_oauth_redirect';
 const CHATGPT_CALLBACK_PREFIX = 'https://chatgpt.com/connector/oauth/';
-// Gemini custom connected apps redirect through Google's OAuth proxy, not a gemini.google.com path — observed live 2026-08-09: redirect_uri=https://oauth-redirect.googleusercontent.com/r/user_bound_custom-mcp-<numeric>-<host-with-underscores>
+// Gemini custom connected apps redirect via Google's OAuth proxy, not gemini.google.com (observed live 2026-08-09: .../r/user_bound_custom-mcp-<numeric>-<host_with_underscores>).
 const GEMINI_CALLBACK_PREFIX = 'https://oauth-redirect.googleusercontent.com/r/';
-// Grok self-registers (DCR) with this callback — observed live 2026-08-09 from the register-REJECTED log: redirect_uris=["https://grok.com/connectors-oauth-exchange-code/"]. Note: NOT a /connector/oauth/ path.
+// Grok self-registers (DCR) with this callback, not a /connector/oauth/ path (observed live 2026-08-09).
 const GROK_CALLBACK_PREFIX = 'https://grok.com/connectors-oauth-exchange-code/';
 // Notion DCR self-registers as a confidential client on one of these hosts, matched on the parsed hostname so lookalikes fail (verified live 2026-09-22).
 const NOTION_CALLBACK_HOSTS = new Set(['notion.so', 'www.notion.so', 'app.notion.so', 'notion.com', 'www.notion.com', 'app.notion.com', 'mcp.notion.com']);
@@ -238,7 +236,7 @@ function resolveClient(clientId) {
   if (!clientId) return null;
   const staticClient = loadOrCreateClient();
   if (clientId === staticClient.clientId) {
-    // The confidential client's ID/secret are deliberately pasted into more than one provider (Claude, and Gemini which reuses the same paste flow). Each provider sends its own redirect_uri, so this client accepts any allowlisted callback (isStatic below), not just CLAUDE_CALLBACK — the allowlist (isAllowedRedirect) is the security boundary, the same one /register enforces for public clients.
+    // Pasted into several providers (Claude, Gemini), each with its own redirect_uri, so this client accepts any allowlisted callback; isAllowedRedirect is the security boundary.
     return {
       clientId: staticClient.clientId,
       clientSecret: staticClient.clientSecret,
@@ -388,7 +386,7 @@ export async function handleAuthorize(req, res, passphrase, origin) {
   const state = q.get('state') || '';
   const scope = (q.get('scope') || '').trim();
   const client = resolveClient(clientId);
-  // DCR clients are pinned to the exact redirect_uri they registered; the shared confidential client (isStatic) accepts any allowlisted callback, since it is pasted into several providers each with its own redirect.
+  // DCR clients are pinned to their registered redirect_uri; the static client accepts any allowlisted callback because several providers share it.
   const redirectOk = !!client && (client.redirectUris.includes(redirectUri) || (client.isStatic && isAllowedRedirect(redirectUri)));
 
   if (!redirectOk || codeChallengeMethod !== 'S256' || !codeChallenge) {

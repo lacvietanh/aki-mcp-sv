@@ -29,7 +29,7 @@ const RULES_INSTALL_CMD = 'npx @akinet/akidevrule@latest';
 const TAILSCALE_DOWNLOAD_URL = 'https://tailscale.com/download';
 const TAILSCALE_FUNNEL_URL = 'https://tailscale.com/docs/features/tailscale-funnel';
 const WIDEN_SNIPPET = "document.querySelectorAll('.max-w-3xl').forEach(el => el.classList.replace('max-w-3xl', 'max-w-7xl'));";
-// The paste-in instruction is static on purpose: tool details live in each tool's description and the /akirule how-to in aki__akidevrule_context, so only the two musts stay here (a client-side instruction is the one place that can insist).
+// Static on purpose: tool details live in tool descriptions and aki__akidevrule_context; only the two musts stay here, as a client-side instruction is the one place that can insist.
 const WEB_PROMPT = [
   'Always use the akimcp tools (aki__*) for local files, shell and browser.',
   'You MUST follow /akirule in every chat, in full, from your first action on. Never skip it, even for a small task.',
@@ -113,9 +113,7 @@ function secretField(label, value) {
 
 export function renderPanel({ origin, ingress = 'funnel', client, passphrase, token, accessToken, repoRoot, rulesDir, userDir, updateInfo = {}, savedIngress = null, isDev = false }) {
   const url = origin ? `${origin}/mcp` : 'not available yet, see section 0';
-  // Local-First: local clients (Postman Desktop, Cursor, Claude Code, AGY, Codex) run on this machine, so they
-  // connect straight to the loopback engine — zero WAN round-trip, works with no internet and no tunnel. Only the
-  // remote web connectors (Claude.ai, ChatGPT, …) need the public `url` above.
+  // Local clients connect straight to loopback (no WAN, no tunnel); only remote web connectors (Claude.ai, ChatGPT) need the public `url`.
   const localUrl = `http://127.0.0.1:${process.env.GATEKEEPER_PORT || 9999}/mcp`;
   const postmanJson = JSON.stringify({
     mcpServers: { 'aki-mcp-sv': { url: localUrl, headers: { Authorization: `Bearer ${accessToken}` } } },
@@ -125,7 +123,7 @@ export function renderPanel({ origin, ingress = 'funnel', client, passphrase, to
   const agyStdioPath = path.join(repoRoot, 'scripts', 'stdio.js');
   const agyJson = JSON.stringify({ mcpServers: { [AGY_SERVER_KEY]: { command: 'node', args: [agyStdioPath] } } });
   const claudeCodeCmd = `claude mcp add --transport http aki-mcp ${localUrl} --header "Authorization: Bearer ${accessToken}"`;
-  // Codex CLI (~/.codex/config.toml) speaks streamable HTTP via a `url` key; `http_headers` carries a static bearer so the snippet is copy-paste-ready with no shell env var to export first (matches how every other local tab embeds the token).
+  // Codex CLI (~/.codex/config.toml): `http_headers` carries a static bearer so the snippet is copy-paste-ready with no env var to export.
   const codexToml = `[mcp_servers.aki-mcp]\nurl = "${localUrl}"\nhttp_headers = { "Authorization" = "Bearer ${accessToken}" }`;
   const funnelMode = ingress === 'funnel';
   // Tab 3 (Hosted domain) never becomes the active ingress here — the service it needs is a separate, not-yet-built project.

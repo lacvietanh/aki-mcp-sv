@@ -150,9 +150,7 @@ export async function taskStart({ command, cwd, taskId: requestedId }) {
 
   const pid = child.pid;
   if (!pid) {
-    // A failed spawn (missing cwd, non-executable or missing binary) emits 'error' on the next tick.
-    // The handler below is registered only on success, so without this listener that event is
-    // unhandled and takes the whole server down. Wait for it and report the reason instead.
+    // A failed spawn emits 'error' on the next tick and, with no listener (the one below exists only on success), exits the whole process; so wait for it.
     const reason = await new Promise((resolve) => {
       const timer = setTimeout(() => resolve(null), 1000);
       child.once('error', (e) => {

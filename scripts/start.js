@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Orchestrates gatekeeper + panel + the in-process tools server behind 1 `npm start` / `akimcp`; foreground by design, manual stop/start only. Single Node process (docs/plan/done/2.0.0-improve.md #7, Stage 2).
+// Orchestrates gatekeeper + panel + the in-process tools server behind one `npm start` / `akimcp`; foreground, manual stop/start, single Node process (docs/plan/done/2.0.0-improve.md #7).
 
 import './cli-flags.js';
 import { readFileSync, existsSync } from 'node:fs';
@@ -159,15 +159,11 @@ function spawnCloudflared(credPath) {
   return child;
 }
 
-// Boot-time construction of the tools server: surfaces a registration-time crash (bad tool schema,
-// kiro-cli missing from PATH) loudly at startup instead of silently on the first tool call —
-// replaces the old spawnHub()'s "fail loud at boot" role now that it's in-process.
+// Build the tools server at boot so a registration-time crash (bad tool schema, kiro-cli missing from PATH) fails loud at startup, not on the first tool call.
 warmToolsServer();
 if (ingressMode === 'cloudflared') cloudflared = spawnCloudflared(cloudflaredCredPath);
-// Gatekeeper runs in-process (docs/plan/done/consolidate-mcp-tool-processes.md, Part B); a fatal listen error tears the whole stack down via shutdown, so no child is ever left orphaned.
-// Local-First: the Gatekeeper always binds 127.0.0.1:<port> so local tools (Cursor, Claude Code, AGY, Codex,
-// Postman) connect immediately — with or without a public ingress. A resolved `origin` is passed in so OAuth
-// discovery is live from boot; ingress is a satellite attached to this same server, never a gate.
+// In-process gatekeeper (docs/plan/done/consolidate-mcp-tool-processes.md, Part B); a fatal listen error tears the whole stack down via shutdown, leaving no orphan.
+// Always binds 127.0.0.1:<port> so local tools connect with or without a public ingress; a resolved `origin` makes OAuth discovery live from boot.
 let gateServer = null;
 try {
   gateServer = startGatekeeper(origin, () => shutdown(1));

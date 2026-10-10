@@ -1,14 +1,14 @@
-// Every tool that acts refuses a call without the receipt of the rules in force (docs/plan/rule-receipt-gate.md): an AI that skipped aki__akidevrule_context cannot write until it loads the rules. A receipt proves the rules were issued, not that they are still in the AI's context: after a compaction it still passes, so the refusal text tells the AI to reload without knownReceipt.
+// Every tool that acts refuses a call without the receipt of the rules in force (docs/plan/done/rule-receipt-gate.md); a receipt proves issuance, not presence in context, so the refusal text tells the AI to reload without knownReceipt.
 // A gated call that touches a project whose rule files the receipt does not cover is not run: the result carries those rules and a new receipt (D23 in docs/plan/akimcp-tool-refactor.md). Read tools always run and append one line naming the rule files.
 // A receipt counts only when this server issued it (aki__akidevrule_context records it here, in memory) and the same call made now still returns it: a changed rule file changes the receipt, so the old one is refused.
 import { z } from 'zod';
 import { assembleRuleContext } from './rule-context.js';
 import { pathsOf, rulesFor, rulesBlock, rulesLine, contentSha } from './project-rules.js';
 
-export const RECEIPT_ARG = 'receipt';
+const RECEIPT_ARG = 'receipt';
 const RECEIPT_RE = /^sha256:[a-f0-9]{64}$/;
 const MAX_ISSUED = 200;
-export const receiptSchema = z.string().optional().describe('required: the sha256:… receipt from aki__akidevrule_context');
+const receiptSchema = z.string().optional().describe('required: the sha256:… receipt from aki__akidevrule_context');
 
 let assemble = assembleRuleContext;
 const issued = new Map(); // receipt → { mode, workingPath, extraFiles }, oldest first

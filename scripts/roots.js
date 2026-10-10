@@ -6,7 +6,7 @@ import path from 'node:path';
 import { loadFolders, loadAllowlistDirs } from './allowlist.js';
 import { USER_DIR, TOKENS_PATH, PASSPHRASE_PATH, CLIENT_PATH, DCR_CLIENTS_PATH, CLOUDFLARED_CRED_PATH } from './userdata.js';
 
-// Fallback when setting.json carries no `folders` key yet (fresh install, or a folder edit was never saved via the panel): reconstructs the same default the old boot-time MCP_DATA_DIR env var used to expand to (dataDir + ~/.aki + ~/.claude), so behavior is unchanged until the first save — including the rule/config dirs the panel's own prompt-builder tells the AI to read.
+// Used while setting.json has no `folders` key: MCP_DATA_DIR (or home) plus ~/.aki and ~/.claude, the rule/config dirs the panel prompt tells the AI to read.
 function envDefaultRoots() {
   const base = (process.env.MCP_DATA_DIR || os.homedir())
     .split(',')
@@ -17,7 +17,7 @@ function envDefaultRoots() {
   return [...new Set([...(base.length ? base : [path.resolve(os.homedir())]), ...always])];
 }
 
-// Per-call read (no module-level snapshot): a folder add/remove in setting.json takes effect on the very next call, the same way the shell allowlist already does. An empty/malformed read must never widen to "no restriction" — the safe-default fallback below is mandatory, never optional.
+// Read per call so a setting.json folder edit applies on the next call; an empty or malformed read must fall back to a safe root, never to "no restriction".
 export function getRoots() {
   const stored = loadFolders().map((p) => path.resolve(p));
   const roots = stored.length ? stored : envDefaultRoots();
@@ -52,7 +52,7 @@ export function resolveUnderRoot(target) {
   return abs;
 }
 
-// Symlink-safe variant for filesystem-mcp.js's read/write/edit tools: resolveUnderRoot only checks the requested path's string prefix, which a symlink can defeat (a link *inside* a root pointing *outside* it). Ported from @modelcontextprotocol/server-filesystem's validatePath() — realpath the target and re-check containment on the resolved path, not the requested one. A target that doesn't exist yet (new file) falls back to validating its parent directory's real path instead, so file creation still works.
+// Symlink-safe: resolveUnderRoot checks only the string prefix, which a link inside a root can defeat, so re-check the realpath; a not-yet-existing target is validated via its parent's realpath.
 export async function resolveRealUnderRoot(target) {
   const abs = resolveUnderRoot(target);
   try {
@@ -79,7 +79,7 @@ export async function resolveRealUnderRoot(target) {
   }
 }
 
-// Trusted script zones (shell.allowlistDirs) run without a command row, so a file tool writing into one would be write + run = code execution. Refused by shape here, which is why a zone may sit inside a writable root. One helper, shared by both write resolvers, so the refusal cannot drift between them.
+// Trusted script zones (shell.allowlistDirs) run without a command row, so a file tool writing into one would be write + run = code execution; shared by both write resolvers.
 async function refuseTrustedZone(real) {
   const zones = await Promise.all(loadAllowlistDirs().map((dir) => realpath(dir).catch(() => dir)));
   const zone = zones.find((dir) => containedIn(real, dir));
@@ -161,7 +161,7 @@ export async function resolveRealWritable(target) {
   return real;
 }
 
-// mkdir -p variant: the target AND any number of intermediate parents may be missing. resolveRealUnderRoot only tolerates ONE missing level (correct for file writes, which never create parents), so directory creation gets its own resolver instead of loosening the shared one. Climb to the nearest EXISTING ancestor and realpath it: that is the symlink-safe check, because the not-yet-existing segments cannot be symlinks, so once the nearest real ancestor is contained, the path rebuilt from it is safe to create.
+// mkdir -p: any number of parents may be missing (resolveRealUnderRoot tolerates one); missing segments cannot be symlinks, so realpath of the nearest existing ancestor is the check.
 export async function resolveRealWritableDir(target) {
   const abs = resolveUnderRoot(target); // tilde/relative expansion + string containment
   const missing = [];
@@ -187,7 +187,7 @@ export async function resolveRealWritableDir(target) {
   return realTarget;
 }
 
-// Non-throwing variant for CLI-arm handlers: returns { ok, dir } or { ok:false, error }, so a caller wraps the failure however its context needs (sync fail() vs async) without repeating the try/catch and its Promise-wrapping footgun.
+// Non-throwing resolveUnderRoot for CLI-arm handlers: { ok, dir } or { ok: false, error }.
 export function resolveOrFail(target) {
   try {
     return { ok: true, dir: resolveUnderRoot(target) };

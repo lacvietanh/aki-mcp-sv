@@ -13,9 +13,7 @@ import CDP from 'chrome-remote-interface';
 const DEFAULT_HOST = '127.0.0.1';
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// Where each known app writes its live DevToolsActivePort file (first line = the actual port a
-// running instance bound to — authoritative, unlike a guessed 9222). A caller that already knows
-// the port passes it directly and skips this. Unknown app => treat the arg as the support-dir name.
+// Live DevToolsActivePort file per app: line 1 is the port the running instance actually bound (a guessed 9222 is not authoritative); an unknown app name is used as the support-dir name.
 function devToolsPortFile(app = 'postman') {
   const home = os.homedir();
   const NAMES = { postman: 'Postman', code: 'Code', slack: 'Slack' };
@@ -25,9 +23,7 @@ function devToolsPortFile(app = 'postman') {
   return path.join(home, '.config', dirName, 'DevToolsActivePort');
 }
 
-// Returns the port an app is actually listening on, or null. Never silently falls back to 9222:
-// a null result is an honest "unknown", which the caller can surface instead of targeting the
-// wrong process (the "silent 9222" trap in postman-session.getDevToolsPort()).
+// Returns the port the app listens on, or null; never falls back to 9222, so the caller can surface "unknown" instead of targeting the wrong process.
 export function readDevToolsPort(app = 'postman') {
   try {
     const first = fs.readFileSync(devToolsPortFile(app), 'utf8').trim().split('\n')[0];
@@ -97,7 +93,7 @@ function selectTarget(targets, filter) {
   return pages.find(test) || null;
 }
 
-// Evaluate JS in a target and return the serialized result — or throw with the page-side message on a thrown exception. `target` may be a target object (from listTargets/findTarget), a target id string, or omitted with a `filter` to locate one.
+// Throws with the page-side message when the evaluated JS throws; `target` is a target object, an id string, or omitted with a `filter`.
 export async function evaluate({
   host = DEFAULT_HOST, port, target, filter, expression,
   awaitPromise = true, returnByValue = true, userGesture = true, timeoutMs = CALL_BOUND_MS,
@@ -131,9 +127,7 @@ async function resolveTarget({ host, port, target, filter }) {
   return resolved;
 }
 
-// Find the first page target whose in-page probe returns truthy. Robust for multi-window apps
-// (Postman opens several renderers) where the right window is identified by its DOM/mediator, not
-// its url. Polls until timeout so it also waits for the SPA to mount (fixes false-ready).
+// Multi-window apps (Postman) have several renderers identified by DOM, not url; polling until timeout also waits for the SPA to mount.
 export async function findTarget({ host = DEFAULT_HOST, port, probeExpression, timeoutMs = 15000, pollMs = 200 } = {}) {
   if (!probeExpression) throw new Error('findTarget requires a probeExpression');
   const deadline = Date.now() + timeoutMs;

@@ -152,9 +152,7 @@ async function installRules() {
     }
     repo = RULES_CLONE_DIR;
   }
-  // akidevrule ships install.ps1 for Windows on purpose: a bare `bash.exe` there resolves to the WSL
-  // launcher (C:\Windows\System32\bash.exe) and dies with "execvpe(/bin/bash) failed" when no WSL distro is installed.
-  // Pick a real interpreter by platform (PowerShell on Windows, bash otherwise); never fall through to WSL bash.
+  // Windows uses install.ps1: a bare `bash.exe` resolves to the WSL launcher and fails with "execvpe(/bin/bash) failed" when no distro is installed.
   let cmd, args;
   if (IS_WIN) {
     if (existsSync(path.join(repo, 'install.ps1'))) {
@@ -178,7 +176,7 @@ async function installRules() {
   }
 }
 
-// Pull this repo, but only when the tree is clean — an unattended pull over local edits can conflict or lose work (agent.B3). Checked at click-time, not page-load, since the tree can change in between.
+// Pull only on a clean tree (a pull over local edits can conflict or lose work), checked at click-time since the tree can change after page-load.
 async function pullUpdate() {
   if (!existsSync(path.join(REPO_ROOT, '.git'))) {
     throw new Error('installed via npm: run `npm i -g @akinet/akimcp` in your terminal to update');
@@ -191,7 +189,7 @@ async function pullUpdate() {
   return 'pulled latest — restart akimcp to load the new code';
 }
 
-// A rule install updates the on-disk corpus but not the boot-time updateInfo, so without this a reload re-rendered a stale "update available" banner. Recompute current from disk against the boot-time latest.
+// A rule install updates the on-disk corpus but not the boot-time updateInfo; recompute current from disk, else a reload shows a stale "update available" banner.
 function refreshLocalVersions(updateInfo) {
   const local = getLocalVersions();
   updateInfo.mcp.current = local.mcp;
@@ -212,7 +210,7 @@ export const ROUTES = {
   'GET /api/tailscale': async () => funnelStatus(process.env.GATEKEEPER_PORT || '9999'),
   // Same function aki__postman_status calls (scripts/postman/postman-mcp.js) — one status shape, two readers.
   'GET /api/postman-status': async () => getDaemonStatus(),
-  // The one launch action (panel Postman tab button) — spawn-or-recognize lives in launchPostmanDaemon itself (scripts/postman/postman-mcp.js), so N clicks here behave like one, same as every other panel action.
+  // Spawn-or-recognize lives in launchPostmanDaemon (scripts/postman/postman-mcp.js), so N clicks behave like one.
   'POST /api/postman-launch': async () => launchPostmanDaemon(),
   // Quit returns the real post-kill status (running/pid), never a placeholder "stopping…".
   'POST /api/postman-quit': async () => killPostmanDaemon(),

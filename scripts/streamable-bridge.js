@@ -1,10 +1,5 @@
 #!/usr/bin/env node
-// Streamable HTTP shim: bridges POST /mcp directly to the in-process tools McpServer over the SDK's
-// InMemoryTransport — no more separate mcp-hub process or SSE handshake (docs/plan/done/2.0.0-improve.md
-// #7, Stage 2 phase 2). One shared internal session for the whole process, same as before the
-// collapse: rationale in docs/plan/done/bridge-session-churn.md (Option B) and CLAUDE.md § Session
-// lifecycle — claude.ai re-sends `initialize` with no session id roughly every ~10s per conversation,
-// so every external "session" multiplexes onto one real MCP session, answered from a local cache.
+// Streamable HTTP shim: POST /mcp to the in-process tools McpServer over InMemoryTransport, all clients on one shared session (docs/plan/done/bridge-session-churn.md).
 import { randomBytes } from 'node:crypto';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { log } from './log.js';
@@ -27,9 +22,7 @@ async function invalidArgsHint(session, params) {
   return unknown.length ? ` (akimcp ${VERSION}: ${params.name} takes no ${unknown.join(', ')}; its arguments are ${Object.keys(properties).join(', ')})` : STALE_SCHEMA_HINT;
 }
 
-// The single internal session; null until the first external `initialize` boots it. Nothing in the
-// new in-process transport can independently die the way an upstream SSE socket could, so this only
-// ever resets via close()/onclose below — kept as defensive insurance, not an expected runtime path.
+// The single internal session; null until the first external `initialize` boots it, reset only via close()/onclose below.
 let shared = null;
 let sharedBoot = null; // in-flight boot promise — collapses concurrent first-initializes onto one session
 let nextUpstreamId = 1; // globally-unique id per forwarded request; the remap that lets clients share one session
@@ -117,9 +110,7 @@ function ensureShared(initParams) {
   });
 }
 
-// Called once at start.js boot: constructs a throwaway tools server so a registration-time crash
-// (a bad tool schema, a broken import) surfaces immediately in the startup console, before any real
-// client ever connects — the same "fail loud at boot" role mcp-hub's spawnHub() used to play.
+// Called once at start.js boot: a throwaway tools server so a registration-time crash (bad tool schema, broken import) surfaces in the startup console before any client connects.
 export function warmToolsServer() {
   createToolsServer();
 }

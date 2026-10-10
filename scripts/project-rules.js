@@ -8,7 +8,7 @@ import { PROJECT_FILES } from './rule-context.js';
 
 // Input names the tools use for a path they touch; a relative path is skipped (its base differs per tool).
 const PATH_KEYS = ['path', 'paths', 'cwd', 'workdir', 'workingPath', 'source', 'destination', 'directory', 'dir', 'root', 'file', 'files'];
-export const MAX_RULE_BYTES = 32 * 1024;
+const MAX_RULE_BYTES = 32 * 1024;
 
 function absolute(p) {
   if (typeof p !== 'string' || !p) return null;

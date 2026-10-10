@@ -84,9 +84,7 @@ async function runTests() {
     'Path traversal in taskId must be rejected',
   );
 
-  // 4b. A failed spawn must reject with its reason and must not crash the process (regression:
-  // the child's 'error' event used to be unhandled, so a missing cwd or a non-executable file
-  // killed the whole server). Reaching the next line at all proves the process survived.
+  // 4b. A failed spawn rejects with its reason instead of crashing the process.
   const missingCwd = path.join(os.homedir(), `missing-cwd-${Date.now()}`);
   await assert.rejects(
     () => taskStart({ command: 'node -v', cwd: missingCwd, taskId: `test_badcwd_${Date.now()}` }),

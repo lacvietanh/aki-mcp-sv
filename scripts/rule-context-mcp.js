@@ -3,16 +3,16 @@ import { assembleRuleContext, RuleContextError } from './rule-context.js';
 import { aioboxInstalled, AIOBOX_PITCH } from './aiobox-guide.js';
 import { recordIssued } from './rule-gate.js';
 
-export const RULE_CONTEXT_TOOL = 'akidevrule_context';
+const RULE_CONTEXT_TOOL = 'akidevrule_context';
 export const RULE_CONTEXT_TITLE = 'Load Effective Aki/Claude Context';
-// Both strings end with the /akirule step: SKILL.md is embedded every session via CLAUDE.md and echoed in this tool's output, so the step points the model at the already-present routing table; only the routed RULE/METHOD files still need a Read.
+// Both strings end with the /akirule step: SKILL.md is already embedded every session, so the step points at its routing table; only the routed RULE/METHOD files need a Read.
 const AKIRULE_STEP = 'Then follow /akirule: the SKILL.md routing table is already included in this output (and in every session) — do not re-read SKILL.md; from its routes, Read only the RULE/METHOD files the task needs, since those are not preloaded. Open your first reply with `[RULES] agent (core) + <topics> (router)` naming the route files you actually Read; a receipt without (router), or the sha256 line copied, is a violation.';
 // Printed first (owner 2026-10-04): a web chat has no aki-route-guard hook, and with the sha256 line first it copied that as its receipt, skipping hop 2 (Read the routed files).
 // Owner 2026-10-04: first line of every output, success or error.
-export const NO_YAPPING = 'NO YAPPING AT ALL';
+const NO_YAPPING = 'NO YAPPING AT ALL';
 export const MANDATORY_BLOCK = 'BLOCKING — no rule Read, no action: before anything else, Read the route files the task matches in the SKILL.md table below (code → coding + pattern, .md → docs, decision → think). Every reply opens `[RULES] agent (core) + <topics> (router)` naming only files actually Read; no (router) = violation. Nothing is "done" without read-back evidence (agent.B2).';
 const CONDUCT_STEP = 'Attempt an operation before calling it impossible, never claim a missing capability, and on failure report the exact command, absolute path, exit status and stderr; state the action and its impact before a destructive or external step.';
-// Self-classifying, not server-detected: the shared MCP session (CLAUDE.md § Session lifecycle) never tracks per-client identity, so the model must judge this from its own nature, not be told which client it is.
+// Self-classifying: the shared session (CLAUDE.md § Session lifecycle) tracks no per-client identity, so the model judges this from its own nature.
 const RESUME_STEP = 'If you are a stateless web chat with no session memory of your own (e.g. a browser AI chat) and the task spans multiple steps, keep a live working file at $HOME/.aki/mcpsv/task/<slug>/working.md (record the goal, progress so far, and the next step) — check for an existing one first and update it as you go — so a later session can resume; skip this if you already have your own persistent session/task tracking (local CLI or app) or the task is a single step.';
 // How sessions share one checkout, working file and handoff letters (owner 2026-10-04): AkiMCP's own convention, not AkiDevRule's or the AIObox guide's. Commit/push rules stay in AkiDevRule.
 export const SHARED_WORK = [
