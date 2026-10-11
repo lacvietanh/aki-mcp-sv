@@ -7,6 +7,7 @@ import path from 'node:path';
 
 // userdata.js reads AKI_MCP_DATA_DIR at import, so the env is set before the gatekeeper loads; the real ~/.aki/mcpsv is never touched.
 const dir = mkdtempSync(path.join(os.tmpdir(), 'aki-ratelimit-test-'));
+process.once('exit', () => rmSync(dir, { recursive: true, force: true }));
 process.env.AKI_MCP_DATA_DIR = dir;
 process.env.GATEKEEPER_PORT = '0';
 const goodToken = 'a'.repeat(64);
@@ -94,5 +95,4 @@ for (let i = 0; i < 100; i++) assert.equal(await register('198.51.100.4'), 201, 
 assert.equal(await register('198.51.100.4'), 429, 'a caller registering in bulk is refused');
 assert.equal(await register('198.51.100.5'), 201, 'another caller can still register');
 withIngress.close();
-rmSync(dir, { recursive: true, force: true });
 console.log('rate-limit.test.js: ok');

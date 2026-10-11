@@ -43,7 +43,7 @@ async function testCdpExtensions() {
     return true;
   });
   assert.ok(Date.now() - startedAt < 3000);
-  // S7: one call ends within its bound end to end, under the client's ~60 s: 50 s by default, and a screenshot of a frozen tab too.
+  // One call ends within its bound end to end, under the client's ~60 s: 50 s by default, and a screenshot of a frozen tab too.
   assert.equal(cdp.CALL_BOUND_MS, 50_000);
   const shotAt = Date.now();
   await assert.rejects(cdp.screenshot({ port, target, timeoutMs: 50 }), /gave no screenshot within 0\.05s.*code timeout; next: try once more/);

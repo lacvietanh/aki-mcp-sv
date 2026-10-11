@@ -91,7 +91,6 @@ async function runTests() {
     /Failed to spawn background task process: ENOENT/,
     'A missing cwd must be reported, not crash the server',
   );
-  await sleep(200);
 
   // 5. Starting an allowlisted command under the allowed roots. `node -v` is in the default allowlist, is an executable on every OS, and prints a known line.
   const testId = `test_nodev_${Date.now()}`;
@@ -150,7 +149,6 @@ async function runTests() {
 
   // 9. Test task_manage: list
   const listResult = await taskManage({ action: 'list' });
-  assert.ok(Array.isArray(listResult));
   const found = listResult.find((t) => t.taskId === testId);
   assert.ok(found, 'Task must appear in task list');
 
