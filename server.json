@@ -3,7 +3,7 @@
   "name": "io.github.lacvietanh/akimcp",
   "title": "AKIMCP",
   "description": "Local files, search, git, whitelist-only shell and browser tools for AI chats on your own machine",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "websiteUrl": "https://akimcp.top",
   "repository": {
     "url": "https://github.com/lacvietanh/aki-mcp-sv",
@@ -13,7 +13,7 @@
     {
       "registryType": "npm",
       "identifier": "@akinet/akimcp",
-      "version": "3.0.0",
+      "version": "3.0.1",
       "runtimeHint": "npx",
       "packageArguments": [
         {

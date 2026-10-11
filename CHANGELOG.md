@@ -2,7 +2,7 @@
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning per [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [3.0.1] - 2026-10-11
 
 ### Changed
 - **`aki__akidevrule_context` no longer tells sessions to create a worktree** (`scripts/rule-context-mcp.js`, owner 2026-10-06): the shared-work text says to work in the shared checkout in turns, create no worktree, build folder, clone or `node_modules` unless the work cannot be done without one, ask the coordinator first, and whoever merges removes what was created in that same turn.
