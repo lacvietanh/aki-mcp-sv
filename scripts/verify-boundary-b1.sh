@@ -13,11 +13,19 @@ fail() {
 
 cd "$REPO_ROOT"
 
-echo "== 1/4: shared contract is byte-identical in both repos =="
+# Line 5 of each copy names the other copy, so it is the one line the twins differ in (aiobox docs/arch/akimcp-boundary.md BR-7, T1).
+TWIN_LINE=5
+
+without_twin_line() {
+  sed -n "${TWIN_LINE}p" "$1" | grep -q "Bản sinh đôi" || fail "line $TWIN_LINE of $1 no longer names the twin copy; set TWIN_LINE to the line that does"
+  sed "${TWIN_LINE}d" "$1" | shasum -a 256 | cut -d' ' -f1
+}
+
+echo "== 1/4: shared contract is identical in both repos, but for line $TWIN_LINE =="
 [ -f "$AIOBOX_REPO/$CONTRACT" ] || fail "aiobox repo not found at $AIOBOX_REPO (set AIOBOX_REPO=<path>)"
-ours="$(shasum -a 256 "$CONTRACT" | cut -d' ' -f1)"
-theirs="$(shasum -a 256 "$AIOBOX_REPO/$CONTRACT" | cut -d' ' -f1)"
-[ "$ours" = "$theirs" ] || fail "$CONTRACT differs between aki-mcp-sv ($ours) and aiobox ($theirs) — the aiobox copy is the source; copy it over, never edit this one"
+ours="$(without_twin_line "$CONTRACT")"
+theirs="$(without_twin_line "$AIOBOX_REPO/$CONTRACT")"
+[ "$ours" = "$theirs" ] || fail "$CONTRACT differs between aki-mcp-sv ($ours) and aiobox ($theirs) outside line $TWIN_LINE: make both copies say the same, in the same session (diff <(sed ${TWIN_LINE}d $CONTRACT) <(sed ${TWIN_LINE}d $AIOBOX_REPO/$CONTRACT))"
 echo "ok $ours"
 
 echo "== 2/4: node --check on every script and test =="
