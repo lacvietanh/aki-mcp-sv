@@ -352,7 +352,7 @@ export async function launchChrome(profile = 'Default', {
     `--user-data-dir=${dir}`,
     `--profile-directory=${profileDir}`,
     '--remote-debugging-port=0',
-    // Marker so AIObox engine::adopt can tell this Chrome apart and leave it alone (IMPORTANT-shared-cdp-profiles.md).
+    // Marker naming who started this Chrome; AIObox adopts it like any other (IMPORTANT-shared-cdp-profiles.md).
     '--aki-launcher=akimcp',
     '--no-first-run',
     '--no-default-browser-check',
