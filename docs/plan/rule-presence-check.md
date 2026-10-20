@@ -113,13 +113,13 @@ Consequence for the build: nothing here may be justified by "Claude Code does it
 
 ## Dependency — AkiDevRule route map (D2, owner gate)
 
-In progress in AkiDevRule (its plan `docs/plan/route-map-json.md`; on 2026-10-20 still uncommitted there): `payload/route-map.json` exists, is deployed to `~/.aki/akidevrule/route-map.json`, and both the hook and `scripts/second_hop_audit.py` read it, which ends the drifted hand copy. JSON, never executable code: AkiMCP must not run code from the rules directory. AkiMCP works without it (D4): it then checks the core and project files only.
+Landed in AkiDevRule (its plan `docs/plan/route-map-json.md`, commit `bfba186`, 2026-10-20, not yet released there): `payload/route-map.json` is deployed to `~/.aki/akidevrule/route-map.json` and read by the hook, `scripts/second_hop_audit.py` and `skills/akiflow/scripts/test_lint.py`, which ends the drifted hand copy. The Claude config dir and outside-project checks stay in hook code, not in the map; AkiMCP has its own equivalents (allowed roots, project root by `.git`, D4). JSON, never executable code: AkiMCP must not run code from the rules directory. AkiMCP works without it (D4): it then checks the core and project files only.
 
 What stays code is the interpreter of the map's fields (`ext`, `name`, `nameRe`, `dirRe`, `dirSkipExt`, `projectHas`, `ungated.segments/prefixes/dirs`), today `routesFor` and `isUngatedPath` in the hook. AkiMCP needs its own, a second interpreter of one data file: step 3 keeps it to those fields, refuses a map with a field it does not know (falls back to core + project files, logged) rather than guessing, and its test feeds the deployed map the same paths the hook is tested on.
 
 ## Steps
 
-- [ ] 0. AkiDevRule route map (its own plan `route-map-json.md`, in progress there; may land before or after 1–5).
+- [x] 0. AkiDevRule route map (its own plan `route-map-json.md`, committed `bfba186` 2026-10-20; ships with its next release).
 - [ ] 1. `scripts/rule-gate.js`: per-issuance receipt entry, ledger (D2), `extraFiles` chain removed (D3), freshness and check (D5), leak scan in `withRules` (D7), log fields (D10); comment lines 1–3 rewritten.
 - [ ] 2. `scripts/rule-context-mcp.js`: issue the per-issuance receipt (D1), `proof` argument and its two replies (D6), `knownReceipt` never resets the clock (D8); `RECEIPT_STEP`, description and server instructions name the check once.
 - [ ] 3. `scripts/project-rules.js`: read the route map, project root by `.git`, ungated paths (D4); no map → today's behaviour.
