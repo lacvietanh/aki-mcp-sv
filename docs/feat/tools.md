@@ -1,6 +1,6 @@
 # Tools — the local capability suite (anchored)
 
-> updated 2026-10-07 · v3.0.0
+> updated 2026-10-20 · v3.0.1
 
 The product's single purpose: give a remote web AI (claude.ai / ChatGPT / Grok / Gemini / Postman) a set of **local capabilities** on the owner's machine — a pair of hands reaching from the browser into the local filesystem, shell, and local agents. Every tool below exists to serve that anchor. This doc records **why each one is here** so a later subtraction audit does not mistake an anchored capability for redundant code and propose removing it.
 
@@ -77,13 +77,14 @@ Some tools overlap on purpose. Each pair below stays because the second one is r
 
 ## Output shaping — what the model reads back from `run_cmd`
 
-The cost of a tool is the tokens its output puts in the remote model's context, so `run_cmd` (and the `git` tool) return shaped text (`scripts/output-shape.js`; research and rejected alternatives: [`research/token-saving-rtk.md`](../research/token-saving-rtk.md)). Rule: nothing is destroyed that cannot be recovered verbatim, and a cut is announced on the first line.
+The cost of a tool is the tokens its output puts in the remote model's context, so `run_cmd` (and the `git` tool) return shaped text (`scripts/output-shape.js`; research and rejected alternatives: [`research/token-saving-rtk.md`](../research/token-saving-rtk.md)). Rule, accuracy before saving: output a model counts, quotes, diffs or uses to claim absence never loses content silently; a cut keeps the raw text recoverable verbatim and says so on line 1 with a word the shared rule `coding.B3` reads as "this is a sample" (`truncated`, `omitted`).
 
-- **Cleaned, losslessly:** ANSI codes removed; carriage-return progress keeps its last redraw; a run of 3 or more identical lines becomes the line plus `[previous line repeated N times in total]`.
-- **Cut, recoverably:** past about 20k characters the model gets the first ~14k and last ~6k at line boundaries. Line 1 states the sizes and the path of the saved raw text, `~/.aki/mcpsv/out/<time>-<id>.txt` (owner-only, newest 20 kept). Read it with `read_text_file` (`head`/`tail`) or find the middle with `search_content`; no extra tool is registered, since every tool costs its schema on every turn. The folder is under the always-allowed `~/.aki` root only while `AKI_MCP_DATA_DIR` stays at its default.
-- **Failures keep their evidence:** a non-zero exit returns `[exit code N]`, then stdout and stderr (test failures print to stdout). A timeout or the 32 MB capture limit says so in the same first line.
-- **`aki__git op=diff`** shows whole files in order and names the omitted ones with their size first; re-request them with `file=<path>`.
-- **Not done on purpose:** field-dropping filters for `ls`/`git log`, noise-directory hiding, test-runner summaries by keyword. Reasons in the research doc.
+- **Cleaned, losslessly:** ANSI codes removed; a run of 3 or more identical lines becomes the line plus `[previous line repeated N times in total]`. A lone carriage return is kept as is: treating it as a progress redraw dropped records from files with CR line endings.
+- **Cut, recoverably:** past about 20k characters the model gets the first ~14k and last ~6k at line boundaries. Line 1 (`[output truncated: …]`) states the sizes and the path of the saved raw text, `~/.aki/mcpsv/out/<time>-<id>.txt` (owner-only, newest 20 kept). Read it with `read_text_file` (`head`/`tail`) or find the middle with `search_content`; no extra tool is registered, since every tool costs its schema on every turn. The folder is under the always-allowed `~/.aki` root only while `AKI_MCP_DATA_DIR` stays at its default.
+- **stderr is never dropped:** a success returns stdout, then `[stderr]` and stderr when there is any (warnings, partial errors); a non-zero exit puts `[exit code N]` before the same stdout and `[stderr]` block (test failures print to stdout). A timeout or the 32 MB capture limit says so in the same first line.
+- **`aki__git op=diff`** shows whole files in order and names the omitted ones with their size first; re-request them with `file=<path>`. **`op=log`** returns `{commits: [{hash, author, date, subject}], more}`: `subject` is the first line of the message only (the full message through `run_cmd git log`), `more` says older commits exist beyond `limit`.
+- **`search_content` and `find_path` say what they did not cover:** everything is on line 1. A capped result says `showing the first N (truncated …)`; a grep stopped by its 30 s timeout or 4 MB capture limit says `truncated, incomplete`, drops the partial last line and calls the count a lower bound; grep errors are counted and their first 3 lines shown; a grep that cannot run (missing on `PATH`) is an `error:`, never "no lines matched". `(omitted from search: …)` names what was not searched: for `find_path` the skipped directories it met (`node_modules`, `build`, …), a reached depth limit and unreadable directories; for a `search_content` no-match the excluded directories and akimcp's credential files.
+- **Not done on purpose:** field-dropping filters for `ls`/`git log` in `run_cmd`, test-runner summaries by keyword. Reasons in the research doc. Recorded, reopen when seen: git warnings on a successful `git` tool call are dropped, OSC 8 hyperlinks lose their URL with the ANSI strip, and a spill file can be rotated out (newest 20) before a model reads it back.
 
 ## Search ladder — how the model should compose a hunt
 

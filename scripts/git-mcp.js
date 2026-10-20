@@ -85,12 +85,13 @@ const OPS = {
     return capDiffByFile(diff);
   },
   async log({ cwd, limit = 10 }) {
-    const raw = await gitCmd(['log', `-n${limit}`, '--pretty=format:%h%x09%an%x09%ad%x09%s', '--date=short'], cwd);
-    const commits = raw.trim().split('\n').filter(Boolean).map((line) => {
+    const raw = await gitCmd(['log', `-n${limit + 1}`, '--pretty=format:%h%x09%an%x09%ad%x09%s', '--date=short'], cwd);
+    const lines = raw.trim().split('\n').filter(Boolean);
+    const commits = lines.slice(0, limit).map((line) => {
       const [hash, author, date, ...rest] = line.split('\t');
-      return { hash, author, date, message: rest.join('\t') };
+      return { hash, author, date, subject: rest.join('\t') };
     });
-    return JSON.stringify(commits, null, 2);
+    return JSON.stringify({ commits, more: lines.length > limit }, null, 2);
   },
   async tags({ cwd, remote }) {
     if (!remote) return (await gitCmd(['tag', '--sort=-creatordate'], cwd)).trim() || 'No tags.';
@@ -109,7 +110,7 @@ export function register(server) {
       // openWorld: op=tags remote= reaches the network through ls-remote.
       annotations: { readOnlyHint: true, openWorldHint: true },
       description:
-        'Read-only git with compact output, cheaper in tokens than run_cmd. op=status: branch, upstream, staged/unstaged/untracked as JSON. op=diff: working-tree diff (staged=true for the index, file= to narrow); a big diff shows whole files first and names the omitted ones so you can ask for them with file=. op=log: last commits as JSON (limit, max 50). op=tags: local tags newest first, or the remote\'s tags when remote=<configured remote name>. Anything that writes (commit, push, branch, tag creation) goes through run_cmd.',
+        'Read-only git with compact output, cheaper in tokens than run_cmd. op=status: branch, upstream, staged/unstaged/untracked as JSON. op=diff: working-tree diff (staged=true for the index, file= to narrow); a big diff shows whole files first and names the omitted ones so you can ask for them with file=. op=log: last commits as {commits:[{hash,author,date,subject}],more} JSON (limit, max 50); subject line only, the full message is `git log` through run_cmd; more=true means older commits exist. op=tags: local tags newest first, or the remote\'s tags when remote=<configured remote name>. Anything that writes (commit, push, branch, tag creation) goes through run_cmd.',
       inputSchema: {
         op: z.enum(Object.keys(OPS)).describe('status | diff | log | tags'),
         repoPath: z.string().optional().describe('Repository directory path (defaults to root)'),

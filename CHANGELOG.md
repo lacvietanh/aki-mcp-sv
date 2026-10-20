@@ -2,6 +2,17 @@
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning per [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **`aki__git op=log` returns `{commits, more}` and names the first message line `subject`** (`scripts/git-mcp.js`): each commit is `{hash, author, date, subject}`, where `subject` is the first line of the message only (the full message through `run_cmd git log`), and `more: true` says older commits exist beyond `limit`. The result was a bare array whose `message` field hid that the body was dropped, with no sign that more commits existed.
+- **A cut output says `[output truncated: …]` on line 1** (`scripts/output-shape.js`), the word the shared rules read as "this is a sample, rerun before you count or quote".
+
+### Fixed
+- **`run_cmd` no longer drops text before a lone carriage return** (`scripts/output-shape.js`): a CR was treated as a progress redraw, so `cat` of a file with CR line endings returned only its last record, with no notice. Lone CRs are now kept; CRLF still becomes LF.
+- **`run_cmd` returns stderr on success** (`scripts/shell-mcp.js`): an exit-0 command's warnings and partial errors were discarded; they now follow stdout under a `[stderr]` line.
+- **`search_content` and `find_path` say what they did not cover** (`scripts/search-mcp.js`): a capped result says so on line 1 with the total; a grep stopped by its 30 s timeout or 4 MB capture limit is marked `truncated, incomplete`, its count a lower bound, instead of passing as complete; grep errors are counted in the header; a grep that cannot run returns an error instead of "no lines matched"; `(omitted from search: …)` on line 1 names the skipped directories `find_path` met, a reached depth limit and unreadable directories, and on a `search_content` no-match the excluded directories and akimcp's credential files.
+
 ## [3.0.1] - 2026-10-11
 
 ### Changed

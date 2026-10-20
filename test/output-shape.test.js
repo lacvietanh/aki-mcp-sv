@@ -8,10 +8,10 @@ import path from 'node:path';
 process.env.AKI_MCP_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'output-shape-test-'));
 const { cleanOutput, shapeForModel, spillDir, MAX_SHOWN, SHOWN_HEAD, SHOWN_TAIL } = await import('../scripts/output-shape.js');
 
-// Cleaning is lossless: it removes only what a terminal would not have shown as text.
+// Cleaning removes only ANSI codes, CRLF's CR and repeat runs (count kept); no text is dropped.
 assert.equal(cleanOutput('\x1b[31mred\x1b[0m and \x1b[1;32mgreen\x1b[0m'), 'red and green', 'ANSI colour codes');
 assert.equal(cleanOutput('\x1b]0;title\x07body'), 'body', 'OSC title sequence');
-assert.equal(cleanOutput('10%\r50%\r100%\ndone'), '100%\ndone', 'a progress bar keeps only its last redraw');
+assert.equal(cleanOutput('id,name\r1,alice\r2,bob\n'), 'id,name\r1,alice\r2,bob\n', 'lone-CR line endings are file content and stay verbatim');
 assert.equal(cleanOutput('a\r\nb\r\n'), 'a\nb\n', 'CRLF is normalized, not treated as a redraw');
 assert.equal(cleanOutput('x\nx\nkeep'), 'x\nx\nkeep', 'a run of 2 is left as it was');
 assert.equal(cleanOutput('x\nx\nx\nkeep'), 'x\n[previous line repeated 3 times in total]\nkeep', 'a run of 3 collapses, first occurrence verbatim');
@@ -29,7 +29,7 @@ const raw = lines.join('\n');
 assert.ok(raw.length > MAX_SHOWN);
 const shaped = shapeForModel(raw);
 const [marker, ...rest] = shaped.split('\n');
-assert.match(marker, /^\[output cut: \d+ chars, showing the first \d+ and last \d+\. Raw output saved to /, 'the cut is announced on the first line');
+assert.match(marker, /^\[output truncated: \d+ chars, showing the first \d+ and last \d+\. Raw output saved to /, 'the cut is announced on the first line');
 assert.ok(rest[0] === 'row 0 ' + 'x'.repeat(20), 'head starts at the beginning');
 assert.equal(rest.at(-1), lines.at(-1), 'tail ends at the end');
 assert.ok(shaped.length < SHOWN_HEAD + SHOWN_TAIL + 400, 'shown text stays within the budget plus the notices');

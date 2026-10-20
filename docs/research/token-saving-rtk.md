@@ -1,5 +1,7 @@
 # How rtk saves tokens, and what `run_cmd` takes from it
 
+Status: amended 2026-10-20
+
 ## Start time
 2026-09-29, aki-mcp-sv 2.1.0 plus uncommitted work, macOS. rtk 0.47.0 installed; its repository read at HEAD `6d4b77e` (after v0.50.0).
 
@@ -84,3 +86,6 @@ The diff is the only large win in tokens (about 61k of the saving). Unmeasured: 
 
 **Cross-references:** [`feat/security.md` § Design stance](../feat/security.md) (why complexity that annoys loses), [`feat/tools.md`](../feat/tools.md).
 **Reopen if:** a measured session shows most tokens still come from command families this leaves untouched, or the chars-per-token estimate is contradicted by real usage.
+
+## Amendments
+- 2026-10-20 · § Decision, "Lossless cleaning": keeping only the last carriage-return redraw was not lossless — a lone `\r` inside a line (files with CR line endings, CR inside a field) dropped every record before it, unmarked (`id,name\r1,alice\r2,bob\n` came back as `2,bob\n`). Removed; lone `\r` is now kept. The principle "nothing destroyed that cannot be recovered verbatim" stands, measured against AkiDevRule's rtk research (`docs/research/rtk-output-loss-oct19.md` in that repo): the cut marker now reads `[output truncated: …]`, stderr is returned on success as well, and `search_content`/`find_path`/`git op=log` announce what they leave out. Current behavior: [`feat/tools.md` § Output shaping](../feat/tools.md).

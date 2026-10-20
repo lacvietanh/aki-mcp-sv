@@ -82,7 +82,12 @@ M  scripts/start.js
 
   assert.match((await call({ op: 'diff' })).text, /^diff --git a\/a\.txt/);
   assert.equal((await call({ op: 'diff', staged: true })).text, 'No staged changes.');
-  assert.equal(JSON.parse((await call({ op: 'log', limit: 1 })).text)[0].message, 'first');
+  const logFirst = JSON.parse((await call({ op: 'log', limit: 1 })).text);
+  assert.deepEqual([logFirst.commits.map((c) => c.subject), logFirst.more], [['first'], false], 'one commit, limit 1: nothing older');
+  git('commit', '-q', '--allow-empty', '-m', 'second\n\nbody line');
+  const logOne = JSON.parse((await call({ op: 'log', limit: 1 })).text);
+  assert.deepEqual(logOne.commits.map((c) => c.subject), ['second'], 'subject only, body dropped');
+  assert.equal(logOne.more, true, 'an older commit exists beyond the limit');
 
   assert.equal((await call({ op: 'tags' })).text.split('\n').length, 2, 'local tags');
   const remoteTags = await call({ op: 'tags', remote: 'origin' });

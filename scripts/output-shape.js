@@ -1,5 +1,5 @@
 // Command output → the text a remote model reads (docs/feat/tools.md § Output shaping, docs/research/token-saving-rtk.md).
-// Nothing the model may need is destroyed: cleaning is lossless, and an oversized output is cut only after its raw text is saved for read_text_file / search_content.
+// Nothing the model may need is destroyed: cleaning drops only ANSI codes and counts repeats, and an oversized output is cut only after its raw text is saved for read_text_file / search_content.
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -17,9 +17,6 @@ export const spillDir = () => path.join(USER_DIR, 'out');
 
 const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g;
 
-// A progress bar redraws one line with \r; only the last redraw is what the terminal ended up showing.
-const finalRedraw = (line) => line.slice(line.lastIndexOf('\r') + 1);
-
 function collapseRuns(lines) {
   const out = [];
   for (let i = 0; i < lines.length; ) {
@@ -33,7 +30,7 @@ function collapseRuns(lines) {
   return out;
 }
 
-export const cleanOutput = (text) => collapseRuns(text.replace(ANSI, '').replace(/\r\n/g, '\n').split('\n').map(finalRedraw)).join('\n');
+export const cleanOutput = (text) => collapseRuns(text.replace(ANSI, '').replace(/\r\n/g, '\n').split('\n')).join('\n');
 
 // Cut at a line boundary when one exists in the window, else at a code point (never inside a surrogate pair, coding.C5).
 function cutHead(text, max) {
@@ -74,5 +71,5 @@ export function shapeForModel(raw) {
   const where = saved
     ? `Raw output${saved.stored < raw.length ? ` (first ${saved.stored} of ${raw.length} chars)` : ''} saved to ${saved.file} — read_text_file with head/tail, or search_content on it.`
     : 'Raw output could not be saved.';
-  return `[output cut: ${cleaned.length} chars, showing the first ${head.length} and last ${tail.length}. ${where}]\n${head}\n[... ${omittedLines} lines omitted ...]\n${tail}`;
+  return `[output truncated: ${cleaned.length} chars, showing the first ${head.length} and last ${tail.length}. ${where}]\n${head}\n[... ${omittedLines} lines omitted ...]\n${tail}`;
 }

@@ -61,20 +61,21 @@ async function run() {
   fs.rmSync(settingsPath);
   assert.throws(() => allowed('git tag -f 3.0.0 HEAD'), /write form/, 'removing the entry restores the read-only default');
 
-  // A failing command returns what it printed AND why it failed; a passing one returns stdout only.
+  // A command returns stdout, plus stderr under [stderr] when there is any; a failing one adds why it failed.
   const node = (code) => shell.run(process.execPath, ['-e', code], process.cwd());
   const failed = await node('console.log("OUT-LINE");console.error("ERR-LINE");process.exit(3)');
   assert.equal(failed.isError, true);
-  assert.equal(failed.content[0].text, '[exit code 3]\nOUT-LINE\nERR-LINE', 'stdout, stderr and exit code all survive');
+  assert.equal(failed.content[0].text, '[exit code 3]\nOUT-LINE\n[stderr]\nERR-LINE', 'stdout, stderr and exit code all survive');
   const silent = await node('process.exit(1)');
   assert.equal(silent.content[0].text, '[exit code 1]', 'no output still says why');
   const passed = await node('console.log("fine");console.error("warn")');
   assert.equal(passed.isError, undefined);
-  assert.equal(passed.content[0].text, 'fine\n');
+  assert.equal(passed.content[0].text, 'fine\n[stderr]\nwarn', 'stderr of an exit-0 command is returned under [stderr]');
+  assert.equal((await node('console.log("fine")')).content[0].text, 'fine\n', 'no stderr, no [stderr] line');
   assert.equal((await node('')).content[0].text, '(no output)');
   const floodLines = Math.ceil(MAX_SHOWN / 36);
   const flood = await node(`for (let i=0;i<${floodLines};i++) console.log("line "+i+" "+"z".repeat(30))`);
-  assert.match(flood.content[0].text.split('\n')[0], /^\[output cut: /, 'a flood is cut and announced on line 1');
+  assert.match(flood.content[0].text.split('\n')[0], /^\[output truncated: /, 'a flood is cut and announced on line 1');
 
   const missing = await shell.run('aki-no-such-binary-xyz', [], process.cwd());
   assert.equal(missing.isError, true);
