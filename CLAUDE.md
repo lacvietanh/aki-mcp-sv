@@ -21,9 +21,9 @@ Signature: `npm start` is healthy, funnel status says "on", but client reports "
 ## Two client paths, one OAuth server
 
 `scripts/oauth.js` serves both without handler-level branching:
-- **Claude, ChatGPT, Grok**: URL + passphrase only; they self-register via RFC 7591 DCR (`POST /register`), PKCE only, stored in `oauth-dcr-clients.json`.
-- **Pre-issued confidential client** in `oauth-client.json` (`client_secret_post`): Gemini's paste flow and any client that wants a static client; `scripts/start.js` prints its ID/secret.
-- **Invariants**: `resolveClient()` is the single SSoT lookup for both. Redirect URIs are strictly allowlisted in `isAllowedRedirect` (`claude.ai`, `chatgpt.com`, `googleusercontent.com`, `grok.com`). Auth codes and refresh tokens are bound to their issuing client ID.
+- **Claude, ChatGPT, Grok, Gemini, Notion**: URL + passphrase only; they self-register via RFC 7591 DCR (`POST /register`), PKCE only, stored in `oauth-dcr-clients.json`.
+- **Pre-issued confidential client** in `oauth-client.json` (`client_secret_post`): any client that wants a static client; `scripts/start.js` prints its ID/secret.
+- **Invariants**: `resolveClient()` is the single SSoT lookup for both. Redirect URIs are strictly allowlisted in `isAllowedRedirect` (`claude.ai`, `chatgpt.com`, `oauth-redirect*.googleusercontent.com`, `grok.com`, Notion hosts). Auth codes and refresh tokens are bound to their issuing client ID.
 
 ## OS-agnostic by decision, not by accident
 

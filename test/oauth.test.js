@@ -3,13 +3,14 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { once } from 'node:events';
 import os from 'node:os';
+import http from 'node:http';
 import path from 'node:path';
 
 // userdata.js reads AKI_MCP_DATA_DIR at import, so the env is set before oauth.js loads; the real ~/.aki/mcpsv is never touched.
 const dir = mkdtempSync(path.join(os.tmpdir(), 'aki-oauth-test-'));
 process.env.AKI_MCP_DATA_DIR = dir;
 const { TOKENS_PATH } = await import('../scripts/userdata.js');
-const { getOrIssueAccessToken, verifyBearer } = await import('../scripts/oauth.js');
+const { getOrIssueAccessToken, verifyBearer, handleRegister } = await import('../scripts/oauth.js');
 const { startPanel } = await import('../scripts/panel.js');
 
 const removeDataDir = () => rmSync(dir, { recursive: true, force: true });
@@ -74,6 +75,30 @@ async function run() {
     } finally {
       panel.close();
       await once(panel, 'close');
+    }
+
+    const registrar = http.createServer((req, res) => handleRegister(req, res));
+    registrar.listen(0, '127.0.0.1');
+    await once(registrar, 'listening');
+    try {
+      const register = (uri) => fetch(`http://127.0.0.1:${registrar.address().port}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ redirect_uris: [uri] }),
+      });
+      const geminiHosts = ['oauth-redirect', 'oauth-redirect-sandbox', 'oauth-redirect-test'].map((sub) => `https://${sub}.googleusercontent.com`);
+      for (const uri of [...geminiHosts, geminiHosts[0] + '/r/x']) {
+        const res = await register(uri);
+        assert.equal(res.status, 201, uri);
+        assert.ok((await res.json()).client_id, uri);
+      }
+      for (const uri of ['https://oauth-redirect.googleusercontent.com.attacker.com', 'http://oauth-redirect.googleusercontent.com', 'https://a@oauth-redirect.googleusercontent.com', 'https://oauth-redirect.googleusercontent.com/r/x#f']) {
+        const res = await register(uri);
+        assert.equal(res.status, 400, uri);
+        assert.equal((await res.json()).error, 'invalid_redirect_uri', uri);
+      }
+    } finally {
+      registrar.close();
     }
 
     console.log('PASS: getOrIssueAccessToken reuses a valid token, persists it, and GET / prefills Postman JSON with that verifyBearer-accepted token');

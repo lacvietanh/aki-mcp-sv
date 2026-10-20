@@ -122,11 +122,11 @@ ChatGPT self-registers via DCR (RFC 7591, PKCE, no secret) from `/.well-known/op
 
 ## Connecting from Grok and Gemini
 
-Both ride the same MCP URL and passphrase flow — no separate transport or auth. They differ in *how* the client authenticates: the connector panel (section 1) lists the steps for each, and the Gemini Client ID/Secret are printed by `akimcp` at start.
+Both ride the same MCP URL and passphrase flow — no separate transport or auth. The connector panel (section 1) lists the steps for each.
 
 **Grok — verified, production-ready:** **self-registers** via the `/register` DCR path like ChatGPT — paste only the MCP URL, no Client ID. Its real `redirect_uri` `https://grok.com/connectors-oauth-exchange-code/` was observed live 2026-08-09 and is allowlisted via `GROK_CALLBACK_PREFIX`. Verified working end to end (`authorize → token` 200). If a future Grok change moves that callback, a rejected registration logs `register REJECTED (redirect_uri not allowlisted): [...]` so the new value can be re-allowlisted.
 
-**Gemini — experimental, connection works but tool use doesn't (yet)** (paid tiers only — Pro / Business / Enterprise; the free tier may not expose custom apps): pastes a **confidential client** (the pre-issued one in `oauth-client.json`) — set the custom app link to the MCP URL, then under Advanced Settings paste the Client ID / Client secret that `akimcp` prints at start. Gemini's redirect goes through Google's OAuth proxy `https://oauth-redirect.googleusercontent.com/r/...` (observed live 2026-08-09), allowlisted by `isAllowedRedirect` in `scripts/oauth.js`. **Caveat:** the OAuth handshake succeeds and Gemini accepts the instruction, but in repeated testing 2026-08-09 it did not reliably discover or drive the MCP tools — connection healthy, tool use unreliable. Claude and Grok are the dependable clients today.
+**Gemini — experimental, connection works but tool use doesn't (yet)** (paid tiers only — Pro / Business / Enterprise; the free tier may not expose custom apps): **self-registers** via the `/register` DCR path like Claude and ChatGPT — paste the MCP URL, click **Next**, enter the passphrase on the authorization page, click **Approve**. The pre-issued Client ID/Secret in `oauth-client.json` is an optional fallback for a client that wants a static pair. Gemini's redirect goes through Google's OAuth proxy on `oauth-redirect*.googleusercontent.com`, allowlisted by `isAllowedRedirect` in `scripts/oauth.js`. **Caveat:** the OAuth handshake succeeds and Gemini accepts the instruction, but in repeated testing 2026-08-09 it did not reliably discover or drive the MCP tools — connection healthy, tool use unreliable. Claude and Grok are the dependable clients today.
 
 ## Connecting from Notion AI
 
@@ -262,7 +262,7 @@ panel.js       — 127.0.0.1:9998, never exposed via Funnel
 
 The ingress layer is swappable: Tailscale Funnel is the zero-config default, and the same `/mcp` endpoint can be served through your own Cloudflare named tunnel (recommended: steadier and faster) or any stable public HTTPS edge you already run — see [Exposing to the internet](#exposing-to-the-internet). Everything below the ingress line (gatekeeper, OAuth) is unchanged whichever edge you pick.
 
-OAuth (not token-in-URL) is used because claude.ai always attempts Dynamic Client Registration regardless of configuration (`docs/research/claude-ai-oauth-connector.md`). ChatGPT also expects OAuth; this server advertises `/register` (RFC 7591 DCR) so Claude and ChatGPT self-register; the pre-issued Client ID/Secret is for Gemini's paste flow.
+OAuth (not token-in-URL) is used because claude.ai always attempts Dynamic Client Registration regardless of configuration (`docs/research/claude-ai-oauth-connector.md`). ChatGPT also expects OAuth; this server advertises `/register` (RFC 7591 DCR) so Claude, ChatGPT and Gemini self-register; the pre-issued Client ID/Secret is for a client that wants a static pair.
 
 ## Directory layout
 
@@ -329,7 +329,7 @@ Your data lives outside the repo, at `~/.aki/mcpsv/` (the same convention CLIs l
 ```
 ~/.aki/mcpsv/
 ├── setting.json          # allowed folders + shell allowlist, edited from the panel
-├── oauth-client.json     # pre-issued client ID + secret, for Gemini's paste flow or any client that wants a static client (0600)
+├── oauth-client.json     # pre-issued client ID + secret, for any client that wants a static client (0600)
 ├── oauth-dcr-clients.json # clients that self-registered via /register, one per ChatGPT connector (0600)
 ├── passphrase.txt        # passphrase for the /authorize consent screen (0600)
 ├── tokens.json           # access/refresh tokens (0600)
@@ -403,7 +403,7 @@ Use `aki__find_path` to locate a file or directory — it scans the whole tree i
 
 **Convenience first, guardrail second.** AKIMCP is not a fortress and adds no permission layer to configure; its guardrail stops weak or overeager models from doing damage without per-call approval prompts. The whole picture (every surface and its gate, connection limits, what each secret unlocks and how to revoke it) is in [`docs/feat/security.md`](docs/feat/security.md).
 
-- **Remote access** goes through minimal OAuth 2.1: an allowlisted redirect, a 50-bit passphrase at `/authorize`, PKCE S256. Claude, ChatGPT and Grok self-register (DCR); Gemini uses the pre-issued Client ID/Secret. Whoever knows the passphrase can get a token, so treat it like the token.
+- **Remote access** goes through minimal OAuth 2.1: an allowlisted redirect, a 50-bit passphrase at `/authorize`, PKCE S256. Claude, ChatGPT, Grok and Gemini self-register (DCR); the pre-issued Client ID/Secret serves any client that wants a static pair. Whoever knows the passphrase can get a token, so treat it like the token.
 - **One shared access token** (1 year) for every client, shown and rolled in panel section 1. *Roll & sign out all clients* is the answer to any leak.
 - **Loopback is not trusted**: the server binds `127.0.0.1` only and still requires the token, so a web page in your browser cannot drive it. The panel binds `127.0.0.1` too and needs its own per-start token.
 - **Wrong credentials get blocked**: default 5 in 60 seconds, then 15 minutes of `429`. Valid tokens are never counted or blocked. Panel section 7 edits every number, lists blocked callers and releases them, shows every registered client (with Remove) and who used the token since the last restart, and shows the security log (`security.log` in the data dir, rotated at 1 MB).

@@ -18,12 +18,12 @@ import { readLimits, clientKey } from './rate-limit.js';
 const CLAUDE_CALLBACK = 'https://claude.ai/api/mcp/auth_callback';
 const CHATGPT_LEGACY_CALLBACK = 'https://chatgpt.com/connector_platform_oauth_redirect';
 const CHATGPT_CALLBACK_PREFIX = 'https://chatgpt.com/connector/oauth/';
-// Gemini custom connected apps redirect via Google's OAuth proxy, not gemini.google.com (observed live 2026-08-09: .../r/user_bound_custom-mcp-<numeric>-<host_with_underscores>).
-const GEMINI_CALLBACK_PREFIX = 'https://oauth-redirect.googleusercontent.com/r/';
 // Grok self-registers (DCR) with this callback, not a /connector/oauth/ path (observed live 2026-08-09).
 const GROK_CALLBACK_PREFIX = 'https://grok.com/connectors-oauth-exchange-code/';
 // Notion DCR self-registers as a confidential client on one of these hosts, matched on the parsed hostname so lookalikes fail (verified live 2026-09-22).
 const NOTION_CALLBACK_HOSTS = new Set(['notion.so', 'www.notion.so', 'app.notion.so', 'notion.com', 'www.notion.com', 'app.notion.com', 'mcp.notion.com']);
+// Gemini DCR registers Google's OAuth proxy hosts with no path, not gemini.google.com; matched on the parsed hostname so lookalikes fail.
+const GEMINI_CALLBACK_HOSTS = new Set(['oauth-redirect.googleusercontent.com', 'oauth-redirect-sandbox.googleusercontent.com', 'oauth-redirect-test.googleusercontent.com']);
 const CLIENT_AUTH_METHODS = ['none', 'client_secret_post', 'client_secret_basic'];
 const CODE_TTL_MS = 5 * 60 * 1000;
 const PENDING_CLIENT_TTL_MS = 3600_000;
@@ -50,14 +50,14 @@ function isAllowedRedirect(uri) {
   if (uri === CLAUDE_CALLBACK || uri === CHATGPT_LEGACY_CALLBACK) return true;
   return uri.startsWith(CHATGPT_CALLBACK_PREFIX)
     || uri.startsWith(GROK_CALLBACK_PREFIX)
-    || uri.startsWith(GEMINI_CALLBACK_PREFIX)
-    || isNotionCallback(uri);
+    || isHttpsCallbackOnHosts(uri, GEMINI_CALLBACK_HOSTS)
+    || isHttpsCallbackOnHosts(uri, NOTION_CALLBACK_HOSTS);
 }
 
-function isNotionCallback(uri) {
+function isHttpsCallbackOnHosts(uri, hosts) {
   try {
     const url = new URL(uri);
-    return url.protocol === 'https:' && !uri.includes('#') && !url.username && !url.password && NOTION_CALLBACK_HOSTS.has(url.hostname);
+    return url.protocol === 'https:' && !uri.includes('#') && !url.username && !url.password && hosts.has(url.hostname);
   } catch {
     return false;
   }

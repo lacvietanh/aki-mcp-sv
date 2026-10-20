@@ -1,6 +1,6 @@
 # Security
 
-> updated 2026-10-11 · v3.0.0
+> updated 2026-10-20 · v3.0.1
 
 The one place for akimcp's whole security picture: stance, every surface and its gate, the connection limits, who holds access and who uses it, what each secret on disk unlocks and how to revoke it, and what is logged. README carries a summary and points here. Design record for client activity and the security-only log: `docs/plan/done/client-activity-and-security-log.md`.
 
@@ -36,7 +36,7 @@ Consequences already decided:
 claude.ai / ChatGPT / Grok / Gemini / Notion
    │  GET /.well-known/oauth-protected-resource, /.well-known/oauth-authorization-server
    │      (/.well-known/openid-configuration is an alias of the latter, so ChatGPT can auto-discover registration_endpoint)
-   │  Claude, ChatGPT, Grok, Notion: POST /register  (DCR); Gemini uses the pre-issued client
+   │  Claude, ChatGPT, Grok, Gemini, Notion: POST /register  (DCR)
    ▼
 gatekeeper.js  ── /register  → RFC 7591, redirect URI must be allowlisted
                ── /authorize → confirmation page, requires the passphrase
@@ -45,8 +45,8 @@ gatekeeper.js  ── /register  → RFC 7591, redirect URI must be allowlisted
                ── /mcp       → Bearer access token required, else 401 + WWW-Authenticate → tools server (in-process)
 ```
 
-- **Pre-issued client (static, confidential):** the Client ID/Secret in `oauth-client.json`, printed by `akimcp` at start. Used by Gemini's paste flow and by any client that wants a static client; it is not shown in the panel and Claude does not use it. Auth method `client_secret_post`; it accepts any allowlisted callback. The panel Clients table lists it as `Claude (pre-registered)` (kind `claude`, a legacy label).
-- **Claude, ChatGPT, Grok (DCR):** the connector needs only the URL and the passphrase; it calls `POST /register` itself, and each connector instance becomes one entry in `oauth-dcr-clients.json`. PKCE S256. Redirect allowlist (`isAllowedRedirect`): the Claude callback, `chatgpt.com/connector/oauth/*` and the legacy ChatGPT callback, `grok.com/connectors-oauth-exchange-code/*`, `oauth-redirect.googleusercontent.com/r/*`. Registration is open by design: a registered client still has to pass the passphrase.
+- **Pre-issued client (static, confidential):** the Client ID/Secret in `oauth-client.json`, printed by `akimcp` at start. Used by any client that wants a static client; it is not shown in the panel and Claude does not use it. Auth method `client_secret_post`; it accepts any allowlisted callback. The panel Clients table lists it as `Claude (pre-registered)` (kind `claude`, a legacy label).
+- **Claude, ChatGPT, Grok, Gemini (DCR):** the connector needs only the URL and the passphrase; it calls `POST /register` itself, and each connector instance becomes one entry in `oauth-dcr-clients.json`. PKCE S256. Redirect allowlist (`isAllowedRedirect`): the Claude callback, `chatgpt.com/connector/oauth/*` and the legacy ChatGPT callback, `grok.com/connectors-oauth-exchange-code/*`, the three Gemini hosts `oauth-redirect.googleusercontent.com`, `oauth-redirect-sandbox.googleusercontent.com` and `oauth-redirect-test.googleusercontent.com` (parsed hostname, https only, no userinfo or fragment, any path). Registration is open by design: a registered client still has to pass the passphrase.
 - **Notion (DCR, confidential):** Notion custom MCP registers with `client_secret_basic` or `client_secret_post` and gets a generated secret. Its callback must be https on exactly one of `notion.so`, `www.notion.so`, `app.notion.so`, `notion.com`, `www.notion.com`, `app.notion.com`, `mcp.notion.com` (parsed hostname; lookalikes, userinfo and `#` rejected). The scope Notion asks for is carried to the token and echoed; a refresh may narrow it, never widen it. It grants nothing extra: tools stay gated by folders and the allowlist. `POST /revoke` from a client drops that client's refresh grant (revoking the shared access token signs only that client out). Ported from PR #7 (TheLucasHenry), except its per-connector access token, which contradicts the single token.
 - **Hardening from the same PR:** a `client_id` such as `constructor` or `__proto__` no longer resolves a prototype member and crashes the process; a `/register` body that is `null`, an array or a scalar returns `400`; a rejected callback logs only its origin, unknown grant types log as `unsupported`, and request logs omit the query string.
 
@@ -124,7 +124,7 @@ All under the data dir (`~/.aki/mcpsv/` by default), mode `0600`, never inside t
 |---|---|---|---|
 | `passphrase.txt` | consent secret for `/authorize` | anyone can obtain a token | panel section 1: Roll passphrase, then Roll & sign out all clients |
 | `tokens.json` | the shared access token and every refresh token; AIObox gets the access token from `GET /api/access-token` (below), not from this file, to paste as Notion's bearer until it moves to the passphrase flow (AIObox keeps a fallback read of this file during the transition; once it drops that, the format here is free to change) | full tool access | Roll & sign out all clients (or delete the file and restart) |
-| `oauth-client.json` | the pre-issued client's ID/Secret (Gemini's paste flow, or any client that wants a static client) | nothing without the passphrase | delete and restart, paste the new pair into the provider that uses it |
+| `oauth-client.json` | the pre-issued client's ID/Secret (any client that wants a static client) | nothing without the passphrase | delete and restart, paste the new pair into the provider that uses it |
 | `oauth-dcr-clients.json` | registered public clients (no secret) | nothing | delete and restart; every DCR connector reconnects |
 | `setting.json` | folders, allowlist, trusted zones, limits | not secret, but a write widens access | the local owner (panel or editor); also the file tools while the data dir is under an allowed folder (by decision, see Real limitations) |
 | `tool-calls.jsonl` | one line per `aki__` tool call (`scripts/tool-call-log.js`): time, client, user agent, tool, `op`, ok or error, never the arguments' text; kept 40 days, the current file rolls to a dated sidecar at 16 MB (both settable) | which AI drove which tool, when | delete any time |

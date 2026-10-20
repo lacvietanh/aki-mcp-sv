@@ -246,7 +246,7 @@ ${field('Re-sync command', 'tailscale funnel --https=443 off && tailscale serve 
 </section>
 
 <section id="s1"><h2>1 · Connectors: local IDEs + web AIs</h2>
-<p class="helptext">One AKIMCP endpoint, two paths. <strong>Local tools</strong> (Postman, Cursor, Claude Code, AGY) connect directly over <span class="mono">127.0.0.1</span> — zero latency, no tunnel, works offline; each tab below carries a ready-to-paste local config. <strong>Web AIs</strong> (Claude, Grok, ChatGPT, Gemini) use the MCP URL below and ${origin ? 'are reachable now.' : 'need a public ingress — set it up in <a href="#s0">Section 0</a> first (the MCP URL fills in once ingress is active).'}</p>
+<p class="helptext">One AKIMCP endpoint, two paths. <strong>Local tools</strong> (Postman, Cursor, Claude Code, AGY) connect directly over <span class="mono">127.0.0.1</span> — zero latency, no tunnel, works offline; each tab below carries a ready-to-paste local config. <strong>Web AIs</strong> (Claude, Grok, ChatGPT, Gemini, Notion, Buda) use the MCP URL below and ${origin ? 'are reachable now.' : 'need a public ingress — set it up in <a href="#s0">Section 0</a> first (the MCP URL fills in once ingress is active).'}</p>
 ${field('MCP Name', MCP_NAME)}
 ${field('MCP URL', url, true)}
 ${secretField('Passphrase', passphrase)}
@@ -268,6 +268,7 @@ ${secretField('Access token', accessToken)}
   <button class="tab" data-tab="chatgpt"><img src="/img/providers/gpt.png" class="provider-icon" alt="">ChatGPT</button>
   <button class="tab" data-tab="gemini"><img src="/img/providers/gemini.png" class="provider-icon" alt="">Gemini</button>
   <button class="tab" data-tab="notion"><img src="/img/providers/notion.png" class="provider-icon" alt="">Notion</button>
+  <button class="tab" data-tab="buda">Buda</button>
 </nav>
 
 <div class="tabpane" id="tab-claude">
@@ -306,12 +307,13 @@ ${secretField('Access token', accessToken)}
 <div class="tabpane" id="tab-gemini">
   <p class="helptext">Paid tiers only. Tested 2026-08-09: the connection is healthy, but Gemini web doesn't reliably discover or invoke the MCP tools, use Claude or Grok instead. Not recommended.</p>
   <ol class="steps">
-    <li>Open <a href="${esc(GEMINI_CONNECTOR_URL)}" target="_blank" rel="noopener">custom connected apps</a> (Gemini → paid subscriptions → Custom apps).</li>
-    <li>Set the <strong>custom app link / Server URL</strong> = MCP URL.</li>
-    <li>Open <strong>Advanced Settings</strong> and paste the <strong>Client ID</strong> and <strong>Client secret</strong> that <span class="mono">akimcp</span> prints at start (<span class="mono">OAuth Client ID</span> / <span class="mono">OAuth Client Secret</span>).</li>
-    <li>Ignore Gemini's <strong>Copy redirect URI</strong> button; the redirect is already allowlisted server-side.</li>
-    <li>On <strong>Continue</strong>, enter the <strong>Passphrase</strong>.</li>
+    <li>Open <a href="${esc(GEMINI_CONNECTOR_URL)}" target="_blank" rel="noopener">custom connected apps</a> (Gemini → paid subscriptions → Custom apps) and add a custom connected app.</li>
+    <li>Paste the <strong>MCP Server URL</strong> = MCP URL above.</li>
+    <li>Click <strong>Next</strong>. Gemini links the account by itself.</li>
+    <li>Enter the <strong>Passphrase</strong> when AKIMCP opens the authorization page.</li>
+    <li>Click <strong>Approve</strong>.</li>
   </ol>
+  <p class="helptext">Gemini registers itself, nothing to paste. The static Client ID / Secret that <span class="mono">akimcp</span> prints at start is an optional fallback for clients that want a fixed pair.</p>
 </div>
 
 <div class="tabpane" id="tab-notion">
@@ -323,6 +325,22 @@ ${secretField('Access token', accessToken)}
     <li>Add the connection inside the <strong>agent</strong>, then <strong>republish the agent</strong>.</li>
   </ol>
   <p class="helptext">Notion self-registers, nothing to paste. Connected this way it refreshes on its own after Roll token.</p>
+</div>
+
+<div class="tabpane" id="tab-buda">
+  <ol class="steps">
+    <li>In Buda, open <strong>Agent Settings</strong> → your Agent → <strong>Integrations</strong>, then click <strong>Add MCP server</strong>.</li>
+    <li>Set <strong>Name</strong> = MCP Name above.</li>
+    <li>Set <strong>Connection type</strong> = <strong>Remote HTTP</strong>.</li>
+    <li>Set <strong>HTTPS endpoint</strong> = ${copyEl(url)}</li>
+    <li>Under <strong>Authentication headers</strong>, click <strong>+ Add header</strong>, then set the header name = ${copyEl('Authorization')}</li>
+    <li>Set the header value:</li>
+  </ol>
+  ${secretField('Header value', `Bearer ${accessToken}`)}
+  <ol class="steps" start="7">
+    <li>Click <strong>Save</strong>, then start a new chat to load the tools.</li>
+  </ol>
+  <p class="helptext">Buda sends the shared access token as a Bearer header. No passphrase or client registration. After <strong>Roll token</strong>, paste the new header value again.</p>
 </div>
 
 <div class="tabpane active" id="tab-postman">
