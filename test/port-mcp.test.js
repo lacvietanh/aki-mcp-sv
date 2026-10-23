@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import './setup.js';
 import assert from 'node:assert/strict';
 import net from 'node:net';
 import { getListeningPorts, isProtectedPort } from '../scripts/port-mcp.js';

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import './setup.js';
 import assert from 'node:assert/strict';
 import { createCallers, recordCaller, listCallers } from '../scripts/callers.js';
 

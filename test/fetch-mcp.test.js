@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import './setup.js';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';

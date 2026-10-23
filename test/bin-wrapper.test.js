@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // The `bin/akimcp.js` wrapper (what `npx @akinet/akimcp` runs) forwards to the CLI; the flags themselves are covered by cli-flags.test.js.
+import './setup.js';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { fileURLToPath } from 'node:url';

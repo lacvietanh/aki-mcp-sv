@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import '../../../test/setup.js';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import os from 'node:os';

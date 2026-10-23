@@ -1,3 +1,4 @@
+require('../../../test/setup.js');
 const assert = require('node:assert/strict');
 
 (async () => {

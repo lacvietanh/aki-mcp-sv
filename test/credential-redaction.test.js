@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // A credential value never leaves through a tool result, whatever route reached its bytes: a directory search over the data dir, or a copy in a file the tools may read (a task log, a spilled output).
+import './setup.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';

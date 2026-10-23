@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import './setup.js';
 import assert from 'node:assert/strict';
 import { mock } from 'node:test';
 import cp from 'node:child_process';

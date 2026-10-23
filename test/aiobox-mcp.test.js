@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // aki__aiobox / aki__aiobox_write against a temp HOME with a fixture akimcp-state.json, windows.json and guide.md, a fake CDP engine and a fake AIObox request taker: no Chrome, no AIObox needed.
+import './setup.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -322,7 +323,7 @@ live = liveTargets();
 pages['T-GPT'].akipanel = panelWith(echo);
 pages['T-NOTION'].akipanel = panelWith(echo);
 
-// S4: one call ends within its deadline even when a tab never answers, and says what is safe next: the op's own timeoutNext, else a generic line by mode.
+// One call ends within its deadline even when a tab never answers, and says what is safe next: the op's own timeoutNext, else a generic line by mode.
 setTimings({ callBudgetMs: 800 });
 const timed = async (name, args) => { const t0 = Date.now(); const r = await call(name, args); return { ...r, ms: Date.now() - t0 }; };
 frozen.add('T-GPT');

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // Notion custom MCP connector (ported from PR #7 by @TheLucasHenry onto the single shared access token).
+import './setup.js';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import http from 'node:http';

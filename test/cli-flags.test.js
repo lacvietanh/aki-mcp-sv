@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // `akimcp --version` / `--help` print only their answer and touch no data: AIObox reads the version from stdout, and oauth.js used to prune a stale client at import and log it there first.
+import './setup.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';

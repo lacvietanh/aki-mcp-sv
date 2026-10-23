@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // Interim guard: regexes over page-script source text, kept until a vm harness can run those functions; each doesNotMatch pins a removed feature whose reason is unrecorded, so none is dropped.
+import '../../../test/setup.js';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import os from 'node:os';

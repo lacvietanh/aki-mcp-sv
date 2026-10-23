@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import './setup.js';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import fs from 'node:fs';
@@ -94,8 +95,6 @@ async function run() {
     assert.equal(toolsList.status, 200);
     const response = await toolsList.json();
     assert.equal(response.id, 3);
-    assert.ok(Array.isArray(response.result?.tools));
-    assert.ok(response.result.tools.length > 0);
     const contextTool = response.result.tools.find((tool) => tool.name === 'aki__akidevrule_context');
     assert.ok(contextTool, 'tools/list must expose the prefixed rule context tool');
     assert.equal(contextTool.title, 'Load Effective Aki/Claude Context');

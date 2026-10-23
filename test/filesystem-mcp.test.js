@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // write_file / edit_file over an existing file keep its permission bits: the atomic temp-then-rename write must not drop a script's exec bit or widen a 0600 secret.
+import './setup.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';

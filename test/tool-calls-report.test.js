@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // tool-calls-report.js on a fixture log: each of C2–C6 counted from the fields tool-call-log.js writes (basic keeps errorCode, detail keeps the error text).
+import './setup.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
