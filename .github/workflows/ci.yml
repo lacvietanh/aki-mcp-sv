@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   smoke:
@@ -23,3 +24,22 @@ jobs:
 
       - name: Syntax check all scripts (server never actually boots — no PUBLIC_ORIGIN / Tailscale in CI)
         run: find scripts test -name '*.js' -print0 | xargs -0 -n1 node --check
+
+  # Run by hand (`gh workflow run ci.yml`) until the suite is known to pass on Windows; then it joins every push.
+  windows:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.14.0'
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm test
