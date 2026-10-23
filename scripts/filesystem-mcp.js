@@ -148,6 +148,10 @@ async function applyFileEdits(filePath, edits, dryRun) {
   return formatted;
 }
 
+// WORKING_FILE_STEP (rule-context-mcp.js) again, in the result of the write itself: a long chat or a compaction may have dropped the rule read at session start.
+const WORKING_FILE = /[\\/]\.aki[\\/]mcpsv[\\/]task[\\/][^\\/]+[\\/]working\.md$/;
+const withReportStep = (real, text) => (WORKING_FILE.test(real) ? `${text}\nTell the user in this reply what changed in ${real}, with that full path.` : text);
+
 export const provider = { id: 'filesystem', title: 'Filesystem', required: true, register };
 
 export function register(server) {
@@ -188,7 +192,7 @@ export function register(server) {
       try {
         const real = await resolveRealWritable(p);
         await writeFileAtomic(real, content);
-        return ok(`wrote ${p}`);
+        return ok(withReportStep(real, `wrote ${real}`));
       } catch (e) {
         return fail(e);
       }
@@ -210,7 +214,8 @@ export function register(server) {
     async ({ path: p, edits, dryRun }) => {
       try {
         const real = await resolveRealWritable(p);
-        return ok(await applyFileEdits(real, edits, dryRun));
+        const diff = await applyFileEdits(real, edits, dryRun);
+        return ok(dryRun ? diff : withReportStep(real, diff));
       } catch (e) {
         return fail(e);
       }

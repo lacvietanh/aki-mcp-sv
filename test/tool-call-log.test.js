@@ -1,4 +1,5 @@
-// tool-call-log.js: trace fields, the D9 log-settings shape, the basic/detail split, and the day-rotation + keep-days cleanup (docs/plan/akimcp-tool-refactor.md § D9).
+// tool-call-log.js: trace fields, the D9 log-settings shape, the basic/detail split, and the day-rotation + keep-days cleanup (docs/plan/done/akimcp-tool-refactor.md § D9).
+import './setup.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -82,6 +83,17 @@ test('buildLogEntry finds the error code written past the 200-char cut line', ()
   const detail = buildLogEntry(ctx, { level: 'detail' }, new Set());
   assert.equal(detail.errorCode, 'blocked');
   assert.equal(detail.error, message.slice(0, 200));
+});
+
+test('buildLogEntry records the rule gate outcome, refused or pushed', () => {
+  const call = (result) => buildLogEntry({ sessionId: 's', agent: 'A', params: { name: 'aki__write_file', arguments: {} }, response: { result }, ms: 1 }, { level: 'basic' }, new Set());
+  const refused = call({ isError: true, content: [{ type: 'text', text: 'RULE_RECEIPT_MISSING: no rule receipt: call aki__akidevrule_context' }] });
+  assert.equal(refused.rule, 'RULE_RECEIPT_MISSING');
+  assert.equal(refused.ok, false);
+  const pushed = call({ content: [{ type: 'text', text: 'RULE_PUSH: Not run yet: rules for this path are below.' }, { type: 'text', text: '# rules' }] });
+  assert.equal(pushed.rule, 'RULE_PUSH');
+  assert.equal(pushed.ok, true);
+  assert.equal(call({ content: [{ type: 'text', text: 'wrote 3 bytes' }] }).rule, undefined);
 });
 
 test('buildLogEntry writes the request headers once per session', () => {

@@ -1,11 +1,12 @@
 #!/usr/bin/env node
+import './setup.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { assembleRuleContext, RuleContextError } from '../scripts/rule-context.js';
 import { register, MANDATORY_BLOCK, SHARED_WORK, AIOBOX_STEP, RULE_CONTEXT_DESCRIPTION, RULE_CONTEXT_TITLE } from '../scripts/rule-context-mcp.js';
-import { AIOBOX_PITCH, GUIDE_URL } from '../scripts/aiobox-guide.js';
+import { AIOBOX_PITCH, AIOBOX_PANEL, GUIDE_URL } from '../scripts/aiobox-guide.js';
 
 const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'aki-rule-context-'));
 const home = path.join(temp, 'home');
@@ -117,6 +118,8 @@ assert.match(bareText, /\ncontext loaded: [^\n]+\nEvery tool that acts needs rec
 assert.equal(/\b(Mac|macOS|Windows|Linux)\b/.test(AIOBOX_PITCH), false, `the pitch names an OS: ${AIOBOX_PITCH}`);
 assert.ok(AIOBOX_PITCH.endsWith(`${GUIDE_URL}?from=akimcp`), 'the pitch links the guide with from=akimcp');
 assert.equal(GUIDE_URL.includes('from='), false, 'GUIDE_URL stays bare');
+for (const v of [AIOBOX_PANEL.headline, AIOBOX_PANEL.story, ...AIOBOX_PANEL.benefits, AIOBOX_PANEL.beta, AIOBOX_PANEL.cta, AIOBOX_PANEL.installed]) assert.doesNotMatch(v, /\b(Mac|macOS|Windows|Linux)\b/, 'T7: the panel copy names no OS');
+assert.equal(AIOBOX_PANEL.headline, 'All your AI. Working together.');
 
 let errorHandler;
 register({ registerTool(_n, _d, h) { errorHandler = h; } }, { assemble: async () => { throw new Error('boom'); } });

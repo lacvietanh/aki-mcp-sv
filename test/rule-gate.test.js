@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // Every tool that acts refuses a call without the current rule receipt (scripts/rule-gate.js, docs/plan/done/rule-receipt-gate.md); read-only tools never ask for one.
+import './setup.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -102,7 +103,7 @@ const reloaded = (await client.callTool({ name: 'aki__akidevrule_context', argum
 assert.notEqual(reloaded, receipt);
 assert.ok(!(await client.callTool({ name: 'aki__write_file', arguments: { path: target, content: 'z', receipt: reloaded } })).isError);
 
-// D23: a call touching a project whose rule files the receipt does not cover gets those rules and a new receipt first.
+// A call touching a project whose rule files the receipt does not cover gets those rules and a new receipt first.
 const { rulesFor, rulesBlock } = await import('../scripts/project-rules.js');
 const r1 = path.join(tmp, 'r1');
 const r2 = path.join(tmp, 'r2');
@@ -111,15 +112,14 @@ fs.mkdirSync(r2);
 fs.writeFileSync(path.join(r1, 'AGENTS.md'), '# r1 rule\n');
 fs.writeFileSync(path.join(r2, 'CLAUDE.md'), '# r2 rule\n');
 const write = (p, receipt) => client.callTool({ name: 'aki__write_file', arguments: { path: p, content: 'w', receipt } });
-const newReceipt = (r) => text(r).match(/Call again with receipt=(sha256:[a-f0-9]{64})\.$/)?.[1];
+const newReceipt = (r) => r.content[0].text.match(/Call again with receipt=(sha256:[a-f0-9]{64})\.$/)?.[1];
 
 const first = await write(path.join(r1, 'src', 'a.txt'), reloaded);
 assert.ok(!first.isError, 'not run yet is not an error');
-assert.doesNotMatch(text(first), /RULE_/);
 assert.equal(first.content.length, 2);
-assert.match(first.content[0].text, /# r1 rule/);
-assert.doesNotMatch(first.content[0].text, /a new project rule/, 'rules already covered are not shown again');
-assert.match(first.content[1].text, /^Not run yet: rules for this path are above\. Call again with receipt=sha256:/);
+assert.match(first.content[0].text, /^RULE_PUSH: Not run yet: rules for this path are below\. Call again with receipt=sha256:/);
+assert.match(first.content[1].text, /# r1 rule/);
+assert.doesNotMatch(first.content[1].text, /a new project rule/, 'rules already covered are not shown again');
 assert.ok(!fs.existsSync(path.join(r1, 'src', 'a.txt')), 'the first call writes nothing');
 const rec1 = newReceipt(first);
 const retry = await write(path.join(r1, 'src', 'a.txt'), rec1);
@@ -127,8 +127,8 @@ assert.ok(!retry.isError && !newReceipt(retry), text(retry));
 assert.equal(fs.readFileSync(path.join(r1, 'src', 'a.txt'), 'utf8'), 'w', 'the retry runs (not STALE)');
 
 const other = await write(path.join(r2, 'b.txt'), rec1);
-assert.match(other.content[0].text, /# r2 rule/);
-assert.doesNotMatch(other.content[0].text, /# r1 rule/);
+assert.match(other.content[1].text, /# r2 rule/);
+assert.doesNotMatch(other.content[1].text, /# r1 rule/);
 const rec2 = newReceipt(other);
 for (const p of [path.join(r2, 'b.txt'), path.join(r1, 'c.txt'), path.join(r2, 'd.txt')]) {
   const r = await write(p, rec2);
@@ -147,7 +147,7 @@ assert.match(readR1.content[1].text, /^Rules for this path \(same rank as aki__a
 assert.deepEqual(await rulesFor([path.join(path.dirname(tmp), 'elsewhere', 'x.txt')], [r1]), [], 'a path outside every root has no rules');
 assert.deepEqual(await rulesFor([], [tmp]), [], 'no path, no rules');
 assert.deepEqual(await rulesFor([path.join(r1, 'src', 'new', 'deep.txt')], [tmp]), [path.join(tmp, 'CLAUDE.md'), path.join(r1, 'AGENTS.md')], 'a path not created yet walks up from its nearest folder, top-down');
-// S6: a git worktree nested in its repo carries the same CLAUDE.md; it counts once (the worktree's copy), and a receipt covering the repo's copy covers it.
+// A git worktree nested in its repo carries the same CLAUDE.md; it counts once (the worktree's copy), and a receipt covering the repo's copy covers it.
 const wt = path.join(r1, '.claude', 'worktrees', 'w1');
 fs.mkdirSync(path.join(wt, 'src'), { recursive: true });
 fs.writeFileSync(path.join(r1, 'CLAUDE.md'), '# r1 claude\n');
@@ -161,7 +161,7 @@ const coveringR1 = (await client.callTool({ name: 'aki__akidevrule_context', arg
 const wtWrite = await write(path.join(wt, 'src', 'y.txt'), coveringR1);
 assert.ok(!newReceipt(wtWrite), `a receipt covering the repo's CLAUDE.md covers the worktree's copy: ${text(wtWrite)}`);
 assert.ok(fs.existsSync(path.join(wt, 'src', 'y.txt')));
-// S9: calls made together with one receipt into a project it does not cover: one result carries the rule file, the others point at it with the same new receipt.
+// Calls made together with one receipt into a project it does not cover: one result carries the rule file, the others point at it with the same new receipt.
 const r3 = path.join(tmp, 'r3');
 fs.mkdirSync(path.join(r3, 'deep'), { recursive: true });
 fs.writeFileSync(path.join(r3, 'CLAUDE.md'), '# r3 rule\n');
@@ -176,14 +176,14 @@ assert.ok(rec3);
 for (const r of pointers) {
   assert.equal(r.content.length, 1);
   assert.doesNotMatch(text(r), /# r3 rule/);
-  assert.match(text(r), new RegExp(`^Not run yet: the rules for this path, ${path.join(r3, 'CLAUDE.md').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(sha256 [a-f0-9]{12}\\) went with another call a moment ago; if no result in this turn shows it, read it with aki__read_text_file first\\. Call again with receipt=`));
+  assert.match(text(r), new RegExp(`^RULE_PUSH: Not run yet: the rules for this path, ${path.join(r3, 'CLAUDE.md').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(sha256 [a-f0-9]{12}\\) went with another call a moment ago; if no result in this turn shows it, read it with aki__read_text_file first\\. Call again with receipt=`));
   assert.equal(newReceipt(r), rec3, 'a pointer names the same new receipt as the result with the rules');
 }
 for (const n of ['a', 'b', 'c']) assert.ok(!fs.existsSync(path.join(r3, `${n}.txt`)), 'none of them ran');
 const mixed = await write(path.join(r3, 'deep', 'x.txt'), coveringR1);
-assert.match(mixed.content[0].text, /# r3 deep rule/, 'a rule file not shown yet is shown');
-assert.doesNotMatch(mixed.content[0].text, /# r3 rule\n/, 'the one just shown is not repeated');
-assert.match(mixed.content[1].text, /^Not run yet: rules for this path are above\. .*CLAUDE\.md \(sha256 [a-f0-9]{12}\) went with another call a moment ago; .*Call again with receipt=sha256:/);
+assert.match(mixed.content[1].text, /# r3 deep rule/, 'a rule file not shown yet is shown');
+assert.doesNotMatch(mixed.content[1].text, /# r3 rule\n/, 'the one just shown is not repeated');
+assert.match(mixed.content[0].text, /^RULE_PUSH: Not run yet: rules for this path are below\. .*CLAUDE\.md \(sha256 [a-f0-9]{12}\) went with another call a moment ago; .*Call again with receipt=sha256:/);
 setNow(() => Date.now() + 11_000);
 assert.match(text(await write(path.join(r3, 'a.txt'), coveringR1)), /# r3 rule/, 'after the shown window the rule file is shown again');
 setNow(null);
@@ -191,6 +191,30 @@ for (const n of ['a', 'b', 'c']) {
   const r = await write(path.join(r3, `${n}.txt`), rec3);
   assert.ok(!r.isError && !newReceipt(r), `the new receipt runs every one of them: ${text(r)}`);
 }
+// The rules a file type routes to (the AkiDevRule route map) join the same chain the first time a gated call writes that type.
+const ruleDir = path.join(os.homedir(), '.aki', 'akidevrule');
+fs.mkdirSync(ruleDir, { recursive: true });
+fs.writeFileSync(path.join(ruleDir, 'route-map.json'), JSON.stringify({
+  routes: [{ rules: ['RULE-coding.md', 'RULE-pattern-core.md'], ext: ['js'] }, { rules: ['RULE-docs.md'], ext: ['md'] }],
+  ungated: { segments: ['/.aki/'], prefixes: ['/nowhere/'], dirs: ['scratchpad'] },
+}));
+for (const [f, body] of [['RULE-coding.md', '# coding rule'], ['RULE-pattern-core.md', '# pattern rule'], ['RULE-docs.md', '# docs rule']]) fs.writeFileSync(path.join(ruleDir, f), `${body}\n`);
+const r4 = path.join(tmp, 'r4');
+fs.mkdirSync(path.join(r4, '.git'), { recursive: true });
+fs.mkdirSync(path.join(r4, 'scratchpad'));
+const base = (await client.callTool({ name: 'aki__akidevrule_context', arguments: { workingPath: r4 } })).structuredContent.receipt;
+const codeFirst = await write(path.join(r4, 'a.js'), base);
+assert.match(codeFirst.content[1].text, /# coding rule[\s\S]*# pattern rule/, 'a first code write gets the code rules');
+assert.doesNotMatch(codeFirst.content[1].text, /# docs rule/, 'and not the rules of another file type');
+const recCode = newReceipt(codeFirst);
+assert.ok(!newReceipt(await write(path.join(r4, 'b.js'), recCode)), 'the next code write runs');
+assert.ok(!newReceipt(await write(path.join(r4, 'scratchpad', 'note.md'), recCode)), 'a path the map leaves ungated pushes nothing');
+const docsFirst = await write(path.join(r4, 'README.md'), recCode);
+assert.match(docsFirst.content[1].text, /# docs rule/, 'the first .md write after code gets the docs rules');
+assert.doesNotMatch(docsFirst.content[1].text, /# coding rule/, 'rules already delivered are not pushed again');
+assert.ok(!newReceipt(await write(path.join(r4, 'README.md'), newReceipt(docsFirst))), 'the retry runs');
+fs.rmSync(path.join(ruleDir, 'route-map.json'));
+
 const big = path.join(tmp, 'big', 'CLAUDE.md');
 fs.mkdirSync(path.dirname(big));
 fs.writeFileSync(big, `# big\n${'x'.repeat(40 * 1024)}\n`);

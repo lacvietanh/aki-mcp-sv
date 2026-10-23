@@ -1,5 +1,5 @@
 // One JSON line per tool call, for every tool, so misuse is measured instead of guessed: which client, which op, ok or not, how long. Written at the bridge, the only layer that sees the external session id and user agent. Never the arguments' text: no prompt, expression or compose text reaches this file.
-// The shape follows the owner's call-log decision (docs/plan/akimcp-tool-refactor.md § D9): every tool is logged, the default line is lean (basic), a detail level adds the full error text plus the from chat and the eval hash, and keep-by-age cleanup (default 40 days) replaces the old 1 MB size rotation.
+// The shape follows the owner's call-log decision (docs/plan/done/akimcp-tool-refactor.md § D9): every tool is logged, the default line is lean (basic), a detail level adds the full error text plus the from chat and the eval hash, and keep-by-age cleanup (default 40 days) replaces the old 1 MB size rotation.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -17,6 +17,7 @@ export const isLoggedTool = (name) => typeof name === 'string' && name.startsWit
 
 const DATED_NAME = /^tool-calls-(\d{4}-\d{2}-\d{2})(?:-\d+)?\.jsonl$/;
 const REFUSAL = /\((\w+); next: /;
+const RULE_OUTCOME = /^(RULE_[A-Z_]+):/; // the rule gate's refusal or push, which leads the first text of a result either way
 const dayOf = (d) => d.toISOString().slice(0, 10);
 
 // Clamps a stored or incoming log section back onto the defaults; strict mode throws instead of falling back, so a panel save surfaces the mistake instead of silently widening or dropping logs.
@@ -75,6 +76,7 @@ export function buildLogEntry({ sessionId, agent, headerNames, trace, params, re
   const failed = Boolean(response?.error) || result?.isError === true;
   const rawErrorText = response?.error?.message ?? (failed ? result?.content?.find((c) => c.type === 'text')?.text : undefined);
   const errorText = short(rawErrorText, 200);
+  const firstText = result?.content?.find((c) => c.type === 'text')?.text;
   const entry = {
     ts: new Date().toISOString(),
     client: short(sessionId, 8),
@@ -86,6 +88,7 @@ export function buildLogEntry({ sessionId, agent, headerNames, trace, params, re
     evalKind: evalKindOf(args.expression),
     ok: !failed,
     errorCode: errorCodeOf(rawErrorText),
+    rule: typeof firstText === 'string' ? RULE_OUTCOME.exec(firstText)?.[1] : undefined,
     ms,
     version: VERSION,
     ...traceFields(trace),

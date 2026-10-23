@@ -1,9 +1,9 @@
 // Every tool that acts refuses a call without the receipt of the rules in force (docs/plan/done/rule-receipt-gate.md); a receipt proves issuance, not presence in context, so the refusal text tells the AI to reload without knownReceipt.
-// A gated call that touches a project whose rule files the receipt does not cover is not run: the result carries those rules and a new receipt (D23 in docs/plan/akimcp-tool-refactor.md). Read tools always run and append one line naming the rule files.
+// A gated call that touches a project whose rule files, or writes a file whose type's rules (the AkiDevRule route map), the receipt does not cover is not run: the result carries those rules and a new receipt (D23 in docs/plan/done/akimcp-tool-refactor.md, Stage A in docs/plan/done/rule-presence-check.md). Read tools always run and append one line naming the project rule files.
 // A receipt counts only when this server issued it (aki__akidevrule_context records it here, in memory) and the same call made now still returns it: a changed rule file changes the receipt, so the old one is refused.
 import { z } from 'zod';
 import { assembleRuleContext } from './rule-context.js';
-import { pathsOf, rulesFor, rulesBlock, rulesLine, contentSha } from './project-rules.js';
+import { pathsOf, filePathsOf, rulesFor, routeRulesFor, rulesBlock, rulesLine, contentSha } from './project-rules.js';
 
 const RECEIPT_ARG = 'receipt';
 const RECEIPT_RE = /^sha256:[a-f0-9]{64}$/;
@@ -67,7 +67,7 @@ async function uncovered(own, entry, current) {
   const knownSha = new Set((current.sources || []).map((s) => s.sha256).filter(Boolean));
   const missing = [];
   const shaOf = new Map();
-  for (const f of await rulesFor(pathsOf(own))) {
+  for (const f of [...await rulesFor(pathsOf(own)), ...await routeRulesFor(filePathsOf(own))]) {
     if (known.has(f)) continue;
     const sha = await contentSha(f);
     if (knownSha.has(sha)) continue;
@@ -124,10 +124,10 @@ export function gate(handler, hadSchema) {
       const { fresh, recent } = claimShown(receipt, pending.files, pending.shaOf);
       const again = `Call again with receipt=${pending.receipt}.`;
       const elsewhere = recent.length ? `${recent.map((f) => `${f} (sha256 ${pending.shaOf.get(f).slice(0, 12)})`).join(', ')} went with another call a moment ago; if no result in this turn shows ${recent.length > 1 ? 'them' : 'it'}, read ${recent.length > 1 ? 'them' : 'it'} with aki__read_text_file first. ` : '';
-      if (!fresh.length) return { content: [{ type: 'text', text: `Not run yet: the rules for this path, ${elsewhere}${again}` }] };
+      if (!fresh.length) return { content: [{ type: 'text', text: `RULE_PUSH: Not run yet: the rules for this path, ${elsewhere}${again}` }] };
       return { content: [
+        { type: 'text', text: `RULE_PUSH: Not run yet: rules for this path are below. ${elsewhere}${again}` },
         { type: 'text', text: await rulesBlock(fresh) },
-        { type: 'text', text: `Not run yet: rules for this path are above. ${elsewhere}${again}` },
       ] };
     }
     return hadSchema ? handler(own, ...rest) : handler(...rest);
