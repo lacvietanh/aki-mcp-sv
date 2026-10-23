@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import './setup.js';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { once } from 'node:events';
@@ -50,7 +51,10 @@ async function run() {
       assert.doesNotMatch(html, new RegExp(`Bearer ${panelToken}`));
       assert.doesNotMatch(html, /data-act="generatePostman"/);
       assert.doesNotMatch(html, /Generate first/);
-      assert.match(html, /<span class="txt">[^<]*public\/favicon\/icon-48\.png<\/span>/);
+      assert.match(html, /<a class="btnlink" href="\/favicon\/icon-48\.png" download="akimcp-icon\.png">/);
+      const icon = await fetch(base + '/favicon/icon-48.png');
+      assert.equal(icon.status, 200, 'the panel serves the icon the download button points at');
+      assert.equal(icon.headers.get('content-type'), 'image/png');
       assert.doesNotMatch(html, /tokens\.json/);
       assert.doesNotMatch(html, /Registration URL/);
       assert.doesNotMatch(html, /Advanced OAuth/);
@@ -87,12 +91,12 @@ async function run() {
         body: JSON.stringify({ redirect_uris: [uri] }),
       });
       const geminiHosts = ['oauth-redirect', 'oauth-redirect-sandbox', 'oauth-redirect-test'].map((sub) => `https://${sub}.googleusercontent.com`);
-      for (const uri of [...geminiHosts, geminiHosts[0] + '/r/x']) {
+      for (const uri of [...geminiHosts, geminiHosts[0] + '/r/x', 'https://search.clickup-prod.com/connect/mcp']) {
         const res = await register(uri);
         assert.equal(res.status, 201, uri);
         assert.ok((await res.json()).client_id, uri);
       }
-      for (const uri of ['https://oauth-redirect.googleusercontent.com.attacker.com', 'http://oauth-redirect.googleusercontent.com', 'https://a@oauth-redirect.googleusercontent.com', 'https://oauth-redirect.googleusercontent.com/r/x#f']) {
+      for (const uri of ['https://oauth-redirect.googleusercontent.com.attacker.com', 'http://oauth-redirect.googleusercontent.com', 'https://a@oauth-redirect.googleusercontent.com', 'https://oauth-redirect.googleusercontent.com/r/x#f', 'https://search.clickup-prod.com/other', 'https://search.clickup-prod.com.attacker.com/connect/mcp']) {
         const res = await register(uri);
         assert.equal(res.status, 400, uri);
         assert.equal((await res.json()).error, 'invalid_redirect_uri', uri);

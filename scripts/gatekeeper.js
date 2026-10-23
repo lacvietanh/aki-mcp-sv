@@ -1,4 +1,4 @@
-// Public entry: OAuth AS (Claude pre-registered + ChatGPT DCR) + Streamable HTTP /mcp via streamable-bridge.
+// Public entry: OAuth AS (pre-issued client + DCR connectors) + Streamable HTTP /mcp via streamable-bridge.
 // Runs in-process inside start.js (docs/plan/done/consolidate-mcp-tool-processes.md, Part B): startGatekeeper() returns the http.Server so the orchestrator can close it on shutdown.
 import http from 'node:http';
 import { loadOrCreatePassphrase, metadataHandlers, handleAuthorize, handleToken, handleRegister, handleRevoke, verifyBearer } from './oauth.js';
@@ -91,8 +91,11 @@ export function startGatekeeper(origin = null, onFatal) {
       if (!verifyBearer(req.headers.authorization)) {
         const wait = failures.retryAfterSeconds(key);
         if (wait) return refuse(res, wait);
-        logSecurity(`/mcp rejected bearer from ${key}`);
-        recordFailure(key);
+        // A request with no Authorization header at all is the probe every MCP client sends first to read this 401 challenge; an empty or non-Bearer header is still a wrong credential.
+        if (req.headers.authorization !== undefined) {
+          logSecurity(`/mcp rejected bearer from ${key}`);
+          recordFailure(key);
+        }
         // Advertise the OAuth resource metadata only when an ingress is attached; on pure loopback emit a bare
         // Bearer challenge instead of a bogus "null/.well-known/..." URL.
         res.writeHead(401, {

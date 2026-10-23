@@ -2,6 +2,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { esc } from './html.js';
+import { aioboxInstalled, AIOBOX_PANEL } from './aiobox-guide.js';
 
 // SSoT for the AGY server identity: the mcpServers key AND the mcp(<key>/*) pre-allow name; set directly, not left to AGY's hyphen-dropping normalization (docs/ref/fact-agy-mcp-config.md § CLI-5).
 export const AGY_SERVER_KEY = 'akimcp';
@@ -21,68 +22,89 @@ const CHATGPT_CONNECTOR_URL = 'https://chatgpt.com/plugins#settings/Connectors?c
 const GEMINI_CONNECTOR_URL = 'https://support.google.com/g/answer/17106276';
 const GROK_CONNECTOR_URL = 'https://grok.com/connectors';
 const NOTION_CONNECTIONS_URL = 'https://www.notion.so/my-connections';
-const TOKENIZER_URL = 'https://chromewebstore.google.com/detail/claude-token-counter/bioobpobpbeohjoefndgkiaakboimpch';
-const GROK_USAGE_URL = 'https://chromewebstore.google.com/detail/grok-usage-watch-%E2%80%93-rate-l/bmpboaihdkpkjehbceegdmndkonlpdge';
 const RULES_REPO_URL = 'https://github.com/lacvietanh/akidevrule';
 const MCP_REPO_URL = 'https://github.com/lacvietanh/aki-mcp-sv';
 const RULES_INSTALL_CMD = 'npx @akinet/akidevrule@latest';
 const TAILSCALE_DOWNLOAD_URL = 'https://tailscale.com/download';
 const TAILSCALE_FUNNEL_URL = 'https://tailscale.com/docs/features/tailscale-funnel';
-const WIDEN_SNIPPET = "document.querySelectorAll('.max-w-3xl').forEach(el => el.classList.replace('max-w-3xl', 'max-w-7xl'));";
 // Static on purpose: tool details live in tool descriptions and aki__akidevrule_context; only the two musts stay here, as a client-side instruction is the one place that can insist.
 const WEB_PROMPT = [
   'Always use the akimcp tools (aki__*) for local files, shell and browser.',
   'You MUST follow /akirule in every chat, in full, from your first action on. Never skip it, even for a small task.',
 ].join('\n');
 
-// Footer mirrors akitao.com's own (same products, order, and 20px icons hotlinked from that site) but recolored in this panel's tokens so it follows the light/dark theme.
+// Footer mirrors the AkiTao ecosystem list (akitao.com app/components/AppFooter.vue `products` and `socialLinks`, UNIDOC Web §2.4b): same order, names and URLs. Icons are hotlinked from akitao.com by one rule from the canonical icon key; a name always sits beside its icon, so the footer still reads offline.
 const SITE = 'https://akitao.com';
+// [name, url, icon key, ecosystem]: every row gets the UTM; ecosystem true = Aki-owned domain, which keeps its referrer, false = third party (noopener noreferrer).
 const ECOSYSTEM = [
-  ['Aki MCP SV', MCP_REPO_URL, '/pj/icon-aki-mcp-sv-96.png'],
-  ['AkiTao', 'https://akitao.com', '/pj/icon-akitao.com-96.png'],
-  ['AkiDev', 'https://dev.akitao.com', '/pj/icon-dev.akitao.com-96.png'],
-  ['AkiDev Rule', RULES_REPO_URL, 'pj/icon-aki-mcp-sv-96.png'],
-  ['AkiDev Sync', 'https://github.com/lacvietanh/aki-dev-sync', '/pj/icon-aki-dev-sync-96.png'],
-  ['Aki Kinh Dịch', 'https://kinhdich.akinet.me', '/pj/icon-kinhdich.akinet.me-96.png'],
-  ['Aki Tử Vi', 'https://tuvi.akinet.me', '/pj/icon-tuvi.akinet.me-96.png'],
-  ['AkiApp', 'https://app.akinet.me', '/pj/icon-app.akinet.me-96.png'],
-  ['AkiNet', 'https://akinet.me', '/pj/icon-akinet.me-96.png'],
-  ['TachNhac v1', 'https://tool.akivn.net', '/pj/icon-tachnhacv1-96.png'],
-  ['TachNhac.com', 'https://tachnhac.com', '/pj/icon-tachnhac.com-96.png'],
-  ['AkiVN', 'https://akivn.net', '/pj/icon-akivn.net-96.png'],
-  ['AkiCloud', 'https://cloud.akivn.net', '/pj/icon-cloud.akivn.net-96.png'],
-  ['VSTShop.com', 'https://vstshop.com', '/pj/icon-vstshop.com-96.png'],
-  ['AkiWorkflow.com', 'https://akiworkflow.com', '/pj/icon-akiworkflow.com-96.png'],
-  ['LamNhac.net', 'https://lamnhac.net', '/pj/icon-lamnhac.net-96.png'],
-  ['XKproduction.com', 'https://xkproduction.com', '/pj/icon-xkproduction.com-96.png'],
-  ['Oscar Entertainment', 'https://oscarfamily.vn', '/pj/icon-oscarfamily.vn-96.png'],
-  ['Oscar Music Group', 'https://oscarlabel.com', '/pj/icon-oscarlabel.com-96.png'],
-  ['Oscar Studio', 'https://studio.oscarfamily.vn', '/pj/icon-studio.oscarfamily.vn-96.png'],
+  ['AkiTao.com', SITE, 'akitao.com', true],
+  ['aiobox.app', 'https://aiobox.app', 'aiobox.app', true],
+  ['TáchNhạc V1', 'https://tool.akivn.net', 'tachnhacv1', true],
+  ['TáchNhạc', 'https://tachnhac.com', 'tachnhac.com', true],
+  ['Kinh Dịch AkiNet', 'https://kinhdich.app', 'kinhdich.akinet.me', true],
+  ['Tử Vi AkiNet', 'https://tuvi.akinet.me', 'tuvi.akinet.me', true],
+  ['Aki Dev', 'https://dev.akitao.com', 'dev.akitao.com', true],
+  ['AkiDev.org', 'https://akidev.org', 'akidev.org', true],
+  ['AkiDevRule', RULES_REPO_URL, 'akidevrule', false],
+  ['Aki Dev Sync', 'https://github.com/lacvietanh/aki-dev-sync', 'aki-dev-sync', false],
+  ['aki-mcp-sv', MCP_REPO_URL, 'aki-mcp-sv', false],
+  ['AkiVN', 'https://akivn.net', 'akivn.net', true],
+  ['Aki Cloud', 'https://cloud.akivn.net', 'cloud.akivn.net', true],
+  ['AkiApp', 'https://app.akinet.me', 'app.akinet.me', false],
+  ['VSTShop.com', 'https://vstshop.com', 'vstshop.com', false],
+  ['AkiNet.me', 'https://akinet.me', 'akinet.me', true],
+  ['Aki Workflow', 'https://akiworkflow.com', 'akiworkflow.com', false],
+  ['LamNhac.net', 'https://lamnhac.net', 'lamnhac.net', false],
+  ['XKproduction.com', 'https://xkproduction.com', 'xkproduction.com', false],
+  ['Oscar Entertainment', 'https://oscarfamily.vn', 'oscarfamily.vn', false],
+  ['RegMail.me', 'https://regmail.me', 'regmail.me', false],
+  ['Oscar Music Group', 'https://oscarlabel.com', 'oscarlabel.com', false],
+  ['Oscar Studio', 'https://studio.oscarfamily.vn', 'studio.oscarfamily.vn', false],
+  ['DiSanHonViet.com', 'https://disanhonviet.com', 'disanhonviet.com', false],
+  ['DisanBudang.com', 'https://disanbudang.com', 'disanbudang.com', false],
 ];
 
-// akitao renders these as a Font Awesome webfont; inlining the four marks keeps the panel self-contained.
+// akitao renders these as a Font Awesome webfont; inlining the marks keeps the panel self-contained.
 const SVG = {
   github: 'M12 .3a12 12 0 00-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.9 2.8 1.3 3.5 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 016 0c2.3-1.5 3.3-1.2 3.3-1.2.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6A12 12 0 0012 .3',
   linkedin: 'M20.4 20.5h-3.6V15c0-1.3 0-3-1.8-3s-2.1 1.4-2.1 2.9v5.6H9.4V9h3.4v1.6h.04c.5-.9 1.6-1.9 3.4-1.9 3.6 0 4.3 2.4 4.3 5.5v6.3zM5.3 7.4a2.1 2.1 0 110-4.1 2.1 2.1 0 010 4.1zm1.8 13.1H3.6V9h3.5v11.5zM22.2 0H1.8C.8 0 0 .8 0 1.7v20.6C0 23.2.8 24 1.8 24h20.4c1 0 1.8-.8 1.8-1.7V1.7C24 .8 23.2 0 22.2 0z',
+  youtube: 'M23.5 6.2a3 3 0 00-2.1-2.1C19.5 3.5 12 3.5 12 3.5s-7.5 0-9.4.6A3 3 0 00.5 6.2C0 8.1 0 12 0 12s0 3.9.5 5.8a3 3 0 002.1 2.1c1.9.6 9.4.6 9.4.6s7.5 0 9.4-.6a3 3 0 002.1-2.1c.5-1.9.5-5.8.5-5.8s0-3.9-.5-5.8zM9.5 15.6V8.4l6.3 3.6-6.3 3.6z',
   messenger: 'M12 2C6.5 2 2 6.1 2 11.2c0 2.9 1.4 5.5 3.6 7.2V22l3.3-1.8c1 .3 2 .4 3.1.4 5.5 0 10-4.1 10-9.4S17.5 2 12 2zm1 12.4l-2.5-2.7-5 2.7 5.5-5.8 2.6 2.7 4.9-2.7-5.5 5.8z',
   mail: 'M3 5h18a1 1 0 011 1v12a1 1 0 01-1 1H3a1 1 0 01-1-1V6a1 1 0 011-1zm.6 2L12 12.6 20.4 7H3.6z',
 };
+// [label, url, icon]: an icon is an inline SVG path, or an image URL (Zalo has no free mark to inline). Socials carry no UTM.
 const SOCIAL = [
-  ['GitHub', 'https://github.com/lacvietanh', SVG.github],
   ['LinkedIn', 'https://www.linkedin.com/in/lacvietanh', SVG.linkedin],
-  ['Messenger', 'https://m.me/lacvietanh', SVG.messenger],
-  ['Email', 'mailto:admin@akitao.com', SVG.mail],
+  ['YouTube AkiTao', 'https://www.youtube.com/@akitao-com', SVG.youtube],
+  ['Messenger AkiNet', 'https://m.me/akinet?t=fromakimcp', SVG.messenger],
+  ['GitHub', 'https://github.com/lacvietanh', SVG.github],
+  ['Zalo', 'https://zalo.me/0869297957', `${SITE}/img/icon-zalo.png`],
+  ['admin@akitao.com', 'mailto:admin@akitao.com', SVG.mail],
 ];
 
-const withUtm = (url) => url.includes('?') ? `${url}&utm_source=aki-mcp-sv-footer` : `${url}?utm_source=aki-mcp-sv-footer`;
+// Query goes before any #, since a query after the fragment is never sent to the server.
+const withUtm = (url) => {
+  const hashAt = url.indexOf('#');
+  const base = hashAt === -1 ? url : url.slice(0, hashAt);
+  return `${base}${base.includes('?') ? '&' : '?'}utm_source=akimcp-panel&utm_medium=footer${hashAt === -1 ? '' : url.slice(hashAt)}`;
+};
 
-const ecoLink =([name, url, icon]) =>
-  `<li><a class="eco-link" href="${esc(withUtm(url))}" target="_blank" rel="noopener"><img class="eco-icon" src="${SITE}${icon}" alt="" width="20" height="20" loading="lazy"><span>${esc(name)}</span></a></li>`;
+const ecoLink = ([name, url, iconKey, ecosystem]) =>
+  `<li><a class="eco-link" href="${esc(withUtm(url))}" target="_blank" rel="${ecosystem ? 'noopener' : 'noopener noreferrer'}"><img class="eco-icon" src="${SITE}/pj/icon-${esc(iconKey)}-96.png" alt="" width="20" height="20" loading="lazy"><span>${esc(name)}</span></a></li>`;
 
-const socialLink = ([label, url, path]) =>
-  `<a class="social" href="${esc(url.startsWith('mailto:') ? url : withUtm(url))}" target="_blank" rel="noopener" aria-label="${esc(label)}" title="${esc(label)}"><svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="${path}"/></svg></a>`;
+const socialLink = ([label, url, icon]) =>
+  `<a class="social" href="${esc(url)}" target="_blank" rel="noopener noreferrer" aria-label="${esc(label)}" title="${esc(label)}">${icon.startsWith('https://') ? `<img src="${icon}" alt="" width="15" height="15" loading="lazy">` : `<svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="${icon}"/></svg>`}</a>`;
 
-const copyEl = (value, hl = false, id) => `<code class="copy${hl ? ' hl' : ''}"${id ? ` id="${esc(id)}"` : ''} title="click to copy"><span class="txt">${esc(value)}</span></code>`;
+const SECRET_MASK = '•'.repeat(12);
+
+// The one place a secret is hidden: the text shows each non-empty secret as SECRET_MASK, and the eye button swaps it with the real value (data-v), which click-to-copy also reads.
+function copyEl(value, hl = false, id, secrets = []) {
+  const shown = secrets.filter(Boolean).reduce((text, secret) => text.split(secret).join(SECRET_MASK), value);
+  const swap = shown === value ? '' : ` data-v="${esc(value)}" data-mask="${esc(shown)}"`;
+  return `<code class="copy${hl ? ' hl' : ''}"${id ? ` id="${esc(id)}"` : ''} title="click to copy"><span class="txt"${swap}>${esc(shown)}</span></code>`;
+}
+
+const eyeButton = (label) => `<button type="button" class="eye" data-eye data-label="${esc(label)}" aria-label="Show ${esc(label)}" title="Show ${esc(label)}"><i class="fa-solid fa-eye"></i></button>`;
 
 // Local-time "YYYY-MM-DD HH:mm:ss", not toLocaleString() — that renders differently per OS/locale.
 function formatDateTime(d) {
@@ -108,7 +130,12 @@ function field(label, value, hl = false) {
 
 // Shown masked so a screenshot never carries it; the eye button reveals it, click-to-copy always copies the real value.
 function secretField(label, value) {
-  return `<div class="row"><label>${esc(label)}<button type="button" class="eye" data-eye aria-label="Show ${esc(label)}" title="Show / hide"><i class="fa-solid fa-eye"></i></button></label><code class="copy"><span class="txt" data-v="${esc(value)}">${'•'.repeat(12)}</span></code></div>`;
+  return `<div class="row"><label>${esc(label)}${eyeButton(label)}</label>${copyEl(value, false, undefined, [value])}</div>`;
+}
+
+// A snippet that inlines secrets: its structure stays readable, only the secrets are masked.
+function secretSnippet(label, value, secrets, id) {
+  return `<div class="snip">${copyEl(value, true, id, secrets)}${eyeButton(label)}</div>`;
 }
 
 export function renderPanel({ origin, ingress = 'funnel', client, passphrase, token, accessToken, repoRoot, rulesDir, userDir, updateInfo = {}, savedIngress = null, isDev = false }) {
@@ -120,11 +147,14 @@ export function renderPanel({ origin, ingress = 'funnel', client, passphrase, to
   });
   const cursorJson = JSON.stringify({ mcpServers: { 'aki-mcp': { url: localUrl, headers: { Authorization: `Bearer ${accessToken}` } } } });
   // stdio, because our /mcp is Bearer-gated and agy's SSE transport has no headers; CLI and IDE read the same file, so one entry serves both — docs/ref/fact-agy-mcp-config.md § CLI-1, CLI-2, IDE-1.
-  const agyStdioPath = path.join(repoRoot, 'scripts', 'stdio.js');
-  const agyJson = JSON.stringify({ mcpServers: { [AGY_SERVER_KEY]: { command: 'node', args: [agyStdioPath] } } });
+  const stdioPath = path.join(repoRoot, 'scripts', 'stdio.js');
+  const agyJson = JSON.stringify({ mcpServers: { [AGY_SERVER_KEY]: { command: 'node', args: [stdioPath] } } });
   const claudeCodeCmd = `claude mcp add --transport http aki-mcp ${localUrl} --header "Authorization: Bearer ${accessToken}"`;
+  // The Claude app's config file takes only stdio entries (docs/plan/done/connector-setup-ux.md F11), so it spawns the same entry as AGY.
+  const claudeAppJson = JSON.stringify({ mcpServers: { 'aki-mcp': { command: 'node', args: [stdioPath] } } });
   // Codex CLI (~/.codex/config.toml): `http_headers` carries a static bearer so the snippet is copy-paste-ready with no env var to export.
   const codexToml = `[mcp_servers.aki-mcp]\nurl = "${localUrl}"\nhttp_headers = { "Authorization" = "Bearer ${accessToken}" }`;
+  const ecoHalf = Math.ceil(ECOSYSTEM.length / 2);
   const funnelMode = ingress === 'funnel';
   // Tab 3 (Hosted domain) never becomes the active ingress here — the service it needs is a separate, not-yet-built project.
   const activeIngressTab = funnelMode ? 'tailscale' : 'owned';
@@ -168,7 +198,7 @@ export function renderPanel({ origin, ingress = 'funnel', client, passphrase, to
       </div>
       <span class="version-badge" aria-label="AKIMCP version ${esc(String(mcpVer))}">v${esc(String(mcpVer))}</span>
     </div>
-    <p class="sub">Secure local files and shell access for Claude, ChatGPT, Grok, and Gemini through OAuth 2.1.</p>
+    <p class="sub">Secure access to local files and shell for web AIs and local tools, through one OAuth-gated endpoint.</p>
     <p class="panel-meta"><span>Local panel</span><span>127.0.0.1</span><span>${esc(ingressLabel)}</span><span>PID ${pid}</span><span>Started ${esc(startedLabel)}</span></p>
   </div>
   <a class="gh-top" href="${MCP_REPO_URL}" target="_blank" rel="noopener" aria-label="View AKIMCP on GitHub" title="View on GitHub"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="${SVG.github}"/></svg></a>
@@ -181,7 +211,6 @@ ${updateBanner}
   <li class="step"><a href="#s1"><span class="step-n">1</span> Connectors</a></li>
   <li class="step"><a href="#s2"><span class="step-n">2</span> Install rules</a></li>
   <li class="step"><a href="#s3"><span class="step-n">3</span> Instructions</a></li>
-  <li class="step opt"><a href="#s4"><span class="step-n">4</span> Extension <em>optional</em></a></li>
   <li class="step opt"><a href="#s7"><span class="step-n">7</span> Security</a></li>
 </ol>
 </section>
@@ -246,7 +275,7 @@ ${field('Re-sync command', 'tailscale funnel --https=443 off && tailscale serve 
 </section>
 
 <section id="s1"><h2>1 · Connectors: local IDEs + web AIs</h2>
-<p class="helptext">One AKIMCP endpoint, two paths. <strong>Local tools</strong> (Postman, Cursor, Claude Code, AGY) connect directly over <span class="mono">127.0.0.1</span> — zero latency, no tunnel, works offline; each tab below carries a ready-to-paste local config. <strong>Web AIs</strong> (Claude, Grok, ChatGPT, Gemini, Notion, Buda) use the MCP URL below and ${origin ? 'are reachable now.' : 'need a public ingress — set it up in <a href="#s0">Section 0</a> first (the MCP URL fills in once ingress is active).'}</p>
+<p class="helptext">One AKIMCP endpoint, two paths. <strong>Local tools</strong> (Postman, Cursor, Claude Code, the Claude app, AGY, Codex) connect directly over <span class="mono">127.0.0.1</span> — zero latency, no tunnel, works offline; each tab below carries a ready-to-paste local config. <strong>Web AIs</strong> (Claude, Grok, ChatGPT, Gemini, Notion, Buda, ClickUp) use the MCP URL below and ${origin ? 'are reachable now.' : 'need a public ingress — set it up in <a href="#s0">Section 0</a> first (the MCP URL fills in once ingress is active).'}</p>
 ${field('MCP Name', MCP_NAME)}
 ${field('MCP URL', url, true)}
 ${secretField('Passphrase', passphrase)}
@@ -258,7 +287,7 @@ ${secretField('Access token', accessToken)}
   <span class="tab-group-label">Local · direct 0ms</span>
   <button class="tab active" data-tab="postman"><img src="/img/providers/postman.png" class="provider-icon" alt="">Postman</button>
   <button class="tab" data-tab="cursor">Cursor</button>
-  <button class="tab" data-tab="claudecode">Claude Code</button>
+  <button class="tab" data-tab="claudelocal"><img src="/img/providers/claude.png" class="provider-icon" alt="">Claude Code &amp; app</button>
   <button class="tab" data-tab="agy">AGY</button>
   <button class="tab" data-tab="codex">Codex</button>
   <span class="tab-group-sep" aria-hidden="true"></span>
@@ -269,6 +298,7 @@ ${secretField('Access token', accessToken)}
   <button class="tab" data-tab="gemini"><img src="/img/providers/gemini.png" class="provider-icon" alt="">Gemini</button>
   <button class="tab" data-tab="notion"><img src="/img/providers/notion.png" class="provider-icon" alt="">Notion</button>
   <button class="tab" data-tab="buda">Buda</button>
+  <button class="tab" data-tab="clickup">ClickUp</button>
 </nav>
 
 <div class="tabpane" id="tab-claude">
@@ -279,6 +309,7 @@ ${secretField('Access token', accessToken)}
     <li>Enter the <strong>Passphrase</strong> when AKIMCP opens the confirmation page.</li>
   </ol>
   <p class="helptext">Claude now discovers OAuth automatically. No Client ID or Client Secret is needed.</p>
+  <p class="helptext">A connector added here belongs to your Claude account: claude.ai, the Claude app and the mobile app all reach it from Anthropic's cloud, so it needs the ingress even on this computer. On the computer running AKIMCP, the <strong>Claude Code &amp; app</strong> tab in the Local group connects without one.</p>
 </div>
 
 <div class="tabpane" id="tab-grok">
@@ -295,7 +326,7 @@ ${secretField('Access token', accessToken)}
   <p class="lnk"><a href="${esc(CHATGPT_CONNECTOR_URL)}" target="_blank" rel="noopener">↗ Create a connector</a></p>
   <ol class="steps">
     <li>Turn on <strong>Developer mode</strong> first. OpenAI requires it to create custom MCP apps.</li>
-    <li>Pick an <strong>Icon</strong> (optional). Use ${copyEl(`${repoRoot}/public/favicon/icon-48.png`)} or any image.</li>
+    <li>Pick an <strong>Icon</strong> (optional). <a class="btnlink" href="/favicon/icon-48.png" download="akimcp-icon.png">Download icon</a> or use any image.</li>
     <li>Enter a <strong>Name</strong> and <strong>Description</strong> (your choice).</li>
     <li>Set <strong>Connection</strong> → <strong>Server URL</strong> = MCP URL above.</li>
     <li>Tick <strong>I understand and want to continue</strong>, then <strong>Create</strong>.</li>
@@ -343,6 +374,16 @@ ${secretField('Access token', accessToken)}
   <p class="helptext">Buda sends the shared access token as a Bearer header. No passphrase or client registration. After <strong>Roll token</strong>, paste the new header value again.</p>
 </div>
 
+<div class="tabpane" id="tab-clickup">
+  <ol class="steps">
+    <li>In ClickUp, open <strong>Settings</strong> → <strong>App Center</strong> → <strong>MCP Servers</strong> → <strong>Connect an MCP Server</strong>.</li>
+    <li>Set <strong>Name</strong> = MCP Name above, <strong>URL</strong> = MCP URL.</li>
+    <li>Set <strong>Authentication Method</strong> = <strong>OAuth</strong>. Leave <strong>Advanced configuration</strong> closed, then click <strong>Next</strong>.</li>
+    <li>In the tab ClickUp opens, enter the <strong>Passphrase</strong> and approve. ClickUp continues on its own.</li>
+  </ol>
+  <p class="helptext">ClickUp registers itself, so there is no Client ID, Secret or token to paste, and <strong>Roll token</strong> does not disconnect it. ClickUp Brain then uses AKIMCP's tools when a request needs them, without a mention.</p>
+</div>
+
 <div class="tabpane active" id="tab-postman">
   <h3 class="subh">Control the Postman app</h3>
   <p class="helptext">This launch attaches control that opening Postman from the Dock/Spotlight does not: it auto-clicks Approve / Continue / Run / Try again and toggles Thinking / Auto-run inside the Postman window. If Postman is already open, this attaches to it — it does not open a second instance.</p>
@@ -356,7 +397,7 @@ ${secretField('Access token', accessToken)}
   <h3 class="subh" style="margin-top:16px">Connect Postman to this MCP</h3>
   <p class="helptext">Postman runs on this machine, so it connects straight to the local engine on <span class="mono">127.0.0.1</span> — zero latency, and it keeps working with no internet and no tunnel. Click the JSON to copy, then paste it in Postman Connected Accounts.</p>
   <p class="lnk"><a href="${esc(POSTMAN_SETTINGS_URL)}" target="_blank" rel="noopener">↗ Open Connected Accounts</a></p>
-  ${copyEl(postmanJson, true, 'postmanJson')}
+  ${secretSnippet('Postman JSON', postmanJson, [accessToken], 'postmanJson')}
   <p class="helptext" style="margin-top:12px">Setup screenshot:</p>
   <figure><img src="/img/aki-mcp-instruct-postman.png" alt="Postman MCP setup walkthrough" loading="lazy" style="max-width:100%;border-radius:6px"></figure>
 </div>
@@ -364,13 +405,22 @@ ${secretField('Access token', accessToken)}
 <div class="tabpane" id="tab-cursor">
   <h3 class="subh">Connect Cursor — local, 0ms</h3>
   <p class="helptext">Paste into <span class="mono">~/.cursor/mcp.json</span> (or Cursor → Settings → MCP Servers), then reload. Connects over <span class="mono">127.0.0.1</span> — no tunnel, works offline.</p>
-  ${copyEl(cursorJson, true, 'cursorJson')}
+  ${secretSnippet('Cursor JSON', cursorJson, [accessToken], 'cursorJson')}
 </div>
 
-<div class="tabpane" id="tab-claudecode">
-  <h3 class="subh">Connect Claude Code CLI — local, 0ms</h3>
-  <p class="helptext">Run this one-liner in a terminal:</p>
-  ${copyEl(claudeCodeCmd, true, 'claudeCodeCmd')}
+<div class="tabpane" id="tab-claudelocal">
+  <p class="helptext">Claude Code and the Claude app are set up separately: connecting one does not connect the other. Both connect over <span class="mono">127.0.0.1</span> on the computer running AKIMCP, with no ingress. For claude.ai, the mobile app or the Claude app on another computer, use the <strong>Claude</strong> tab in the Web group.</p>
+  <h3 class="subh">Claude Code (terminal) — local, 0ms</h3>
+  <p class="helptext">Run this in a terminal. It carries the access token, so after <strong>Roll token</strong> run the new line again.</p>
+  ${secretSnippet('Claude Code command', claudeCodeCmd, [accessToken], 'claudeCodeCmd')}
+  <h3 class="subh">Claude app (desktop) — local, 0ms</h3>
+  <ol class="steps">
+    <li>In the Claude app, open <strong>Settings</strong> → <strong>Developer</strong> → <strong>Edit Config</strong>. It opens <span class="mono">claude_desktop_config.json</span>.</li>
+    <li>Merge the entry below under <span class="mono">mcpServers</span>, keeping any entries already there, and save.</li>
+    <li>Quit the Claude app completely, then open it again.</li>
+  </ol>
+  ${copyEl(claudeAppJson, true, 'claudeAppJson')}
+  <p class="helptext">The app starts AKIMCP's tools itself over stdio (<span class="mono">scripts/stdio.js</span>) with no token, so <strong>Roll token</strong> changes nothing here. If the app reports the server failed to start, replace <span class="mono">node</span> with the full path printed by <span class="mono">which node</span> (Windows: <span class="mono">where node</span>).</p>
 </div>
 
 <div class="tabpane" id="tab-agy">
@@ -386,7 +436,7 @@ ${secretField('Access token', accessToken)}
 <div class="tabpane" id="tab-codex">
   <h3 class="subh">Connect Codex CLI — local, 0ms</h3>
   <p class="helptext">Add this block to <span class="mono">~/.codex/config.toml</span> (append it — don't overwrite the file). Codex reaches the local engine over <span class="mono">127.0.0.1</span> via streamable HTTP; the bearer token is inlined so there's no shell env var to export first. Works offline, no tunnel. Restart Codex after saving.</p>
-  ${copyEl(codexToml, true, 'codexToml')}
+  ${secretSnippet('Codex config', codexToml, [accessToken], 'codexToml')}
 </div>
 </section>
 
@@ -414,15 +464,14 @@ ${field('Install command', RULES_INSTALL_CMD)}
 <div class="acts"><button class="primary" onclick="copyText(document.getElementById('prompt').value, this)">copy prompt</button></div>
 </section>
 
-<section id="s4"><h2>4 · Browser utilities <span class="done-tag" style="color:var(--muted);border-color:var(--line)">optional</span></h2>
-<p class="helptext"><strong>Claude Token Counter</strong>: a Chrome extension that shows your hourly and weekly usage bar under claude.ai's input box, including on the Free plan, which claude.ai doesn't surface itself.</p>
-<div class="acts"><a class="btnlink" href="${esc(TOKENIZER_URL)}" target="_blank" rel="noopener">Install from Chrome Web Store ↗</a></div>
-<figure><img src="/extension-claude-usage.png" alt="Token usage bar shown under claude.ai's input box" loading="lazy"></figure>
-<p class="helptext" style="margin:14px 0 0"><strong>Grok Usage Watch</strong>: the same idea for grok.com, a rate-limit/usage bar for your Grok quota that the site doesn't show on its own.</p>
-<div class="acts"><a class="btnlink" href="${esc(GROK_USAGE_URL)}" target="_blank" rel="noopener">Install from Chrome Web Store ↗</a></div>
-<figure><img src="/extension-grok-usage.png" alt="Usage / rate-limit bar shown on grok.com" loading="lazy"></figure>
-<p class="helptext" style="margin:14px 0 0">Widen the claude.ai chat pane; paste the snippet below into the browser tab's Console (${copyEl('Cmd/Ctrl ⌥ J')}). Only tweaks CSS in your current tab, nothing account- or security-related, nothing leaves your machine.</p>
-${field('Widen command', WIDEN_SNIPPET)}
+<section id="s4"><h2>4 · Tool providers</h2>
+<p class="helptext">Each provider is a group of tools the AI sees. One that is not installed on this machine (Chrome, Postman, agy, kiro-cli) is hidden automatically; switch off one you do not use to keep the AI's tool list short. The agy and Kiro CLI tools start off, because each hands a whole task to another paid agent: switch them on here when you want them. Rule context, files, search and shell are always on.</p>
+<p class="helptext">A switch applies on this server at once. An AI client sees it the next time it lists tools, which for most clients means a new chat or reconnecting the connector. After installing or removing an app, press Detect again.</p>
+<div id="providersList"></div>
+<div class="acts">
+  <button data-act="redetectProviders">Detect again</button>
+  <span class="msg" id="msgProviders"></span>
+</div>
 </section>
 
 <section id="s5"><h2>5 · Folders the connector may reach</h2>
@@ -491,26 +540,20 @@ ${field('Widen command', WIDEN_SNIPPET)}
 <h3 class="subh">Active now (since last restart)</h3>
 <div id="callersList"></div>
 <p class="helptext">Don't recognize a client or a caller? Roll the passphrase and use Roll &amp; sign out all clients in <a href="#s1">section 1</a>.</p>
-<h3 class="subh">Security log</h3>
-<p class="helptext">Wrong passphrases, rejected tokens, blocks, approvals and new callers — newest first, the last 200 lines. Saved to <span class="mono" id="securityLogPath"></span>; at 1 MB it moves to <span class="mono">security.log.1</span>, so it never grows past about 2 MB.</p>
-<pre class="logbox" id="securityLog"></pre>
-<div class="acts">
-  <button data-act="refreshLog">Refresh</button>
-  <span class="msg" id="msgLog"></span>
-</div>
 </section>
 
-<section id="s8"><h2>8 · Tool providers</h2>
-<p class="helptext">Each provider is a group of tools the AI sees. One that is not installed on this machine (Chrome, Postman, agy, kiro-cli) is hidden automatically; switch off one you do not use to keep the AI's tool list short. The agy and Kiro CLI tools start off, because each hands a whole task to another paid agent: switch them on here when you want them. Rule context, files, search and shell are always on.</p>
-<p class="helptext">A switch applies on this server at once. An AI client sees it the next time it lists tools, which for most clients means a new chat or reconnecting the connector. After installing or removing an app, press Detect again.</p>
-<div id="providersList"></div>
-<div class="acts">
-  <button data-act="redetectProviders">Detect again</button>
-  <span class="msg" id="msgProviders"></span>
-</div>
+<section id="s8"><h2>8 · AIObox</h2>
+${aioboxInstalled() ? `<p class="helptext">${esc(AIOBOX_PANEL.installed)}</p>` : `<div class="updbar">
+<h3 class="subh">${esc(AIOBOX_PANEL.headline)}</h3>
+<p>${esc(AIOBOX_PANEL.story)}</p>
+<ul>${AIOBOX_PANEL.benefits.map((b) => `<li>${esc(b)}</li>`).join('')}</ul>
+<p class="helptext">${esc(AIOBOX_PANEL.beta)}</p>
+<div class="acts"><a class="btnlink primary" href="${esc(AIOBOX_PANEL.url)}" target="_blank" rel="noopener noreferrer">${esc(AIOBOX_PANEL.cta)} ↗</a></div>
+</div>`}
 </section>
 
-<section id="s9"><h2>9 · Call log</h2>
+<section id="s9"><h2>9 · Logs</h2>
+<h3 class="subh">Call log</h3>
 <p class="helptext">Every tool call is written to <span class="mono">${esc(path.join(userDir, 'tool-calls.jsonl'))}</span> as one JSON line: when, which tool and op, ok or not, how long, which client. No prompt, expression or argument text is ever written.</p>
 <p class="helptext"><strong>Basic</strong> (the default) keeps a short error code; <strong>Detail</strong> adds the full error text, the chat it acted on (from) and a hash of eval expressions. Keep days is how long past day-files stay before being deleted; the MB cap rolls the current file over to a dated one when it grows.</p>
 <label class="chk"><input type="checkbox" data-log="enabled"> Logging on</label>
@@ -524,6 +567,13 @@ ${field('Widen command', WIDEN_SNIPPET)}
   <button data-act="resetLog">Reset to defaults</button>
   <span class="msg" id="msgLogSettings"></span>
 </div>
+<h3 class="subh">Security log</h3>
+<p class="helptext">Wrong passphrases, rejected tokens, blocks, approvals and new callers — newest first, the last 200 lines. Saved to <span class="mono" id="securityLogPath"></span>; at 1 MB it moves to <span class="mono">security.log.1</span>, so it never grows past about 2 MB.</p>
+<pre class="logbox" id="securityLog"></pre>
+<div class="acts">
+  <button data-act="refreshLog">Refresh</button>
+  <span class="msg" id="msgLog"></span>
+</div>
 </section>
 
 <footer>
@@ -531,8 +581,7 @@ ${field('Widen command', WIDEN_SNIPPET)}
     <div class="foot-brand">
       <a class="foot-logo" href="${withUtm(SITE)}" target="_blank" rel="noopener"><img src="${SITE}/favicon/icon-192.png" alt="" width="32" height="32">Aki<b>Tao</b></a>
       <p class="foot-desc">Technology moves; the brand's identity doesn't.</p>
-      <p class="lnk"><a href="${withUtm('https://m.me/akitaoglobal')}" target="_blank" rel="noopener">Contact AkiTao ↗</a></p>
-      <div class="foot-social">${SOCIAL.map(socialLink).join('')}<a class="social" href="https://zalo.me/0869297957" target="_blank" rel="noopener" aria-label="Zalo" title="Zalo"><img src="${SITE}/img/icon-zalo.png" alt="" width="15" height="15" loading="lazy"></a></div>
+      <div class="foot-social">${SOCIAL.map(socialLink).join('')}</div>
       <div class="donate">
         <p class="foot-title">Buy me a coffee</p>
         <img class="qr" id="donateQr" src="/QR-AkiTao-PayPal.png" alt="PayPal donate QR" width="250" height="250" loading="lazy">
@@ -545,8 +594,8 @@ ${field('Widen command', WIDEN_SNIPPET)}
     <div>
       <p class="foot-title">Ecosystem</p>
       <div class="eco-grid">
-        <ul>${ECOSYSTEM.slice(0, 11).map(ecoLink).join('')}</ul>
-        <ul>${ECOSYSTEM.slice(11).map(ecoLink).join('')}</ul>
+        <ul>${ECOSYSTEM.slice(0, ecoHalf).map(ecoLink).join('')}</ul>
+        <ul>${ECOSYSTEM.slice(ecoHalf).map(ecoLink).join('')}</ul>
       </div>
     </div>
   </div>

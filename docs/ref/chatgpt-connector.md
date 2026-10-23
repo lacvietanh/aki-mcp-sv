@@ -6,7 +6,7 @@ OpenAI requires **Developer mode** before you can create custom MCP apps ([docs]
 
 1. Enable **Developer mode**: ChatGPT → Settings → Security and login ([open ↗](https://chatgpt.com/#settings/Security)).
 2. Open [Create a connector ↗](https://chatgpt.com/plugins#settings/Connectors?create-connector=true&redirectAfter=%2Fplugins) (ChatGPT → Settings → Connectors → New connector).
-3. **Icon** (optional). Use `<repo>/public/favicon/icon-48.png` or any image.
+3. **Icon** (optional). Press **Download icon** in the panel's ChatGPT tab (it serves `/favicon/icon-48.png`, so it works for a global install and for `npx`) or use any image.
 4. **Name**: `AkiMCP` (AIObox's connect macro recognizes its connector by this name).
 5. **Description**: your choice (e.g. `Local file and shell access via MCP`).
 6. **Connection → Server URL**: paste the **MCP URL** from the panel (e.g. `https://aki-mba16.tailf23d51.ts.net/mcp`).
@@ -32,6 +32,6 @@ That's it. ChatGPT self-registers as an OAuth client via DCR (RFC 7591, PKCE, no
 - `scripts/config-page.js` — panel ChatGPT tab (section 1)
 - `scripts/oauth.js` — `handleRegister` (DCR endpoint), `metadataHandlers` (well-known)
 - `scripts/gatekeeper.js` — routes `/.well-known/openid-configuration` → `authorizationServer`
-- `docs/feat/security.md` — OAuth model (Claude and ChatGPT DCR; pre-issued client for Gemini)
+- `docs/feat/security.md` — OAuth model (which clients self-register by DCR; the pre-issued client for any client that wants a static pair)
 - `docs/plan/done/audit-1.1.0-todo.md` §A1–A2 — original DCR blocker and fix
 - `docs/plan/done/merge-pr1-windows-chatgpt.md` — how ChatGPT DCR was merged

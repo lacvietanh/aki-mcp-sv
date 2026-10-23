@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import './setup.js';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import http from 'node:http';
@@ -71,6 +72,17 @@ const call = (pathname, headers) => new Promise((resolve, reject) => {
 
 for (let i = 0; i < 30; i++) assert.equal((await call('/nope', { 'x-forwarded-for': '198.51.100.1' })).status, 404, 'unknown paths are never counted');
 
+const challengeProbe = { 'x-forwarded-for': '198.51.100.2' };
+for (let i = 0; i < 10; i++) assert.equal((await call('/mcp', challengeProbe)).status, 401, 'a call with no bearer gets the 401 challenge and is never blocked');
+assert.equal((await call('/mcp', { ...challengeProbe, authorization: 'Bearer ' + goodToken })).status, 405, 'the caller that only probed still connects');
+assert.equal(printed.filter((l) => l.includes('rejected bearer from 198.51.100.2')).length, 0, 'a call with no bearer is not logged as a rejected bearer');
+
+for (const [peer, authorization] of [['198.51.100.6', ''], ['198.51.100.7', 'Basic wrong']]) {
+  for (let i = 0; i < 5; i++) assert.equal((await call('/mcp', { 'x-forwarded-for': peer, authorization })).status, 401);
+  assert.equal((await call('/mcp', { 'x-forwarded-for': peer, authorization })).status, 429, `an Authorization header of ${JSON.stringify(authorization)} still counts as a failure`);
+  assert.equal(printed.filter((l) => l.includes(`rejected bearer from ${peer}`)).length, 5, 'and is logged as a rejected bearer');
+}
+
 for (let i = 0; i < 5; i++) assert.equal((await call('/mcp', { 'x-forwarded-for': '198.51.100.3', authorization: 'Bearer wrong' })).status, 401);
 const refused = await call('/mcp', { 'x-forwarded-for': '198.51.100.3', authorization: 'Bearer wrong' });
 assert.equal(refused.status, 429);
@@ -79,7 +91,7 @@ assert.equal((await call('/mcp', { 'x-forwarded-for': '198.51.100.3', authorizat
 await call('/mcp', { 'x-forwarded-for': '198.51.100.3', authorization: 'Bearer ' + goodToken });
 assert.equal(printed.filter((l) => l.includes('token used by new caller 198.51.100.3')).length, 1, 'a new caller is logged once');
 assert.equal(printed.filter((l) => l.includes('/nope') || l.includes('-> 429') || l.includes('GET /mcp')).length, 0, '404, 429 and /mcp access lines are not printed');
-assert.equal(printed.filter((l) => l.includes('blocked after repeated failed attempts')).length, 1, 'a block is logged once');
+assert.equal(printed.filter((l) => l.includes('caller 198.51.100.3 blocked after repeated failed attempts')).length, 1, 'a block is logged once');
 console.log = consoleLog;
 
 server.close();

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Minimal OAuth 2.1 authorization server: a pre-registered confidential client (paste flow) plus RFC 7591 DCR public clients (token_endpoint_auth_method: none).
+// Minimal OAuth 2.1 authorization server: a pre-issued confidential client (static ID/secret) plus RFC 7591 DCR public clients (token_endpoint_auth_method: none).
 import { randomBytes, randomInt, createHash, timingSafeEqual } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync, renameSync, rmSync } from 'node:fs';
 import os from 'node:os';
@@ -24,11 +24,13 @@ const GROK_CALLBACK_PREFIX = 'https://grok.com/connectors-oauth-exchange-code/';
 const NOTION_CALLBACK_HOSTS = new Set(['notion.so', 'www.notion.so', 'app.notion.so', 'notion.com', 'www.notion.com', 'app.notion.com', 'mcp.notion.com']);
 // Gemini DCR registers Google's OAuth proxy hosts with no path, not gemini.google.com; matched on the parsed hostname so lookalikes fail.
 const GEMINI_CALLBACK_HOSTS = new Set(['oauth-redirect.googleusercontent.com', 'oauth-redirect-sandbox.googleusercontent.com', 'oauth-redirect-test.googleusercontent.com']);
+// ClickUp DCR registers this exact callback, the one its MCP Server form names (observed live 2026-10-21).
+const CLICKUP_CALLBACK = 'https://search.clickup-prod.com/connect/mcp';
 const CLIENT_AUTH_METHODS = ['none', 'client_secret_post', 'client_secret_basic'];
 const CODE_TTL_MS = 5 * 60 * 1000;
 const PENDING_CLIENT_TTL_MS = 3600_000;
 const IDLE_CLIENT_TTL_MS = 30 * 24 * 3600_000;
-const STATIC_CLIENT_NAME = 'Claude (pre-registered)';
+const STATIC_CLIENT_NAME = 'Pre-issued client';
 // OAuth bodies are a few hundred bytes; the cap keeps an unauthenticated caller from making the server buffer an arbitrary upload.
 const MAX_BODY_BYTES = 64 * 1024;
 const MAX_LOGGED_TEXT = 64;
@@ -47,7 +49,7 @@ const refreshTokens = new Map();
 
 function isAllowedRedirect(uri) {
   if (typeof uri !== 'string' || !uri) return false;
-  if (uri === CLAUDE_CALLBACK || uri === CHATGPT_LEGACY_CALLBACK) return true;
+  if (uri === CLAUDE_CALLBACK || uri === CHATGPT_LEGACY_CALLBACK || uri === CLICKUP_CALLBACK) return true;
   return uri.startsWith(CHATGPT_CALLBACK_PREFIX)
     || uri.startsWith(GROK_CALLBACK_PREFIX)
     || isHttpsCallbackOnHosts(uri, GEMINI_CALLBACK_HOSTS)
@@ -97,7 +99,7 @@ function dropRefreshTokens(shouldDrop) {
   return dropped;
 }
 
-// AIObox reads the token through GET /api/access-token and keeps this file as a fallback until its A3 step, so the format is free after that (docs/plan/akimcp-aiobox-boundary-plan.md § 4 I4).
+// AIObox reads the token through GET /api/access-token and keeps this file as a fallback until its A3 step, so the format is free after that (docs/plan/done/akimcp-aiobox-boundary-plan.md § 4 I4).
 function saveTokens() {
   const body = { access: Object.fromEntries(accessTokens), refresh: Object.fromEntries(refreshTokens) };
   writeFileSync(TOKENS_FILE, JSON.stringify(body), { mode: 0o600 });
@@ -105,7 +107,7 @@ function saveTokens() {
 
 loadTokens();
 
-// A crash between the temp write and the rename leaves the old file intact, so the Claude secret cannot be lost mid-write.
+// A crash between the temp write and the rename leaves the old file intact, so the pre-issued client's secret cannot be lost mid-write.
 function writeFileAtomic(file, content) {
   const tmp = `${file}.tmp`;
   writeFileSync(tmp, content, { mode: 0o600 });
@@ -164,12 +166,12 @@ function redirectHostOf(uris) {
 
 // AIObox reads redirectHost, signedIn and tokenAt through GET /api/security (docs/plan/IMPORTANT-akimcp-aiobox-contract.md).
 function activityView(record, kind, signedInIds) {
-  const isClaude = kind === 'claude';
+  const isStatic = kind === 'static';
   return {
     clientId: record.clientId,
-    name: isClaude ? STATIC_CLIENT_NAME : record.clientName ?? null,
+    name: isStatic ? STATIC_CLIENT_NAME : record.clientName ?? null,
     kind,
-    redirectHost: isClaude ? new URL(CLAUDE_CALLBACK).host : redirectHostOf(record.redirectUris),
+    redirectHost: isStatic ? null : redirectHostOf(record.redirectUris),
     firstSeenAt: record.firstSeenAt ?? null,
     approvedAt: record.approvedAt ?? null,
     tokenAt: record.tokenAt ?? null,
@@ -186,7 +188,7 @@ const signedInClientIds = () => new Set([...refreshTokens.values()].map((entry) 
 /** Display fields only — never secrets. Most recently active first; never-tracked entries last. */
 export function listClients() {
   const signedInIds = signedInClientIds();
-  const views = [activityView(loadOrCreateClient(), 'claude', signedInIds)];
+  const views = [activityView(loadOrCreateClient(), 'static', signedInIds)];
   for (const record of Object.values(loadDcrClients())) views.push(activityView(record, 'dcr', signedInIds));
   return views.sort((a, b) => lastActivityAt(b) - lastActivityAt(a));
 }
@@ -231,16 +233,16 @@ export function removeClient(clientId) {
   return outcome;
 }
 
-/** Static Claude client + any clients ChatGPT (or Claude) registered via /register. */
+/** The pre-issued client, or a DCR client a provider registered via /register. */
 function resolveClient(clientId) {
   if (!clientId) return null;
   const staticClient = loadOrCreateClient();
   if (clientId === staticClient.clientId) {
-    // Pasted into several providers (Claude, Gemini), each with its own redirect_uri, so this client accepts any allowlisted callback; isAllowedRedirect is the security boundary.
+    // Pasted into several providers, each with its own redirect_uri, so this client accepts any allowlisted callback; isAllowedRedirect is the security boundary.
     return {
       clientId: staticClient.clientId,
       clientSecret: staticClient.clientSecret,
-      redirectUris: [CLAUDE_CALLBACK],
+      redirectUris: [],
       isStatic: true,
       tokenEndpointAuthMethod: 'client_secret_post',
     };

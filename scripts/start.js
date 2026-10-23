@@ -24,7 +24,7 @@ import { startGatekeeper } from './gatekeeper.js';
 import { useIngress } from './rate-limit.js';
 import { startPanel } from './panel.js';
 import { warmToolsServer } from './streamable-bridge.js';
-import { checkForUpdate, writeStatusFile } from './update-check.js';
+import { checkForUpdate, writeStatusFile, cmpSemver } from './update-check.js';
 import { USER_DIR, IS_DEV, readIngressConfig } from './userdata.js';
 import { killPostmanDaemon } from './postman/postman-mcp.js';
 import { readLock, isPidAlive, writeLock, clearLock, killAndWait } from './instance-lock.js';
@@ -34,12 +34,16 @@ const version = VERSION;
 const customGatePort = argOf('--port');
 const customPanelPort = argOf('--panel-port');
 
-// Never fight a running instance for its ports (that produced the token-403 bug): reuse it if same version, replace it if older.
+// Never fight a running instance for its ports (that produced the token-403 bug): reuse it if same version or newer, replace it if older.
 const existingLock = readLock();
 if (existingLock && existingLock.pid !== process.pid && isPidAlive(existingLock.pid)) {
-  if (existingLock.version === version) {
+  const runningIsOlder = !existingLock.version || cmpSemver(existingLock.version, version) < 0;
+  if (!runningIsOlder) {
     const url = `http://127.0.0.1:${existingLock.panelPort}/?t=${existingLock.token}`;
-    console.log(`[start] akimcp v${version} is already running (pid ${existingLock.pid}) — opening its panel`);
+    const since = existingLock.startedAt ? ` since ${new Date(existingLock.startedAt).toLocaleString()}` : '';
+    console.log(existingLock.version === version
+      ? `[start] akimcp v${version} is already running${since} (pid ${existingLock.pid}) — opening its panel. This copy did not start: code changed after that time is not loaded. To load it, stop the running one (Ctrl+C in its terminal, or Stop on AIObox's AkiMCP page), then start again`
+      : `[start] a newer akimcp v${existingLock.version} is already running${since} (pid ${existingLock.pid}) — opening its panel; to run v${version}, stop that one first`);
     if (process.argv.includes('--no-browser')) {
       console.log(`[start] panel: ${url}`);
     } else {
@@ -121,7 +125,7 @@ if (origin) {
   console.log(`[start] Remote MCP server URL: ${origin}/mcp`);
   console.log(`[start] OAuth Client ID: ${client.clientId}`);
   console.log(`[start] OAuth Client Secret: ${client.clientSecret}`);
-  console.log('[start] Client ID/Secret above are for Gemini or any client that needs a static client; Claude and ChatGPT need only the URL and the passphrase');
+  console.log('[start] Client ID/Secret above are for a client that wants a static pair; web AIs that sign in with OAuth (the panel connector tabs say which) need only the URL and the passphrase');
   console.log(`[start] Passphrase (enter it when the browser opens the confirmation page): ${passphrase}`);
 }
 

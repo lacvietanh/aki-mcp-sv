@@ -21,12 +21,21 @@ Signature: `npm start` is healthy, funnel status says "on", but client reports "
 ## Two client paths, one OAuth server
 
 `scripts/oauth.js` serves both without handler-level branching:
-- **Claude, ChatGPT, Grok, Gemini, Notion**: URL + passphrase only; they self-register via RFC 7591 DCR (`POST /register`), PKCE only, stored in `oauth-dcr-clients.json`.
+- **Claude, ChatGPT, Grok, Gemini, Notion, ClickUp**: URL + passphrase only; they self-register via RFC 7591 DCR (`POST /register`), PKCE only, stored in `oauth-dcr-clients.json`.
 - **Pre-issued confidential client** in `oauth-client.json` (`client_secret_post`): any client that wants a static client; `scripts/start.js` prints its ID/secret.
-- **Invariants**: `resolveClient()` is the single SSoT lookup for both. Redirect URIs are strictly allowlisted in `isAllowedRedirect` (`claude.ai`, `chatgpt.com`, `oauth-redirect*.googleusercontent.com`, `grok.com`, Notion hosts). Auth codes and refresh tokens are bound to their issuing client ID.
+- **Bearer clients** (Buda): no DCR, so they send the shared access token as `Authorization: Bearer`; no OAuth code involved, and Roll token breaks them until the new token is set again.
+- **Invariants**: `resolveClient()` is the single SSoT lookup for both. Redirect URIs are strictly allowlisted in `isAllowedRedirect` (`claude.ai`, `chatgpt.com`, `oauth-redirect*.googleusercontent.com`, `grok.com`, Notion hosts, the ClickUp callback). Auth codes and refresh tokens are bound to their issuing client ID.
+
+## Adding a connector (web AI or local client)
+
+1. **Auth path from the client's own screens and facts, recorded with source and date first** (`docs/ref/fact-*` or the plan); take the highest rung it offers: OAuth with DCR (URL + passphrase) → OAuth without DCR (pre-issued Client ID/Secret + passphrase) → Bearer header only when it has no OAuth. Every rung must be settable by automation, not only by hand (owner 2026-10-22: a connector a macro cannot set up by itself is not finished); OAuth ranks first because it survives Roll token, keeps the token server to server and is a named client the panel removes alone. Never a per-client OAuth branch.
+2. **Redirect URI (OAuth only).** Take the exact callback from a real attempt: the server log prints `[oauth] register REJECTED (redirect_uri not allowlisted): [origins]`. Add it to `isAllowedRedirect` in `scripts/oauth.js` (parsed hostname, https, no userinfo or fragment), never in `gatekeeper.js`; test in `test/oauth.test.js`; update the host list above.
+3. **Panel tab** in `scripts/config-page.js` section 1, Local or Web group, steps written from the client's real screens, saying what Roll token does to it; a README section with its link in the Contents line and its name in the headline list, `docs/index.md`, CHANGELOG. Elsewhere describe connectors as a group, never another hand-kept list.
+4. **Live check against the real client** before the plan goes to `done/`; until then its status says it was not run.
 
 ## OS-agnostic by decision, not by accident
 
+- **Users run Windows, Linux or macOS**: panel, README, docs, plans and console text never assume macOS ("this Mac", a `~/Library` path or `brew` alone). Say "this computer" or "the machine running AkiMCP"; a path or step that differs per OS is given for each OS, or names the OS it applies to.
 - **Data tables only**: Platform differences exist strictly as declarative maps indexed by `process.platform` (`LAUNCHER` in `open-browser.js`, `WIN_EXTRA` in `allowlist.js`). Never branch business logic (`if (win32)`).
 - **Prerequisites over fallbacks**: Windows runs Unix binaries via Git for Windows (`grep`, `find`). Do not add pure-JS reimplementations.
 - **Permanently removed**: `scripts/chrome.js` stays deleted (Chrome 136 blocks remote debugging on default profile) and native folder picker stays removed.

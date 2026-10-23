@@ -74,11 +74,13 @@ function setDot(el, ok) {
 document.addEventListener('click', (e) => {
   const eye = e.target.closest('[data-eye]');
   if (eye) {
-    const txt = eye.closest('.row').querySelector('.txt');
-    const masked = txt.dataset.shown !== '1';
-    txt.textContent = masked ? txt.dataset.v : '•'.repeat(12);
-    txt.dataset.shown = masked ? '1' : '0';
-    eye.firstElementChild.className = 'fa-solid fa-' + (masked ? 'eye-slash' : 'eye');
+    const txt = eye.closest('.row, .snip').querySelector('.txt');
+    const reveal = txt.dataset.shown !== '1';
+    txt.textContent = reveal ? txt.dataset.v : txt.dataset.mask;
+    txt.dataset.shown = reveal ? '1' : '0';
+    eye.firstElementChild.className = 'fa-solid fa-' + (reveal ? 'eye-slash' : 'eye');
+    eye.title = `${reveal ? 'Hide' : 'Show'} ${eye.dataset.label}`;
+    eye.setAttribute('aria-label', eye.title);
     return;
   }
   const el = e.target.closest('.copy');
@@ -368,7 +370,7 @@ function renderTable(containerId, columns, rows, emptyText, rowClass) {
   wrap.append(table);
   container.replaceChildren(wrap);
 }
-const CLIENT_KIND_LABEL = { claude: 'Claude pre-registered', dcr: 'connector' };
+const CLIENT_KIND_LABEL = { static: 'pre-issued', dcr: 'connector' };
 function clientNameCell({ name, pending }) {
   const box = document.createElement('div');
   box.append(name || '—', mutedNote('self-declared'));
@@ -376,7 +378,7 @@ function clientNameCell({ name, pending }) {
   return box;
 }
 function removeClientButton({ clientId, kind, name, signedIn }) {
-  const signOutOnly = kind === 'claude';
+  const signOutOnly = kind === 'static';
   if (signOutOnly && !signedIn) return '';
   const btn = document.createElement('button');
   btn.textContent = signOutOnly ? 'Sign out' : 'Remove';
@@ -395,7 +397,7 @@ function renderClients(clients) {
   renderTable('clientsList', [
     ['Name', clientNameCell],
     ['Kind', (c) => CLIENT_KIND_LABEL[c.kind] || c.kind || '—'],
-    ['Redirect', (c) => c.redirectHost || '—'],
+    ['Redirect', (c) => c.redirectHost || (c.kind === 'static' ? 'any allowed callback' : '—')],
     ['Signed in', (c) => c.signedIn ? 'yes' : 'no'],
     ['First seen', (c) => timeCell(c.firstSeenAt, 'before tracking')],
     ['Last approved', (c) => timeCell(c.approvedAt)],

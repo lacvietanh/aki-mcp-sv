@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import './setup.js';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import http from 'node:http';
@@ -101,9 +102,9 @@ try {
   assert.ok(!JSON.stringify(list).includes(staticClient.clientSecret) && !JSON.stringify(list).includes('clientSecret'));
   assert.deepEqual(list.slice(0, 2).map((view) => view.clientId), [staticClient.clientId, registered.client_id]);
   assert.equal(list.at(-1).clientId, 'legacyHeld');
-  const claude = list.find((view) => view.kind === 'claude');
-  assert.equal(claude.name, 'Claude (pre-registered)');
-  assert.equal(claude.redirectHost, 'claude.ai');
+  const preIssued = list.find((view) => view.kind === 'static');
+  assert.equal(preIssued.name, 'Pre-issued client');
+  assert.equal(preIssued.redirectHost, null);
   assert.equal(list.find((view) => view.clientId === 'fresh').pending, true);
   assert.equal(list.find((view) => view.clientId === 'approved').pending, false);
   assert.equal(list.find((view) => view.clientId === 'legacyHeld').pending, false);

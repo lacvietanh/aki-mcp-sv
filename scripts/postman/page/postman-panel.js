@@ -125,6 +125,8 @@
       ...autoClicker.defaultConfig(),
       autoRejectPickFolder: true,
       autoInjectInstruction: false,
+      autoSummarize: false,
+      autoSummarizePct: 90,
       showAllTeams: false,
       isPinned: true
     };
@@ -145,6 +147,8 @@
       ...autoClicker.persistedConfig(config),
       autoRejectPickFolder: config.autoRejectPickFolder,
       autoInjectInstruction: config.autoInjectInstruction,
+      autoSummarize: config.autoSummarize,
+      autoSummarizePct: config.autoSummarizePct,
       isPinned: config.isPinned,
       ...extra
     };
@@ -544,8 +548,10 @@
     bar.style.cssText = 'display:flex;align-items:center;gap:6px;padding:2px 12px 4px;font-size:10px;opacity:.85';
     // Mount inside the footer's center-content, not the footer itself — appending to the footer pushed the bar past .ai-chat-container's overflow:hidden clip edge, making it invisible.
     if (host.lastElementChild !== bar) host.appendChild(bar);
-    bar.title = `Chat context — ${chars.toLocaleString()} characters (${kb})\nHow long this conversation has grown. Longer chats can make the assistant's answers drift, so this is your cue to reset.\nGreen: healthy · Amber ≥ ${Math.round(amber / 1000)}K · Red ≥ ${Math.round(red / 1000)}K → start a new chat.`;
-    bar.innerHTML = `<span style="color:var(--content-color-secondary,#8b8b8b);white-space:nowrap">Context</span><div style="flex:1;height:4px;border-radius:2px;background:var(--background-color-tertiary,rgba(128,128,128,.25));overflow:hidden"><div style="width:${pct}%;height:100%;background:${color};transition:width .3s"></div></div><span style="color:${color};font-variant-numeric:tabular-nums;white-space:nowrap">${kb}</span>`;
+    const summarizeAt = config.autoSummarize ? config.autoSummarizePct || 90 : null;
+    bar.title = `Chat context — ${chars.toLocaleString()} characters (${kb})\nHow long this conversation has grown. Longer chats can make the assistant's answers drift, so this is your cue to reset.\nGreen: healthy · Amber ≥ ${Math.round(amber / 1000)}K · Red ≥ ${Math.round(red / 1000)}K → start a new chat.${summarizeAt ? `\nAuto-summarize at the tick: ${summarizeAt}% (${Math.round(autoSummarizeMark() / 1000)}K).` : ''}`;
+    const tick = summarizeAt ? `<div style="position:absolute;top:0;bottom:0;left:${summarizeAt}%;width:2px;margin-left:-1px;background:var(--content-color-primary,#fff);opacity:.7"></div>` : '';
+    bar.innerHTML = `<span style="color:var(--content-color-secondary,#8b8b8b);white-space:nowrap">Context</span><div style="position:relative;flex:1;height:4px;border-radius:2px;background:var(--background-color-tertiary,rgba(128,128,128,.25));overflow:hidden"><div style="width:${pct}%;height:100%;background:${color};transition:width .3s"></div>${tick}</div><span style="color:${color};font-variant-numeric:tabular-nums;white-space:nowrap">${kb}</span>`;
   }
 
   function renderStatusBarUsage() {
@@ -1085,6 +1091,15 @@
         resize: vertical;
         min-height: 90px;
       }
+      #aki-control-panel .aki-number {
+        width: 4.5em;
+        padding: 0 var(--spacing-xs);
+        background: var(--background-color-secondary);
+        border: var(--border-width-default) solid var(--border-color-default);
+        border-radius: var(--border-radius-default);
+        color: var(--content-color-primary);
+        font-size: var(--text-size-xs);
+      }
     `;
     let style = document.getElementById('aki-injected-styles');
     if (!style) {
@@ -1303,6 +1318,13 @@
             <span class="aki-section-label">SUMMARIZE FOR HANDOFF<span class="aki-help" title="Sends a summarize prompt into this chat so the model writes a handoff summary you can paste into a new chat, keeping the context when this one gets long.">?</span></span>
             <button type="button" id="aki-btn-summarize-chat" class="aki-btn">SUMMARIZE THIS CHAT</button>
           </div>
+          <div class="aki-row">
+            <label class="aki-label" title="Presses Summarize this chat for you once, when a chat you are working in fills the Context bar to this percent and the assistant has finished replying. 100% is the bar's red mark. A chat that is already past it when you open it is left alone.">
+              <input type="checkbox" id="aki-opt-auto-summarize" ${config.autoSummarize ? 'checked' : ''}>
+              <span>Auto-summarize when the Context bar reaches</span>
+            </label>
+            <input type="number" id="aki-opt-auto-summarize-pct" class="aki-number" min="50" max="100" step="5" value="${config.autoSummarizePct}" title="Percent of the Context bar, 50 to 100. Default 90."><span>%</span>
+          </div>
         </div>
       `;
 
@@ -1345,6 +1367,22 @@
       if (autoInjectCb) {
         autoInjectCb.onchange = (e) => {
           config.autoInjectInstruction = e.target.checked;
+          syncAndSaveConfig();
+        };
+      }
+      const autoSummarizeCb = panel.querySelector('#aki-opt-auto-summarize');
+      if (autoSummarizeCb) {
+        autoSummarizeCb.onchange = (e) => {
+          config.autoSummarize = e.target.checked;
+          syncAndSaveConfig();
+        };
+      }
+      const autoSummarizePctInput = panel.querySelector('#aki-opt-auto-summarize-pct');
+      if (autoSummarizePctInput) {
+        autoSummarizePctInput.onchange = (e) => {
+          const pct = Math.round(Number(e.target.value));
+          config.autoSummarizePct = Number.isFinite(pct) ? Math.min(100, Math.max(50, pct)) : 90;
+          e.target.value = config.autoSummarizePct;
           syncAndSaveConfig();
         };
       }
@@ -1552,6 +1590,30 @@
     sendAiPrompt(config.instruction);
   }
 
+  // Presses Summarize once per chat that grows across the mark by less than the amber-to-red span (a bigger jump is a switch to another chat), only while idle; why: docs/plan/done/postman-auto-summarize.md decisions 1-2.
+  const IDLE_MS = 5000;
+  let ctxPrev = null;
+  let ctxChangedAt = 0;
+  let summarizePending = false;
+  function autoSummarizeMark() {
+    return Math.round((config.ctxCharRed || 150000) * (config.autoSummarizePct || 90) / 100);
+  }
+  function checkAutoSummarize() {
+    const chars = readConversationChars();
+    const prev = ctxPrev;
+    ctxPrev = chars;
+    if (chars !== prev) ctxChangedAt = Date.now();
+    const mark = autoSummarizeMark();
+    if (!config.autoSummarize || chars < mark) { summarizePending = false; return; }
+    const span = (config.ctxCharRed || 150000) - (config.ctxCharAmber || 80000);
+    if (prev !== null && prev < mark && chars - prev < span) summarizePending = true;
+    if (!summarizePending || window.__pmSendInFlight || Date.now() - ctxChangedAt < IDLE_MS) return;
+    const input = findChatInput();
+    if (!input || (input.textContent || '').trim()) return;
+    summarizePending = false;
+    if (typeof window.__cdpRequestSummarize === 'function') window.__cdpRequestSummarize('');
+  }
+
   const LOOP_INTERVAL_MS = 500;
 
   new PageLoop(LOOP_INTERVAL_MS, [
@@ -1561,5 +1623,6 @@
     ['agent-switch', applyPendingAgentSwitch],
     ['permission-cards', () => permissionClicker.tick(config)],
     ['auto-inject', checkAndInjectInstruction],
+    ['auto-summarize', checkAutoSummarize],
   ]).start();
 })();

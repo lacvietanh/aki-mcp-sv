@@ -51,12 +51,14 @@ h3.subh:first-of-type { margin-top: 4px; }
 .copy:hover { border-color: var(--accent); }
 .copy:hover::after { color: var(--accent); }
 .eye { margin-left: 6px; padding: 0 6px; line-height: 1.4; vertical-align: middle; }
+.snip { display: flex; align-items: center; }
+.snip .copy { min-width: 0; }
 .copy.hl { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .copy.copied { border-color: var(--ok); }
 .copy.copied::after { content: '\f00c'; color: var(--ok); }
 button { border: 1px solid var(--line); background: var(--bg); color: var(--fg); border-radius: 8px; padding: 6px 12px; cursor: pointer; font-size: 12px; }
 button:hover { border-color: var(--accent); color: var(--accent); }
-button.primary { border-color: var(--accent); background: var(--accent); color: #fff; }
+button.primary, .btnlink.primary { border-color: var(--accent); background: var(--accent); color: #fff; }
 button[disabled] { opacity: .55; cursor: progress; }
 textarea, input[type=text], select { width: 100%; padding: 6px 9px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; color: var(--fg); }
 textarea { min-height: 90px; resize: vertical; line-height: 1.5; }

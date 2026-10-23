@@ -11,6 +11,22 @@ export const GUIDE_URL = 'https://aiobox.app/guide/aiobox.md';
 // No OS name (AIObox targets Windows, macOS and Linux); from=akimcp counts this line's readers, so every other mention of the guide keeps the bare GUIDE_URL.
 export const AIOBOX_PITCH = `AIObox (not installed here) is a desktop app that keeps many AI chats and accounts open side by side and lets them read and message each other through AkiMCP: ${GUIDE_URL}?from=akimcp`;
 
+// The panel's AIObox section (owner 2026-10-22, docs/feat/tools.md § AIObox in the panel): config-page.js only renders this. No OS name; from=akimcp-panel counts this surface apart from the akimcp line above.
+export const AIOBOX_PANEL = {
+  headline: 'All your AI. Working together.',
+  story: 'Every AI account you pay for works as one team: a chat that fills its account carries on in another, chats pass work to each other and keep going by themselves, and they call you only when they need you.',
+  benefits: [
+    'Every AI account signed in at once, each in its own Chrome profile, still signed in after a restart.',
+    'Connect AkiMCP to each account in one click, with no URL or passphrase to copy.',
+    'The usage left on every account of every provider, in one place.',
+    'Your own AI drives it through the AkiMCP you already run: it opens chats in other accounts and passes work between them.',
+  ],
+  beta: 'Free during the closed beta, for AkiDev members: join through akidev.org, then download with the code posted in the AkiDev Telegram group.',
+  cta: 'See AIObox',
+  url: 'https://aiobox.app/?from=akimcp-panel',
+  installed: 'AIObox is installed on this computer. Open it to connect each AI account to this AkiMCP in one click.',
+};
+
 export const aioboxInstalled = () => fs.existsSync(aioboxDir());
 export const windowsFile = () => path.join(aioboxDir(), 'cdp', 'windows.json');
 

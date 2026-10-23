@@ -1,6 +1,6 @@
 # Security
 
-> updated 2026-10-20 · v3.0.1
+> updated 2026-10-22 · v3.0.1
 
 The one place for akimcp's whole security picture: stance, every surface and its gate, the connection limits, who holds access and who uses it, what each secret on disk unlocks and how to revoke it, and what is logged. README carries a summary and points here. Design record for client activity and the security-only log: `docs/plan/done/client-activity-and-security-log.md`.
 
@@ -33,10 +33,10 @@ Consequences already decided:
 ## Remote auth — minimal OAuth 2.1
 
 ```
-claude.ai / ChatGPT / Grok / Gemini / Notion
+claude.ai / ChatGPT / Grok / Gemini / Notion / ClickUp
    │  GET /.well-known/oauth-protected-resource, /.well-known/oauth-authorization-server
    │      (/.well-known/openid-configuration is an alias of the latter, so ChatGPT can auto-discover registration_endpoint)
-   │  Claude, ChatGPT, Grok, Gemini, Notion: POST /register  (DCR)
+   │  Claude, ChatGPT, Grok, Gemini, Notion, ClickUp: POST /register  (DCR)
    ▼
 gatekeeper.js  ── /register  → RFC 7591, redirect URI must be allowlisted
                ── /authorize → confirmation page, requires the passphrase
@@ -45,8 +45,8 @@ gatekeeper.js  ── /register  → RFC 7591, redirect URI must be allowlisted
                ── /mcp       → Bearer access token required, else 401 + WWW-Authenticate → tools server (in-process)
 ```
 
-- **Pre-issued client (static, confidential):** the Client ID/Secret in `oauth-client.json`, printed by `akimcp` at start. Used by any client that wants a static client; it is not shown in the panel and Claude does not use it. Auth method `client_secret_post`; it accepts any allowlisted callback. The panel Clients table lists it as `Claude (pre-registered)` (kind `claude`, a legacy label).
-- **Claude, ChatGPT, Grok, Gemini (DCR):** the connector needs only the URL and the passphrase; it calls `POST /register` itself, and each connector instance becomes one entry in `oauth-dcr-clients.json`. PKCE S256. Redirect allowlist (`isAllowedRedirect`): the Claude callback, `chatgpt.com/connector/oauth/*` and the legacy ChatGPT callback, `grok.com/connectors-oauth-exchange-code/*`, the three Gemini hosts `oauth-redirect.googleusercontent.com`, `oauth-redirect-sandbox.googleusercontent.com` and `oauth-redirect-test.googleusercontent.com` (parsed hostname, https only, no userinfo or fragment, any path). Registration is open by design: a registered client still has to pass the passphrase.
+- **Pre-issued client (static, confidential):** the Client ID/Secret in `oauth-client.json`, printed by `akimcp` at start. Used by any client that wants a static client; it is not shown in the panel and Claude does not use it. Auth method `client_secret_post`; it accepts any allowlisted callback. The panel Clients table lists it as `Pre-issued client` (kind `static`, shown as "pre-issued"); its redirect host is `null` in `GET /api/security` (the panel shows "any allowed callback"), so AIObox, which matches clients by that field (`docs/plan/IMPORTANT-akimcp-aiobox-contract.md`), never counts it as a provider's client.
+- **Claude, ChatGPT, Grok, Gemini, ClickUp (DCR):** the connector needs only the URL and the passphrase; it calls `POST /register` itself, and each connector instance becomes one entry in `oauth-dcr-clients.json`. PKCE S256. Redirect allowlist (`isAllowedRedirect`): the Claude callback, `chatgpt.com/connector/oauth/*` and the legacy ChatGPT callback, `grok.com/connectors-oauth-exchange-code/*`, exactly `https://search.clickup-prod.com/connect/mcp` for ClickUp, the three Gemini hosts `oauth-redirect.googleusercontent.com`, `oauth-redirect-sandbox.googleusercontent.com` and `oauth-redirect-test.googleusercontent.com` (parsed hostname, https only, no userinfo or fragment, any path). Registration is open by design: a registered client still has to pass the passphrase.
 - **Notion (DCR, confidential):** Notion custom MCP registers with `client_secret_basic` or `client_secret_post` and gets a generated secret. Its callback must be https on exactly one of `notion.so`, `www.notion.so`, `app.notion.so`, `notion.com`, `www.notion.com`, `app.notion.com`, `mcp.notion.com` (parsed hostname; lookalikes, userinfo and `#` rejected). The scope Notion asks for is carried to the token and echoed; a refresh may narrow it, never widen it. It grants nothing extra: tools stay gated by folders and the allowlist. `POST /revoke` from a client drops that client's refresh grant (revoking the shared access token signs only that client out). Ported from PR #7 (TheLucasHenry), except its per-connector access token, which contradicts the single token.
 - **Hardening from the same PR:** a `client_id` such as `constructor` or `__proto__` no longer resolves a prototype member and crashes the process; a `/register` body that is `null`, an array or a scalar returns `400`; a rejected callback logs only its origin, unknown grant types log as `unsupported`, and request logs omit the query string.
 
@@ -81,7 +81,7 @@ Use the literal `127.0.0.1`, never `localhost`: on macOS `localhost` can resolve
 | `registerMax` / `registerWindowMinutes` | 100 / 10 | `POST /register` per caller in the window (every attempt counts: it writes a file); the block lasts one window |
 | `maxClients` | 500 | registered DCR clients stored; beyond it `/register` answers `429 too_many_clients` |
 
-- **What counts as a failure:** `401` only — wrong passphrase at `/authorize`, wrong client secret at `/token`, invalid Bearer on `/mcp`. `400` and `404` never count: they happen during ordinary connects. Connecting many providers in a row is never blocked.
+- **What counts as a failure:** `401` only — wrong passphrase at `/authorize`, wrong client secret at `/token`, a wrong Bearer on `/mcp`. A `/mcp` call with no `Authorization` header gets the `401` challenge but does not count and is not logged: every MCP client starts with that call to read the challenge, so a reconnect burst must never block a legitimate caller. `400` and `404` never count: they happen during ordinary connects. Connecting many providers in a row is never blocked.
 - **When a block ends:** by itself after `blockMinutes` (the counter restarts from zero), when the owner presses Release (one caller, or everyone) in panel section 7, when limits are turned off, or on restart. The panel lists every blocked caller with its remaining time.
 - **Valid Bearer always passes:** a caller that is blocked but holds the real token keeps working, so an attacker's failures from a shared address never cut an existing connection.
 - **Settings are read on every request**: a save applies at once. A missing or malformed value falls back to its default (`LIMIT_DEFAULTS`).
@@ -108,7 +108,7 @@ Verdict record (`proportion.C1`):
 
 ## Who holds access, who uses it
 
-Panel section 7 shows two tables and the security log, refreshed with the section's Refresh buttons.
+Panel section 7 shows two tables, refreshed with the section's Refresh buttons; the security log is in section 9.
 
 - **Clients** (`listClients()`, `scripts/oauth.js`): every client record, the pre-issued client included, with name (self-declared), kind, redirect host, first seen, last approval, last token grant, and the caller address and User-Agent at that moment. The fields live on the client record itself (`firstSeenAt`, `approvedAt`, `tokenAt`, `lastAddress`, `lastAgent`) and are written only on registration, approval and token grant. The client files are written atomically (temp file, then rename). Records from before tracking show "before tracking". **Signed in** means the client holds a refresh token and can renew access on its own.
 - **Dead clients are cleared** (`pruneClients()`, at start and at every `/register`): a DCR client never approved within 1 hour of registering goes, so strangers cannot fill `maxClients` and lock the owner out; any other DCR client goes once it holds no refresh token and has been idle 30 days (records from before tracking count as idle). The 30 days let a connector reconnect with its stored client ID after Roll & sign out all clients.
@@ -147,12 +147,12 @@ AkiMCP writes two things under AIObox's data dir `~/.aki/aiobox/` (never a secre
 
 ## What is logged
 
-`[security]` events go through `logSecurity()` (`scripts/security-log.js`): printed to the console and appended to `security.log` in the data dir, which moves to `security.log.1` at 1 MB, so the file pair never exceeds about 2 MB. Panel section 7 shows the newest 200 lines of the current file. Everything else is console only (`scripts/log.js`, timestamped). Only events that change or threaten the security state print, so the log stays readable after weeks and an attacker cannot make it grow at will.
+`[security]` events go through `logSecurity()` (`scripts/security-log.js`): printed to the console and appended to `security.log` in the data dir, which moves to `security.log.1` at 1 MB, so the file pair never exceeds about 2 MB. Panel section 9 shows the newest 200 lines of the current file. Everything else is console only (`scripts/log.js`, timestamped). Only events that change or threaten the security state print, so the log stays readable after weeks and an attacker cannot make it grow at will.
 
 | Printed | Not printed |
 |---|---|
 | `[security]` wrong passphrase (with caller), client approved (name, redirect host, first approval), token granted (grant type, client), passphrase rolled, client removed or signed out from the panel, access token issued or rolled (console only) | `/mcp` 2xx, 202 and 405 access lines |
-| `[security]` `/mcp` rejected bearer (with caller), caller blocked, caller released, limits saved | `/register` 201 (the client appears in the panel; its approval is the event) |
+| `[security]` `/mcp` rejected bearer (a wrong bearer, with caller; a call with no bearer is not logged), caller blocked, caller released, limits saved | `/register` 201 (the client appears in the panel; its approval is the event) |
 | `[security]` token used by new caller (first valid request from an address since start) | `429` refusals (the block line already said it) |
 | `[gatekeeper]` access lines for discovery, `/authorize`, `/token` (rare; `CLAUDE.md` RECURRING #1 is diagnosed from them), and every 5xx | `404` on unknown paths (scanner noise) |
 | registration rejected (redirect not allowlisted), token failures | |

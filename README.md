@@ -1,6 +1,6 @@
 # aki-mcp-sv (`@akinet/akimcp`)
 
-Turn Claude on the web, ChatGPT, Grok, and Postman into secure operators for your local machine. AKIMCP v3 exposes a governed suite of 38 tools for files, shell, search, Git, SQLite, browser automation, DevTools, background tasks, localhost services, clipboard, notifications, ports, Postman control, and AIObox windows through one OAuth-gated MCP endpoint. *(Gemini support remains experimental.)*
+Turn web AIs (Claude, ChatGPT, Grok, Notion, ClickUp, Buda) and Postman into secure operators for your local machine. AKIMCP v3 exposes a governed suite of 38 tools for files, shell, search, Git, SQLite, browser automation, DevTools, background tasks, localhost services, clipboard, notifications, ports, Postman control, and AIObox windows through one OAuth-gated MCP endpoint. *(Gemini support remains experimental.)*
 
 One command opens a much larger operating surface: build and edit projects from the browser, inspect databases and local APIs, drive browser workflows, manage long-running jobs, debug through DevTools, and control Postman without giving every client unrestricted shell access.
 
@@ -8,7 +8,7 @@ One command opens a much larger operating surface: build and edit projects from 
 
 [![Version](https://img.shields.io/badge/version-3.0.1-blue.svg)](CHANGELOG.md) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![npm version](https://img.shields.io/npm/v/@akinet/akimcp.svg)](https://www.npmjs.com/package/@akinet/akimcp) [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](#install--run)
 
-**Contents:** [Why this exists](#why-this-exists) · [When to use & Core Use-Cases](#when-to-use--core-use-cases) · [Install & Run](#install--run) · [Connecting from Claude web](#connecting-from-claude-web) · [Connecting from ChatGPT](#connecting-from-chatgpt) · [Connecting from Grok and Gemini](#connecting-from-grok-and-gemini) · [Connecting from Postman](#connecting-from-postman) · [Connecting local IDEs](#connecting-local-ides-cursor-claude-code-agy-codex) · [Autonomous Cloud Automation](#autonomous-cloud-automation-grok--local-mcp) · [Requirements](#requirements) · [Architecture](#architecture) · [Directory layout](#directory-layout) · [Configuration](#configuration) · [Exposing to the internet](#exposing-to-the-internet) · [Finding files](#finding-files) · [Security](#security)
+**Contents:** [Why this exists](#why-this-exists) · [When to use & Core Use-Cases](#when-to-use--core-use-cases) · [Install & Run](#install--run) · [Connecting from Claude web](#connecting-from-claude-web) · [Connecting from ChatGPT](#connecting-from-chatgpt) · [Connecting from Grok and Gemini](#connecting-from-grok-and-gemini) · [Connecting from Notion AI](#connecting-from-notion-ai) · [Connecting from ClickUp](#connecting-from-clickup) · [Connecting from Buda](#connecting-from-buda) · [Connecting from Postman](#connecting-from-postman) · [Connecting local IDEs](#connecting-local-ides-cursor-claude-code-claude-app-agy-codex) · [Autonomous Cloud Automation](#autonomous-cloud-automation-grok--local-mcp) · [Requirements](#requirements) · [Architecture](#architecture) · [Directory layout](#directory-layout) · [Configuration](#configuration) · [Exposing to the internet](#exposing-to-the-internet) · [Finding files](#finding-files) · [Security](#security)
 
 ## Why this exists
 
@@ -19,7 +19,7 @@ The Claude Desktop app already does local file access, but ties usage to a devic
 **aki-mcp-sv** routes around both problems: run an MCP server on your machine, expose it over HTTPS through Tailscale Funnel, and connect it to claude.ai as a custom connector.
 
 **The payoff:**
-- **Local-first by default:** local tools (Cursor, Claude Code, AGY, Postman) connect straight to `127.0.0.1:9999` — zero latency and fully offline; a public ingress is only needed for remote/web AI.
+- **Local-first by default:** local tools (Cursor, Claude Code, the Claude app, AGY, Postman) connect straight to `127.0.0.1:9999` — zero latency and fully offline; a public ingress is only needed for remote/web AI.
 - **Use your web quota** for local file and shell access, straight from the browser.
 - **True multi-account flexibility:** switch browser profiles to instantly pick up a different account, all pointed at the same machine.
 - **Safe by default:** a strict command whitelist, not a leaky blocklist — see [Security](#security).
@@ -73,7 +73,7 @@ Nothing needs preparing beforehand; `npm start` handles it:
 - **OAuth and passphrase state** in `~/.aki/mcpsv/`: generated once and reused on later runs.
 - **Funnel**: checks `tailscale funnel status`; if port `9999` isn't on yet, runs `tailscale funnel --bg 9999` (idempotent: never toggles an already-enabled port).
 - Prints the **Remote MCP server URL** and **Passphrase** used on the confirmation page when a client connects.
-- Opens the **control panel** at `http://127.0.0.1:9998/?t=<token>`. A step header maps the flow (0 Ingress · 1 Connectors · 2 Install rules · 3 Instructions · 4 Extension · 7 Security), then the sections follow it: 0 Ingress (optional; a 3-tab ingress picker: Tailscale + Funnel / Owned public origin / Hosted domain), 1 Connectors, 2 Install akidevrule, 3 Instructions prompt, 4 Browser utilities, 5 allowed Folders, 6 shell allowlist, 7 Security & connection limits (rate limit settings, blocked callers and Release, registered clients with Remove, callers active since start, the security log), 8 Tool providers (each provider's tools, whether its app is installed, an on/off switch, Detect again).
+- Opens the **control panel** at `http://127.0.0.1:9998/?t=<token>`. A step header maps the flow (0 Ingress · 1 Connectors · 2 Install rules · 3 Instructions · 7 Security), then the sections follow it: 0 Ingress (optional; a 3-tab ingress picker: Tailscale + Funnel / Owned public origin / Hosted domain), 1 Connectors, 2 Install akidevrule, 3 Instructions prompt, 4 Tool providers (each provider's tools, whether its app is installed, an on/off switch, Detect again), 5 allowed Folders, 6 shell allowlist, 7 Security & connection limits (rate limit settings, blocked callers and Release, registered clients with Remove, callers active since start), 8 AIObox (what the desktop app adds to AkiMCP, with a link to aiobox.app; one line when it is already installed), 9 Logs (call log settings and the security log).
 
 The default allowed root is your **home directory** (`$HOME`, or `%USERPROFILE%` on Windows): the one folder guaranteed to exist on any machine and to hold the projects you actually want Claude to reach. In plain terms, that means the whole home folder (Desktop, Documents, Downloads, Photos, everything under it), not just the projects you meant to share. Add/remove folders from **panel section 5**: click "+ Add folder…" and type an absolute path (`/Users/you/projects` or `C:\Users\you\projects`). Saving takes effect immediately for every tool — shell, find, search, and file read/write/edit alike — no restart. To change the root from the start: `MCP_DATA_DIR=/other/path npm start` (or `set MCP_DATA_DIR=D:\work` then `npm start` on Windows cmd).
 
@@ -91,9 +91,11 @@ Beyond `$MCP_DATA_DIR`, the filesystem tools are also granted `~/.aki` (where ak
 
 Claude discovers OAuth automatically. No Client ID or Client Secret is needed.
 
+The connector belongs to your Claude account: claude.ai, the Claude app and the mobile app all reach it from Anthropic's cloud, so it needs a public ingress even on the computer running AKIMCP. On that computer, Claude Code and the Claude app can connect locally instead, with no ingress: see [Connecting local IDEs](#connecting-local-ides-cursor-claude-code-claude-app-agy-codex).
+
 Why not token-in-URL: `docs/ref/claude-connector.md`, `docs/research/claude-ai-oauth-connector.md`.
 
-claude.ai connects and calls the in-house `aki__*` tool suite (38 tools). Tools of an app that is not installed (agy, Kiro CLI, Postman, Chrome, AIObox) are not served, and panel section 8 turns any optional provider on or off (agy and Kiro CLI start off); the client sees the change on its next tool list, usually a new chat. Every tool declares MCP annotations, so ChatGPT stops asking to confirm read-only tools:
+claude.ai connects and calls the in-house `aki__*` tool suite (38 tools). Tools of an app that is not installed (agy, Kiro CLI, Postman, Chrome, AIObox) are not served, and panel section 4 turns any optional provider on or off (agy and Kiro CLI start off); the client sees the change on its next tool list, usually a new chat. Every tool declares MCP annotations, so ChatGPT stops asking to confirm read-only tools:
 - **Chromium Remote & Profiles**: `aki__chrome_profiles`, `aki__chrome_launch`, `aki__chrome_tabs`, `aki__chrome_interact`, `aki__chrome_stop` (opens the shared profile clones AIObox keeps in `~/.aki/cdp/profiles/` on a stealth port-0 launch, or attaches when AIObox already runs the profile; stop kills only a Chrome it launched; React/Vue synthetic typing, scroll-to-center click)
 - **DevTools & CDP**: `aki__devtools_targets`, `aki__devtools_eval`, `aki__devtools_screenshot`
 - **OS Native Integration**: `aki__notify_user` (desktop notification banner & chime sound), `aki__clipboard_read`, `aki__clipboard_write` (system clipboard read/write bridge)
@@ -139,17 +141,38 @@ Notion needs a public ingress and workspace permission to use **custom MCP serve
 
 Notion self-registers through OAuth, so there is no Client ID or Client secret to paste, and it refreshes on its own after Roll token. It uses the same tool suite and folder and shell allowlists as the other connectors. Protocol details and revocation: [docs/feat/security.md](docs/feat/security.md) § Remote auth.
 
+## Connecting from ClickUp
+
+ClickUp needs a public ingress. The panel's ClickUp tab walks through the setup.
+
+1. In ClickUp, open **Settings** → **App Center** → **MCP Servers** → **Connect an MCP Server**.
+2. Set **Name** and **URL** from the panel, **Authentication Method** = **OAuth**, leave **Advanced configuration** closed, click **Next**.
+3. Enter the **Passphrase** in the tab ClickUp opens and approve.
+
+ClickUp self-registers through OAuth, so there is no Client ID, secret or token to paste, and it refreshes on its own after Roll token. ClickUp Brain then calls the tools when a request needs them, without a mention.
+
+## Connecting from Buda
+
+Buda needs a public ingress and connects with the shared access token in a header, not the passphrase. The panel's Buda tab holds every value ready to copy.
+
+1. In Buda, open **Agent Settings** → your Agent → **Integrations** → **Add MCP server**.
+2. Set **Name** from the panel, **Connection type** = **Remote HTTP**, **HTTPS endpoint** = the **MCP URL**.
+3. Under **Authentication headers**, add the header `Authorization` with the value `Bearer <access token>` from the panel.
+4. Click **Save**, then start a new chat to load the tools.
+
+After **Roll token**, paste the new header value into Buda again.
+
 ## Connecting from Postman
 
 Postman's AI Agent (Flows / Connected Accounts) has no OAuth redirect for third-party MCP servers and no persistent system-prompt field.
 
 1. In the panel's Postman tab, click the filled JSON to copy. It targets the local loopback endpoint (`http://127.0.0.1:9999/mcp`) and carries a real minted access token — not the passphrase. Postman runs on this machine, so it connects with zero latency and needs no tunnel.
 2. In Postman, add a new MCP server (Settings → Connected Accounts) and paste the JSON.
-3. Send the instruction into each new chat, since Postman doesn't persist one across sessions: after **Launch**, the **Aki MCP for Postman** overlay's *Prompt instruction* box has **Send now**, or tick *Auto-inject into each new chat* (off by default). It is a separate, Postman-specific text (`scripts/postman/prompts/postman.md`), worded as a polite request because Postman's safety check flags directive-style instructions.
+3. Send the instruction into each new chat, since Postman doesn't persist one across sessions: after **Launch**, the **Aki MCP for Postman** overlay's *Prompt instruction* box has **Send now**, or tick *Auto-inject into each new chat* (off by default). It is a separate, Postman-specific text (`scripts/postman/prompts/postman.md`), worded as a polite request because Postman's safety check flags directive-style instructions. When a chat grows long, *Summarize this chat* asks the model for a handoff summary to paste into a new chat; tick *Auto-summarize when the Context bar reaches [90] %* (off by default; the percent is set beside it, 100% being the red mark) to have it pressed once for you when the chat you are working in crosses that mark and the reply has finished.
 
 The Postman tab also has a **Launch** button that attaches control to the Postman desktop app itself — auto-clicking Approve/Continue/Run/Try again and toggling Thinking/Auto-run inside the Postman window, on top of opening it if it isn't already running. **Quit** stops that control daemon; **New window** asks it to open another Postman window. None of this runs at `npm start` boot — it starts only when Launch is clicked. The in-app overlay it injects is the **Aki MCP for Postman** panel (opened from a status-bar button): it shows the running version and an `akimcp.top` link under the title, keeps the **New Browser Tab** control in the **ANTI-BOT** section, and opens every external link — `akimcp.top`, the AkiDevRule **Repo** button, and each team's **View** — in your OS default browser through Postman's own link handler.
 
-## Connecting local IDEs (Cursor, Claude Code, AGY, Codex)
+## Connecting local IDEs (Cursor, Claude Code, Claude app, AGY, Codex)
 
 Local tools run on the same machine as AKIMCP, so they connect **straight to the loopback engine** at `http://127.0.0.1:9999/mcp` — no tunnel, no internet, zero WAN round-trip, and they keep working fully offline. The Gatekeeper binds `127.0.0.1:9999` from the moment you run `akimcp`, whether or not a public ingress is configured. Bearer-token auth is still enforced (see [Security](#security)); grab the token from the panel at `http://127.0.0.1:9998` (the Postman tab shows the filled JSON; one access token serves every client, and panel section 1 can roll it if it leaks), or copy a config below and replace `YOUR_LOCAL_ACCESS_TOKEN`. (Ports are defaults; `--dev` mode uses `9997`/`9996` — the panel always shows the live values.)
 
@@ -166,10 +189,23 @@ Local tools run on the same machine as AKIMCP, so they connect **straight to the
 }
 ```
 
-**Claude Code CLI** — one line:
+**Claude Code CLI** — one line; after Roll token, run it again with the new token:
 
 ```bash
 claude mcp add --transport http aki-mcp http://127.0.0.1:9999/mcp --header "Authorization: Bearer YOUR_LOCAL_ACCESS_TOKEN"
+```
+
+**Claude app (desktop)** — set up separately from Claude Code; one does not connect the other. Open **Settings → Developer → Edit Config** in the app, merge this under `mcpServers` in the `claude_desktop_config.json` it opens, then quit the app completely and reopen it. The app spawns `scripts/stdio.js` (the same tools, over stdio) with no token, so Roll token changes nothing; the panel's **Claude Code & app** tab shows the entry with your path filled in. If the server fails to start, replace `node` with the full path from `which node` (Windows: `where node`).
+
+```json
+{
+  "mcpServers": {
+    "aki-mcp": {
+      "command": "node",
+      "args": ["/absolute/path/to/aki-mcp-sv/scripts/stdio.js"]
+    }
+  }
+}
 ```
 
 **Antigravity (AGY) CLI and IDE** — no token: they spawn `scripts/stdio.js` (the same tools, over stdio). Click **Apply to AGY CLI** in the panel's AGY tab, or merge this into `~/.gemini/config/mcp_config.json` (the file both read) and restart:
@@ -277,7 +313,7 @@ aki-mcp-sv/
 │   ├── instance-lock.js          # single-instance lock: a second launch reuses (or replaces an older) running instance
 │   ├── open-browser.js           # cross-platform "open default browser" — the one per-OS seam, no external dep
 │   ├── gatekeeper.js             # OAuth-gated reverse proxy, public port
-│   ├── oauth.js                  # minimal authorization server (pre-registered client + RFC 7591 DCR)
+│   ├── oauth.js                  # minimal authorization server (pre-issued client + RFC 7591 DCR)
 │   ├── rate-limit.js             # failure-only limiter: blocks callers after repeated wrong credentials
 │   ├── callers.js                # in-memory list of addresses that used the valid token since start
 │   ├── security-log.js           # [security] events to console + security.log (rotated at 1 MB)
@@ -403,10 +439,10 @@ Use `aki__find_path` to locate a file or directory — it scans the whole tree i
 
 **Convenience first, guardrail second.** AKIMCP is not a fortress and adds no permission layer to configure; its guardrail stops weak or overeager models from doing damage without per-call approval prompts. The whole picture (every surface and its gate, connection limits, what each secret unlocks and how to revoke it) is in [`docs/feat/security.md`](docs/feat/security.md).
 
-- **Remote access** goes through minimal OAuth 2.1: an allowlisted redirect, a 50-bit passphrase at `/authorize`, PKCE S256. Claude, ChatGPT, Grok and Gemini self-register (DCR); the pre-issued Client ID/Secret serves any client that wants a static pair. Whoever knows the passphrase can get a token, so treat it like the token.
+- **Remote access** goes through minimal OAuth 2.1: an allowlisted redirect, a 50-bit passphrase at `/authorize`, PKCE S256. Every web AI that signs in with OAuth self-registers (DCR); the pre-issued Client ID/Secret serves any client that wants a static pair; a client with only a header field (Buda) sends the access token as a Bearer. Whoever knows the passphrase can get a token, so treat it like the token.
 - **One shared access token** (1 year) for every client, shown and rolled in panel section 1. *Roll & sign out all clients* is the answer to any leak.
 - **Loopback is not trusted**: the server binds `127.0.0.1` only and still requires the token, so a web page in your browser cannot drive it. The panel binds `127.0.0.1` too and needs its own per-start token.
-- **Wrong credentials get blocked**: default 5 in 60 seconds, then 15 minutes of `429`. Valid tokens are never counted or blocked. Panel section 7 edits every number, lists blocked callers and releases them, shows every registered client (with Remove) and who used the token since the last restart, and shows the security log (`security.log` in the data dir, rotated at 1 MB).
+- **Wrong credentials get blocked**: default 5 in 60 seconds, then 15 minutes of `429`. Valid tokens are never counted or blocked. Panel section 7 edits every number, lists blocked callers and releases them, and shows every registered client (with Remove) and who used the token since the last restart; section 9 shows the security log (`security.log` in the data dir, rotated at 1 MB).
 - **Tools reach only the folders you list** (default your home folder plus `~/.aki` and `~/.claude`), and the shell runs only allowlisted commands, without a shell (panel sections 5 and 6). Commands you add are your responsibility.
 - **Secrets** (`passphrase.txt`, `tokens.json`, `oauth-client.json`, `oauth-dcr-clients.json`) live in `~/.aki/mcpsv/`, mode 0600, never in the repo.
 
