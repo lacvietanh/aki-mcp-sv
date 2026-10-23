@@ -90,6 +90,7 @@
 - [plan/done/gemini-oauth-dcr.md](plan/done/gemini-oauth-dcr.md) — Gemini web self-registers via DCR on `oauth-redirect*.googleusercontent.com` with no `/r/` path; allowlist matched on parsed hostname like Notion, panel Gemini tab walks URL → Next → passphrase → Approve; done 2026-10-20, live Gemini connect not run
 - [plan/done/buda-web-connector.md](plan/done/buda-web-connector.md) — Buda AI tab in panel section 1: Remote HTTP endpoint plus `Authorization: Bearer <access token>` header, no backend change; done 2026-10-20, no icon asset, live Buda connect not run
 - [plan/done/panel-order-masking-aiobox-section.md](plan/done/panel-order-masking-aiobox-section.md) — panel sections by need (4 Tool providers, 8 AIObox, 9 Logs), one masking path for every secret, Download icon button, AIObox section in place of Browser utilities, footer copied from the akitao.com list, a no-token `/mcp` call no longer counted as a failure; akimcp.top mirrored; done 2026-10-22
+- [plan/ss-session-file.md](plan/ss-session-file.md) — decided 2026-10-23, ships in the next minor: `ss` replaces `working.md`; `aki__akidevrule_context` mints `<data dir>/ss/<project>/<YYYY.MM.DD-HHMM>-<label>.md` and keeps it across re-calls, one `SS_STEP` rule with a fixed `ss:` report line, a stale-file line on acting calls with no server state, neutral write-time line, call-log instrument; AIObox's part (live transcript, label, roster) goes to the aiobox repo in its own turn
 
 ## Wishlist — kept, not scheduled
 
