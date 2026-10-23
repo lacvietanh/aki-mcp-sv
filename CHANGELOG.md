@@ -2,7 +2,7 @@
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning per [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [3.1.0] - 2026-10-23
 
 ### Added
 - **Buda connector tab in panel section 1** (`scripts/config-page.js`): step-by-step setup for Buda AI's Remote HTTP MCP integration, with the public MCP URL and the `Authorization: Bearer <access token>` header ready to copy (the header value masked like the access token). Buda authenticates with the shared access token, so it needs pasting again after Roll token.
