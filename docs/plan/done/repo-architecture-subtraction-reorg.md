@@ -1,7 +1,7 @@
 # Plan: Tái cấu trúc kho mã nguồn khoa học, tinh gọn & thực thi Subtraction Audit
 
 > **Tài liệu nghiên cứu cơ sở**: [`docs/research/repo-architecture-subtraction-inventory.md`](file:///Volumes/DEV/pj/aki-mcp-sv/docs/research/repo-architecture-subtraction-inventory.md)  
-> **Trạng thái**: Bản kế hoạch đề xuất (Pending User Authorization per `agent.B5` / `agent.B3`).  
+> **Trạng thái**: đóng 2026-10-22. Giai đoạn 1, 2, 4 đã xong từ trước theo đường khác: `npm test` chạy mọi `test/*.test.js` và `scripts/postman/test/*`, file prompt trùng không còn, `rule-context` đã commit; `dev/` là thư mục riêng của chủ, đã gitignore, để nguyên. Giai đoạn 3 (dời `scripts/` thành `core/`, `tools/`, `ui/`) bỏ: đổi tên rộng chạm mọi import, test, `CLAUDE.md` và docs mà không có vấn đề đo được nào. Giai đoạn 5 bỏ: trái `docs.B1` (plan xong nằm ở `done/`) và là sửa luật chung.  
 > **Cam kết**: Giữ vững nguyên tắc single-process, bảo toàn tính tương thích ngược tuyệt đối với mọi AI client và prompt có sẵn.
 
 ---

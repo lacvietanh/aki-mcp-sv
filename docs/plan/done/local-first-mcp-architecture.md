@@ -1,6 +1,6 @@
 # Architecture, Philosophy & Implementation Plan: Local-First MCP Decoupling & Unified AI Tooling
 
-**Status:** PARTIALLY SHIPPED in 2.1.0 (engine, panel, docs); runtime ingress attach deferred, see the implementation-status block below  
+**Status:** done 2026-10-20 — engine, panel and docs shipped in 2.1.0. Not built: runtime ingress attach after boot (setPublicOrigin; dropped per YAGNI, scripts/gatekeeper.js:29-31: a saved ingress applies on restart) and the dual header badge (:205-206). Reopen if the owner needs a new ingress to apply without a restart.  
 **Date:** 2026-09-18  
 **Originating Council:** `/Users/aki/.aki/agent-council/aki-mcp-sv/2026.09.18-0022-local-first-mcp-plan/` (PASS all 7 checks)  
 **Governing Rules:** `RULE-agent-behavior.md` (agent.B1, agent.B3), `RULE-coding.md` (coding.A1, coding.C4), `RULE-pattern-core.md` (pattern.A1, pattern.B2, pattern.B3), `RULE-docs.md` (docs.B1)  
@@ -292,7 +292,7 @@ Thêm vào file `~/.gemini/antigravity-cli/mcp_config.json`:
 
 ---
 
-### 5.2 Cập nhật [docs/feat/security.md](../feat/security.md)
+### 5.2 Cập nhật [docs/feat/security.md](../../feat/security.md)
 
 Thêm một chương lớn về **Mô hình bảo mật Localhost (Loopback Containment)**:
 ```markdown
@@ -315,7 +315,7 @@ Nhiều người lầm tưởng: "Chạy local thì không cần password/token"
 ### 5.3 Cập nhật [docs/index.md](file:///Volumes/DEV/pj/aki-mcp-sv/docs/index.md)
 
 Thêm liên kết trỏ tới bản kế hoạch kiến trúc:
-- `docs/plan/local-first-mcp-architecture.md` — *Kế hoạch kiến trúc tái cấu trúc Local-First, tách rời Gatekeeper khỏi Ingress, hỗ trợ native Cursor / Claude Code / AGY / Postman qua 127.0.0.1.*
+- `docs/plan/done/local-first-mcp-architecture.md` — *Kế hoạch kiến trúc tái cấu trúc Local-First, tách rời Gatekeeper khỏi Ingress, hỗ trợ native Cursor / Claude Code / AGY / Postman qua 127.0.0.1.*
 
 ---
 

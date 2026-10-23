@@ -1,6 +1,6 @@
 # Plan — list `@akinet/akimcp` in the Official MCP Registry
 
-Status: active · local part done 2026-10-04 (P1·W2, T5): `mcpName`, `server.json`, `akimcp --stdio`, `test/registry-listing.test.js`; publishing waits for the next release and the owner's `mcp-publisher login github`.
+Status: done 2026-10-20 — the repo part shipped in 3.0.0 (`mcpName`, `server.json`, `akimcp --stdio`, `test/registry-listing.test.js`).
 
 ## Goal
 
@@ -18,7 +18,7 @@ Get akimcp a canonical, namespace-verified record in the Official MCP Registry s
 ## Steps
 
 1. Choose the registry name (see Decisions) and add `"mcpName": "<name>"` to `package.json`. The Registry validates an npm package by reading `mcpName` from it, and the name must equal `server.json` `name`.
-2. Ship the change in the next normal release. A published npm version is immutable, so `2.1.0` cannot carry `mcpName`; the release follows `plan/npm-trusted-publishing.md` and the version rules in `release.A`. Do not cut a release only for this.
+2. Ship the change in the next normal release. A published npm version is immutable, so `2.1.0` cannot carry `mcpName`; the release follows the version rules in `release.A`. Do not cut a release only for this.
 3. Install `mcp-publisher` (pre-built binary or `brew install mcp-publisher`), run `mcp-publisher init` in the repo root, then edit `server.json`: `name` = `mcpName`, `version` and `packages[0].version` = the just-published npm version, `repository` = the GitHub URL above with `source: github`.
 4. Set the `server.json` `description` to the falsifiable USP in one short sentence (whitelist-only shell, not a blocklist; claude.ai gets local filesystem/search/shell over Funnel + OAuth 2.1). Check the schema's length limit for `description` first, since the current `package.json` description is long.
 5. Authenticate: `mcp-publisher login github` for an `io.github.*` name, or DNS authentication for a domain-based name.
@@ -70,4 +70,4 @@ Reopen when a hosted multi-tenant or narrow-scope remote variant of akimcp exist
 
 ## Scope
 
-Local part (steps 1, 3 and 4, without `mcp-publisher init`) is in the tree. Left: the release carrying `mcpName`, then steps 5–8 by the owner.
+Steps 1, 3 and 4 (without `mcp-publisher init`) are in the tree.

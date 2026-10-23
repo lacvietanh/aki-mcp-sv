@@ -1,5 +1,7 @@
 # Server availability — PR #17 (spawn crash) and the 2026-10-10 outage
 
+Status: done 2026-10-20 — fix shipped in 3.0.1 (PR #17 merged on GitHub 2026-10-11, pushed); R1 closed, no action.
+
 ## Goal
 
 One plan for the two times this server stopped serving its clients: land the substance of **PR #17**, and record what the 2026-10-10 outage really was so no guard is built for a state that was never observed. Also states, with evidence, which part is *not* an AkiMCP change.
@@ -63,11 +65,9 @@ Unexplained, not investigated: the live process (started 15:18:07) logged 30 clo
 
 **The lost log is AIObox's too.** `~/.aki/aiobox/akimcp.log` is written by AIObox (`process.rs` `open_log`), documented in `aiobox/docs/feat/akimcp-connect.md:96` as "emptied at each Start and once past 1 MB", so the restart that recovered the server erased its last lines.
 
-The same applies to the Notion-window failure wave of that morning (seven accounts rested with `cause=interrupted` between ~08:32 and 11:53, none near their quota). That investigation lives in AIObox.
-
 ## Checklist
 
 - [x] Merge PR #17 as a merge commit; trailer stripped; `CHANGELOG.md` entry worded here (local only: not pushed, PR #17 stays Open until the owner pushes)
 - [x] Keep `test/task-mcp.test.js` case 4b; confirm it fails on the pre-fix tree (red on 9e99fdc, green on 627a755)
 - [x] Same fix for the Postman launch spawn (`postman-session.cjs`)
-- [x] Filed in AIObox, not here (`aiobox: docs/plan/remaining-0.11.1.md` O5, 2026-10-11, uncommitted there): the restart gap leaving AkiMCP stopped without telling the owner; the log emptied at each Start. Still not filed: the interrupted-account wave of that morning
+- [x] Filed in AIObox, not here (`aiobox: docs/plan/remaining-0.11.1.md` O5, 2026-10-11, uncommitted there): the restart gap leaving AkiMCP stopped without telling the owner; the log emptied at each Start

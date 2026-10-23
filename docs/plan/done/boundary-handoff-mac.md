@@ -1,6 +1,6 @@
 # Plan · Bàn giao Mac: AkiMCP 3.0.0 (ranh giới B1 + sửa test), chạy `/akiship` cục bộ, không push
 
-Status: sẵn sàng bàn giao 2026-10-07. Máy dev đã xong code và docs, full `npm test` 51/51 xanh, `release_lint.py --latest` exit 0, scythe sạch trên mọi `.md` đã đổi, số mục panel trong `README.md`/`docs/index.md` khớp `scripts/config-page.js`. Chưa commit (máy dev không được commit).
+Status: done 2026-10-20 — các bước Mac cho 3.0.0 đã xong; site akimcp.top đã đồng bộ (plan của repo site ở `done/whats-new-3-0-0-sync.md`). Việc chép đè hợp đồng sau A3 do chính hợp đồng quy định (dòng 5, 11 của `IMPORTANT-akimcp-aiobox-contract.md`). Nhãn ở dòng 92 đã đổi thành "Pre-issued client" ngày 2026-10-20. Rác test ở dòng 78-86 là file và thư mục rỗng, vô hại; `test/setup.js` đã chặn tái diễn, nên không theo dõi tiếp.
 Plan gốc: [akimcp-aiobox-boundary-plan.md](akimcp-aiobox-boundary-plan.md) (quyết định I1–I7 ở §4, cổng vào/ra ở §6, hoàn tác ở §9). File này chỉ xếp thứ tự việc trên Mac, không quyết lại điều gì.
 Chủ máy, 2026-10-07: "máy này là máy chỉ code … làm xong hết code xong hết ở đây rồi tôi xử lý sau trong plan handoff mac" · "đề cập các akirule cần thiết, các file cần thiết, và /akiship nhưng không được push".
 
@@ -35,7 +35,7 @@ Router: `~/.claude/skills/akirule/SKILL.md`; skill: `~/.claude/skills/akiship/SK
 | `package.json` | `version` đã là `3.0.0`, không bump thêm |
 | `test/setup.js` | cách ly test: mỗi tiến trình test có HOME và thư mục tạm riêng |
 | `docs/plan/done/test-suite-fixes.md`, `docs/research/test-suite-audit-oct07.md` | lượt sửa test và kiểm toán gốc của nó |
-| `docs/plan/akimcp-aiobox-boundary-plan.md` | plan gốc |
+| `docs/plan/done/akimcp-aiobox-boundary-plan.md` | plan gốc |
 
 ## Bước 0 — đồng bộ
 
@@ -45,7 +45,7 @@ Ra khi: `git status` có đủ file trong `manifest.tsv`, `conflicts.txt` rỗng
 
 ## Bước 1 — cổng: AIObox A1 đã cài
 
-Chỉ kiểm, không làm việc của aiobox: AIObox bản A1 đã cài (phiên aiobox báo xong theo `docs/plan/mac-handoff.md` của repo aiobox) và `~/.aki/aiobox/akimcp-state.json` (bảng op AIObox ghi khi khởi động) tồn tại. Chưa đạt thì dừng.
+Chỉ kiểm, không làm việc của aiobox: AIObox bản A1 đã cài (phiên aiobox báo xong theo `docs/plan/done/mac-handoff-oct07.md` của repo aiobox) và `~/.aki/aiobox/akimcp-state.json` (bảng op AIObox ghi khi khởi động) tồn tại. Chưa đạt thì dừng.
 
 ## Bước 2 — kiểm trên macOS
 
@@ -71,9 +71,9 @@ Ra khi: working tree sạch, `git log -1 --format=%B` không có `Co-Authored-By
 ## Sau khi chủ máy push và publish (ngoài phiên này)
 
 - Ngày trong `[3.0.0]` là ngày phát hành thật: push khác ngày chạy `/akiship` thì sửa ngày trước khi push.
-- Dấu trạng thái trong hợp đồng ("A1, chưa cài", "Boundary v3 … chưa ship") do phiên aiobox đổi trong bản của nó (`## 7. T1 lúc phát hành`, `docs/plan/mac-handoff.md` repo aiobox). Sau đó chép đè sang đây, chạy lại tầng 1 của `scripts/verify-boundary-b1.sh`; sha khác nhau thì chưa xong.
+- Dấu trạng thái trong hợp đồng ("A1, chưa cài", "Boundary v3 … chưa ship") do phiên aiobox đổi trong bản của nó (`## 7. T1 lúc phát hành`, `docs/plan/done/mac-handoff-oct07.md` repo aiobox). Sau đó chép đè sang đây, chạy lại tầng 1 của `scripts/verify-boundary-b1.sh`; sha khác nhau thì chưa xong.
 - Mọi cửa sổ AI hỏi lại "Always allow" một lần vì định nghĩa tool đổi hash (plan gốc §8). Không phải lỗi.
-- Site akimcp.top 1.14.0: chỉ sau khi 3.0.0 có trên GitHub `main` và npm, theo mục "Mac" trong `docs/plan/whats-new-3-0-0-sync.md` của repo site (bundle `handoff/akimcp.top-oct07/`). Build của Cloudflare kéo panel từ `main`, nên site push trước là site lệch.
+- Site akimcp.top 1.14.0: chỉ sau khi 3.0.0 có trên GitHub `main` và npm, theo mục "Mac" trong `docs/plan/done/whats-new-3-0-0-sync.md` của repo site (bundle `handoff/akimcp.top-oct07/`). Build của Cloudflare kéo panel từ `main`, nên site push trước là site lệch.
 
 ## Dọn rác test trên máy dev (từ Mac, qua `ssh bien`)
 

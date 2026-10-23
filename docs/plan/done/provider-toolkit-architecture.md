@@ -1,6 +1,6 @@
 # Plan: Provider toolkit — gom phần quản lý, giữ bề mặt tool, mở rộng an toàn
 
-> status: done · P0–P4 và P6 ship trong `3.0.0` (tag 2026-10-03; thay `2.3.0` vì `chrome_launch` đổi phá vỡ), 3 bài kiểm tay của chủ ĐẠT (§ Amendments); P5 (provider sâu đầu tiên) là plan riêng khi chủ chọn provider, không giữ plan này mở; việc tiếp của provider `aiobox`: [`plan/aiobox-control-ops.md`](../aiobox-control-ops.md) · hợp đồng đã chốt: [`docs/arch/provider-toolkit.md`](../../arch/provider-toolkit.md) · nghiên cứu nền: [`docs/research/tool-surface-provider-toolkit.md`](../../research/tool-surface-provider-toolkit.md) (số đo, nguồn, 9 khía cạnh suy xét)
+> status: done · P0–P4 và P6 ship trong `3.0.0` (tag 2026-10-03; thay `2.3.0` vì `chrome_launch` đổi phá vỡ), 3 bài kiểm tay của chủ ĐẠT (§ Amendments); P5 (provider sâu đầu tiên) là plan riêng khi chủ chọn provider, không giữ plan này mở; việc tiếp của provider `aiobox`: [`plan/done/aiobox-control-ops.md`](aiobox-control-ops.md) · hợp đồng đã chốt: [`docs/arch/provider-toolkit.md`](../../arch/provider-toolkit.md) · nghiên cứu nền: [`docs/research/tool-surface-provider-toolkit.md`](../../research/tool-surface-provider-toolkit.md) (số đo, nguồn, 9 khía cạnh suy xét)
 
 ## Kết luận
 

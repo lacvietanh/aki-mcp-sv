@@ -1,6 +1,6 @@
 # Nghiên cứu kiến trúc, kiểm kê toàn diện & Subtraction Audit: `aki-mcp-sv`
 
-Status: amended 2026-10-04 · số liệu là ảnh chụp `80f1b6b` (2026-09-11): danh sách 7 plan mở ở phần Kế hoạch đã cũ (hầu hết đã vào `docs/plan/done/`), số module và tool nay là 16 module, 38 tool (`scripts/provider-registry.js`); đề xuất tái cấu trúc vẫn chờ chủ duyệt ở `docs/plan/repo-architecture-subtraction-reorg.md`. Đo lại trước khi dùng số nào ở đây.
+Status: amended 2026-10-04 · số liệu là ảnh chụp `80f1b6b` (2026-09-11): danh sách 7 plan mở ở phần Kế hoạch đã cũ (hầu hết đã vào `docs/plan/done/`), số module và tool nay là 16 module, 38 tool (`scripts/provider-registry.js`); plan tái cấu trúc đã đóng 2026-10-22 ở `docs/plan/done/repo-architecture-subtraction-reorg.md` (giai đoạn 1, 2, 4 xong, 3 và 5 bỏ). Đo lại trước khi dùng số nào ở đây.
 
 **Thời điểm**: 2026-09-11 · Git baseline `80f1b6b` (Node 22.14.0 ESM)  
 **Cơ chế kích hoạt**: Hội đồng `/akiflow` + `/akithink` 6 lượt hội tụ + `METHOD-audit-subtraction.md`  

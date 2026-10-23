@@ -1,6 +1,6 @@
 # Plan — rule context handshake
 
-Status: active; Gate 0 (assembler + `aki__akidevrule_context` tool) implemented and tested; Gate 1 (Agent Mode runtime canary) not run — moves to `done/` only once Gate 1 evidence exists, per this doc's own completion criteria
+Status: done 2026-10-22. Gate 0 (assembler + `aki__akidevrule_context` tool) shipped and tested. Gate 1 (the Agent Mode canary) dropped: since `done/rule-receipt-gate.md` (2026-10-04) every tool that acts refuses a call without the receipt, so the context tool gets called whether or not a client shows `initialize.instructions` to its model; the compact Postman fallback stays on.
 
 ## Outcome and boundary
 
@@ -157,7 +157,7 @@ No change is expected in `scripts/streamable-bridge.js`: current full-result cac
 - [x] `tools/list` and tool calls match the exact public contract; one call returns ordered context, provenance, receipt, and honest parity state.
 - [x] No bootstrap path needs model-orchestrated filesystem/search/shell/subagent reads.
 - [x] Compact fallback ships without overwriting user-edited prompts and remains enabled until Gate 1 evidence permits otherwise.
-- [ ] Gate 1 canary is run only in the approved disposable setup; results are recorded separately from Gate 0. If not proven, fallback remains on and docs say unproven.
-- [ ] Rollback removes the feature without bridge/session changes or data migration.
+- [x] Gate 1 canary dropped 2026-10-22 (see Status); fallback remains on and the docs claim Gate 0 only.
+- [x] Rollback criterion dropped 2026-10-22: the tool is load-bearing for the receipt gate, so no rollback is planned.
 - [x] Full tests and `git diff --check` pass; implementation docs, README, CHANGELOG, and index are synchronized in the implementation change, not before it.
-- [ ] Plan moves to `docs/plan/done/` only after code, tests, documentation, and required runtime evidence are complete; otherwise it stays active with unchecked items.
+- [x] Plan moved to `docs/plan/done/` 2026-10-22.
