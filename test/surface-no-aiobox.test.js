@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// F7 (docs/plan/akimcp-tool-refactor.md § 8): without AIObox, nothing served points at it — tools hidden, no output names a hidden tool or the AIObox site; install + re-detect brings both back.
+// F7 (docs/plan/done/akimcp-tool-refactor.md § 8): without AIObox, nothing served points at it — tools hidden, no output names a hidden tool or the AIObox site; install + re-detect brings both back.
+import './setup.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';

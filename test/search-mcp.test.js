@@ -1,3 +1,4 @@
+import './setup.js';
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -105,4 +106,17 @@ test('search_content reports grep errors beside matches in the header', { skip: 
   assert.equal(out[0], '1 matching line(s):');
   assert.match(out[1], /^grep errors \(4 line\(s\)\): .*Permission denied.* \| … 1 more$/);
   assert.match(out[2], /ok\.txt:1:needle here$/);
+});
+
+test('search_content with grep missing from PATH is an error, never "no lines matched"', async () => {
+  const emptyBin = dir('empty-bin');
+  const savedPath = process.env.PATH;
+  process.env.PATH = emptyBin;
+  try {
+    const first = (await text('aki__search_content', { query: 'needle', path: path.join(tree, 'lines') })).split('\n')[0];
+    assert.match(first, /^error: .*ENOENT/);
+    assert.ok(!first.includes('no lines matched'));
+  } finally {
+    process.env.PATH = savedPath;
+  }
 });

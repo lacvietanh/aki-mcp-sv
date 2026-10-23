@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import './setup.js';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -10,9 +12,11 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 // userdata.js reads AKI_MCP_DATA_DIR at import: a temp data dir whose only allowed folder is a temp repo, so the machine owner's settings and repos are never touched.
 const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'git-mcp-test-')));
 const repo = path.join(tmp, 'repo');
+const warnRepo = path.join(tmp, 'warn-repo');
 fs.mkdirSync(repo);
+fs.mkdirSync(warnRepo);
 fs.mkdirSync(path.join(tmp, 'data'));
-fs.writeFileSync(path.join(tmp, 'data', 'setting.json'), JSON.stringify({ folders: [repo] }));
+fs.writeFileSync(path.join(tmp, 'data', 'setting.json'), JSON.stringify({ folders: [repo, warnRepo] }));
 process.env.AKI_MCP_DATA_DIR = path.join(tmp, 'data');
 const { parsePorcelainStatus, capDiffByFile } = await import('../scripts/git-mcp.js');
 const { createToolsServer } = await import('../scripts/tools-server.js');
@@ -102,7 +106,25 @@ M  scripts/start.js
   assert.ok((await call({ op: 'status', repoPath: os.tmpdir() })).isError, 'a path outside the allowed folders is refused');
 
   console.log('git-mcp.test.js: ok');
+  return call;
 }
 
-await testGitMcp();
-fs.rmSync(tmp, { recursive: true, force: true });
+const call = await testGitMcp();
+after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+
+const cannotDenyAccess = process.platform === 'win32' || process.getuid?.() === 0 ? 'chmod 000 does not deny access on Windows or as root' : false;
+
+test('status keeps the warning git prints for a directory it cannot read', { skip: cannotDenyAccess }, async () => {
+  const locked = path.join(warnRepo, 'locked');
+  execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: warnRepo });
+  fs.mkdirSync(locked);
+  fs.writeFileSync(path.join(locked, 'f.txt'), '');
+  fs.chmodSync(locked, 0o000);
+  try {
+    const { text } = await call({ op: 'status', repoPath: warnRepo });
+    assert.match(text, /\[stderr\]/);
+    assert.match(text, /could not open directory/);
+  } finally {
+    fs.chmodSync(locked, 0o755);
+  }
+});

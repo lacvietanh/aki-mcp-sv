@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// server.json and the npm package must agree or `mcp-publisher publish` fails (plan/mcp-registry-listing.md): name = mcpName, versions = package version, its stdio entry really starts the tools.
+// server.json and the npm package must agree or `mcp-publisher publish` fails (docs/plan/done/mcp-registry-listing.md): name = mcpName, versions = package version, its stdio entry really starts the tools.
+import './setup.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { spawn } from 'node:child_process';

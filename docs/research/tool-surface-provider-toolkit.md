@@ -1,6 +1,6 @@
 # Bề mặt tool và khung provider — gom thế nào để không mất độ chính xác
 
-Status: amended 2026-10-02
+Status: amended 2026-10-22
 
 ## Start time
 
@@ -137,10 +137,11 @@ Bối cảnh: single-process, một `McpServer` dùng chung mọi client qua m�
 
 - **Action:** [`docs/plan/done/provider-toolkit-architecture.md`](../plan/done/provider-toolkit-architecture.md) — giữ nguyên tên và shape của 36 tool; thêm annotations cho mọi tool; thêm provider registry với detect + bật/tắt; test bề mặt tool; hợp đồng shape cho provider mới (op phẳng, tách đọc/ghi).
 - **Rejected/closed:** gom 36 → 17 bằng đổi tên; `{op, args}` lồng; `op=help`; cổng meta `aki__call`; alias tên cũ; auto-scan provider.
-- **No action (kèm lý do):** rút gọn description `akidevrule_context` (lớn nhất, 1.634 ký tự) — load-bearing cho rule delivery, thuộc `docs/plan/rule-context-handshake.md` / `docs/arch/rule-context-delivery.md`; toolset theo client — bridge dùng phiên chung, chưa có nhu cầu đo được.
+- **No action (kèm lý do):** rút gọn description `akidevrule_context` (lớn nhất, 1.634 ký tự) — load-bearing cho rule delivery, thuộc `docs/plan/done/rule-context-handshake.md` / `docs/arch/rule-context-delivery.md`; toolset theo client — bridge dùng phiên chung, chưa có nhu cầu đo được.
 - **Reopen nếu:** `tools/list` đo được > ~40.000 ký tự; một client thật báo vượt trần số tool; quan sát được model chọn sai tool lặp lại; bridge có kênh server → client và client nghe `list_changed`.
-- **Cross-references:** `docs/plan/repo-architecture-subtraction-reorg.md` (dời file), `docs/plan/done/interactive-and-env-tools.md` (đã bỏ 2026-10-04; tool mới đề xuất phải theo hợp đồng shape ở plan), `docs/feat/tools.md` (cần thêm mục annotations + providers khi ship).
+- **Cross-references:** `docs/plan/done/repo-architecture-subtraction-reorg.md` (dời file, bỏ 2026-10-22), `docs/plan/done/interactive-and-env-tools.md` (đã bỏ 2026-10-04; tool mới đề xuất phải theo hợp đồng shape ở plan), `docs/feat/tools.md` (cần thêm mục annotations + providers khi ship).
 
 ## Amendments
 
 - 2026-10-02 · P0 — số đo server thay R1: `JSON.stringify(tools/list .tools).length` = **27.207 ký tự** cho 36 tool (measured, `test/tool-surface.test.js`, trước annotations; gồm title, inputSchema đầy đủ với `$schema`/`additionalProperties`, nên lớn hơn 18.140 đo qua client Notion). Ước ~6.800 token (estimated, ~4 ký tự/token), vẫn dưới ngưỡng ~10K. Ngân sách test = 27.207 × 1,10 = 29.928. Lớn nhất: `akidevrule_context` 1.818, `agy_run` 1.566, `git` 1.322, `devtools_eval` 1.216, `run_cmd` 1.210. Chỉ `run_cmd` (description 905 ký tự) vượt trần 700 của Hợp đồng 4.3, ngoài `akidevrule_context` (1.273).
+- 2026-10-22 · Decision "No action: toolset per client" — đo lại khi xét mở lại ở `docs/plan/per-client-tool-surface.md` (bỏ, không làm): client code chạy trên máy AkiMCP (Claude Code, agy, Cursor) gọi 0 lần trong `tool-calls-2026-10-05..14.jsonl`; Claude Code đo sống 2026-10-19 trả ~0,7k token mỗi phiên cho cả `tools/list` lẫn handshake vì nó hoãn schema tool (measured), so với ~20,6k ước cho client web (estimated). No action giữ nguyên; mở lại khi log thấy một client code trên máy AkiMCP gọi đều và chi phí handshake hay danh sách tool của nó đo được.

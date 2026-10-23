@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import './setup.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -44,7 +45,8 @@ function makeProfile(id, folder = 'Profile 14') {
 }
 
 function lock(dir, target) {
-  fs.rmSync(path.join(dir, 'SingletonLock'), { force: true });
+  // A SingletonLock pointing at another host is a dangling link, which rmSync({ force }) leaves in place on Node 25.
+  if (fs.lstatSync(path.join(dir, 'SingletonLock'), { throwIfNoEntry: false })) fs.unlinkSync(path.join(dir, 'SingletonLock'));
   fs.symlinkSync(target, path.join(dir, 'SingletonLock'));
 }
 

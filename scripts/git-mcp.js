@@ -7,10 +7,12 @@ import { ok, fail } from './mcp-tool.js';
 import { shapeForModel, MAX_SHOWN } from './output-shape.js';
 import { resolveUnderRoot } from './roots.js';
 
-function gitCmd(args, cwd) {
+// safecrlf=false: the Windows "LF will be replaced by CRLF" warning is noise for a read-only tool.
+function gitCmd(args, cwd, warnings) {
   return new Promise((resolve, reject) => {
-    execFile('git', args, { cwd, timeout: 15_000, windowsHide: true, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+    execFile('git', ['-c', 'core.safecrlf=false', ...args], { cwd, timeout: 15_000, windowsHide: true, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
       if (err) return reject(new Error(stderr?.trim() || err.message));
+      if (stderr) warnings.push(stderr.replace(/\n+$/, ''));
       resolve(stdout || '');
     });
   });
@@ -73,19 +75,19 @@ export function capDiffByFile(diff, budget = MAX_SHOWN) {
 const REMOTE_NAME = /^[A-Za-z0-9._-]+$/; // a configured remote's name, never a URL: a URL argument can smuggle code execution through git's transport helpers (ext::)
 
 const OPS = {
-  async status({ cwd }) {
-    return JSON.stringify(parsePorcelainStatus(await gitCmd(['status', '--porcelain=v1', '-b'], cwd)), null, 2);
+  async status({ git }) {
+    return JSON.stringify(parsePorcelainStatus(await git(['status', '--porcelain=v1', '-b'])), null, 2);
   },
-  async diff({ cwd, staged, file }) {
+  async diff({ git, staged, file }) {
     const args = ['diff'];
     if (staged) args.push('--cached');
     if (file) args.push('--', file);
-    const diff = await gitCmd(args, cwd);
+    const diff = await git(args);
     if (!diff.trim()) return staged ? 'No staged changes.' : 'Working tree clean (no diff).';
     return capDiffByFile(diff);
   },
-  async log({ cwd, limit = 10 }) {
-    const raw = await gitCmd(['log', `-n${limit + 1}`, '--pretty=format:%h%x09%an%x09%ad%x09%s', '--date=short'], cwd);
+  async log({ git, limit = 10 }) {
+    const raw = await git(['log', `-n${limit + 1}`, '--pretty=format:%h%x09%an%x09%ad%x09%s', '--date=short']);
     const lines = raw.trim().split('\n').filter(Boolean);
     const commits = lines.slice(0, limit).map((line) => {
       const [hash, author, date, ...rest] = line.split('\t');
@@ -93,10 +95,10 @@ const OPS = {
     });
     return JSON.stringify({ commits, more: lines.length > limit }, null, 2);
   },
-  async tags({ cwd, remote }) {
-    if (!remote) return (await gitCmd(['tag', '--sort=-creatordate'], cwd)).trim() || 'No tags.';
+  async tags({ git, remote }) {
+    if (!remote) return (await git(['tag', '--sort=-creatordate'])).trim() || 'No tags.';
     if (!REMOTE_NAME.test(remote)) throw new Error('remote must be a configured remote name (e.g. origin), not a URL');
-    return (await gitCmd(['ls-remote', '--tags', remote], cwd)).trim() || 'No tags on the remote.';
+    return (await git(['ls-remote', '--tags', remote])).trim() || 'No tags on the remote.';
   },
 };
 
@@ -110,7 +112,7 @@ export function register(server) {
       // openWorld: op=tags remote= reaches the network through ls-remote.
       annotations: { readOnlyHint: true, openWorldHint: true },
       description:
-        'Read-only git with compact output, cheaper in tokens than run_cmd. op=status: branch, upstream, staged/unstaged/untracked as JSON. op=diff: working-tree diff (staged=true for the index, file= to narrow); a big diff shows whole files first and names the omitted ones so you can ask for them with file=. op=log: last commits as {commits:[{hash,author,date,subject}],more} JSON (limit, max 50); subject line only, the full message is `git log` through run_cmd; more=true means older commits exist. op=tags: local tags newest first, or the remote\'s tags when remote=<configured remote name>. Anything that writes (commit, push, branch, tag creation) goes through run_cmd.',
+        'Read-only git with compact output, cheaper in tokens than run_cmd. op=status: branch, upstream, staged/unstaged/untracked as JSON. op=diff: working-tree diff (staged=true for the index, file= to narrow); a big diff shows whole files first and names the omitted ones so you can ask for them with file=. op=log: last commits as {commits:[{hash,author,date,subject}],more} JSON (limit, max 50); subject line only, the full message is `git log` through run_cmd; more=true means older commits exist. op=tags: local tags newest first, or the remote\'s tags when remote=<configured remote name>. Warnings follow under [stderr]. Anything that writes (commit, push, branch, tag creation) goes through run_cmd.',
       inputSchema: {
         op: z.enum(Object.keys(OPS)).describe('status | diff | log | tags'),
         repoPath: z.string().optional().describe('Repository directory path (defaults to root)'),
@@ -122,7 +124,10 @@ export function register(server) {
     },
     async ({ op, repoPath, ...opts }) => {
       try {
-        return ok(shapeForModel(await OPS[op]({ cwd: resolveUnderRoot(repoPath), ...opts })));
+        const cwd = resolveUnderRoot(repoPath);
+        const warnings = [];
+        const result = await OPS[op]({ git: (args) => gitCmd(args, cwd, warnings), ...opts });
+        return ok(shapeForModel(warnings.length ? `${result}\n[stderr]\n${warnings.join('\n')}` : result));
       } catch (e) {
         return fail(e);
       }

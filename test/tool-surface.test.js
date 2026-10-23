@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // The served tool surface as one contract (docs/arch/provider-toolkit.md): size budget, annotations, description length, cross-references, provider on/off and detection.
+import './setup.js';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
@@ -73,7 +74,7 @@ const readOnly = registered.filter((t) => t.annotations.readOnlyHint).map((t) =>
 assert.ok(readOnly.includes('aki__agy_run'), "agy_run is read-only while 'plan' is its only allowed mode");
 assert.ok(!readOnly.includes('aki__run_cmd') && !readOnly.includes('aki__write_file'), 'write-capable tools never claim read-only');
 
-// akidevrule_context is the one exception: its description carries the rule-delivery handshake (docs/arch/rule-context-delivery.md, docs/plan/rule-context-handshake.md).
+// akidevrule_context is the one exception: its description carries the rule-delivery handshake (docs/arch/rule-context-delivery.md, docs/plan/done/rule-context-handshake.md).
 for (const t of registered) {
   if (t.name === 'aki__akidevrule_context') continue;
   assert.ok((t.description || '').length <= 700, `${t.name} description is ${t.description.length} chars, over 700`);

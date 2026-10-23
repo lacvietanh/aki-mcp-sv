@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // Shapes AIObox reads from AkiMCP (docs/plan/IMPORTANT-akimcp-aiobox-contract.md § Hợp đồng AIObox đọc từ AkiMCP): a change that breaks one fails here before it breaks the macro.
+import './setup.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -44,10 +45,14 @@ await ROUTES['POST /api/ingress/cloudflared']({ credContent: JSON.stringify({ Tu
 assert.equal(JSON.parse(read('ingress.json')).origin, 'https://cf.example');
 
 // GET /api/security: clients[] { redirectHost, signedIn, tokenAt }, callers[] { agent, lastSeen }.
+fs.writeFileSync(path.join(tmp, 'oauth-dcr-clients.json'), JSON.stringify({
+  claudeDcr: { clientId: 'claudeDcr', clientSecret: null, redirectUris: ['https://claude.ai/api/mcp/auth_callback'], tokenEndpointAuthMethod: 'none', clientName: 'Claude', firstSeenAt: Date.now() },
+}));
 recordCaller('203.0.113.9', 'Claude-User/1.0');
 const security = await ROUTES['GET /api/security']();
-const claude = security.clients.find((c) => c.redirectHost === 'claude.ai');
-assert.ok(claude, 'the pre-registered Claude client is listed by its redirect host');
+const claudeClients = security.clients.filter((c) => c.redirectHost === 'claude.ai');
+assert.deepEqual(claudeClients.map((c) => c.clientId), ['claudeDcr'], 'only a client registered from claude.ai reports its redirect host; the pre-issued client reports none');
+const claude = claudeClients[0];
 assert.equal(typeof claude.signedIn, 'boolean');
 assert.ok(claude.tokenAt === null || typeof claude.tokenAt === 'number');
 assert.ok(security.callers[0].agent.startsWith('Claude-User'));

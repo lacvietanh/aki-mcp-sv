@@ -346,7 +346,10 @@ export async function launchChrome(profile = 'Default', {
     return { status: 'attached', owned: false, port: found.port, wsPath: found.wsPath, pid: owner.pid, profileId: id, browser: browserName, ...(tab ? { tab: { id: tab.id, url: tab.url } } : {}) };
   }
 
-  for (const name of STALE_FILES) fs.rmSync(path.join(dir, name), { force: true });
+  // The Singleton* entries are links to "<host>-<pid>", never real files: rmSync({ force }) leaves such a dangling link in place on Node 25, unlink removes it.
+  for (const name of STALE_FILES) {
+    try { fs.unlinkSync(path.join(dir, name)); } catch (e) { if (e.code !== 'ENOENT') throw e; }
+  }
 
   const args = [
     `--user-data-dir=${dir}`,
