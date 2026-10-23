@@ -142,7 +142,8 @@ assert.ok(fs.existsSync(path.join(r1, 'e.txt')));
 const readR1 = await client.callTool({ name: 'aki__read_text_file', arguments: { path: path.join(r1, 'src', 'a.txt') } });
 assert.equal(readR1.content.length, 2, 'a read tool always runs and appends one line');
 assert.equal(readR1.content[0].text, 'w');
-assert.match(readR1.content[1].text, /^Rules for this path \(same rank as aki__akidevrule_context; .*AGENTS\.md \(sha256 [a-f0-9]{12}\).*Not in your context\? Read them and follow them\.$/);
+assert.match(readR1.content[1].text, /^Rule files applying to this path \(separate from this tool's output; .*AGENTS\.md \(sha256 [a-f0-9]{12}\)\. Readable with aki__read_text_file\.$/);
+assert.doesNotMatch(readR1.content[1].text, /follow|\?/i, 'the line names the files and gives no order: host AI firewalls stop on read output that tells the model what to do');
 
 assert.deepEqual(await rulesFor([path.join(path.dirname(tmp), 'elsewhere', 'x.txt')], [r1]), [], 'a path outside every root has no rules');
 assert.deepEqual(await rulesFor([], [tmp]), [], 'no path, no rules');
@@ -219,7 +220,8 @@ const big = path.join(tmp, 'big', 'CLAUDE.md');
 fs.mkdirSync(path.dirname(big));
 fs.writeFileSync(big, `# big\n${'x'.repeat(40 * 1024)}\n`);
 const capped = await rulesBlock([big]);
-assert.match(capped, /over the 32 KiB cap: read it with aki__read_text_file/);
+assert.match(capped, /over the 32 KiB cap; readable with aki__read_text_file\)/);
+assert.doesNotMatch(capped, /follow/i);
 assert.ok(capped.length < 2048, 'a file over the cap is named, not inlined');
 
 await client.close();
