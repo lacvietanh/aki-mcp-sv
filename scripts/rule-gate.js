@@ -1,11 +1,16 @@
 // Every tool that acts refuses a call without the receipt of the rules in force (docs/plan/done/rule-receipt-gate.md); a receipt proves issuance, not presence in context, so the refusal text tells the AI to reload without knownReceipt.
 // A gated call that touches a project whose rule files, or writes a file whose type's rules (the AkiDevRule route map), the receipt does not cover is not run: the result carries those rules and a new receipt (D23 in docs/plan/done/akimcp-tool-refactor.md, Stage A in docs/plan/done/rule-presence-check.md). Read tools always run and append one line naming the project rule files.
 // A receipt counts only when this server issued it (aki__akidevrule_context records it here, in memory) and the same call made now still returns it: a changed rule file changes the receipt, so the old one is refused.
+// Beside receipt every acting tool takes the chat's optional `ss`; a call that ran ends with one line when that file is missing or behind (D10 in docs/plan/ss-session-file.md). The server stores nothing per chat: it reads one mtime.
 import { z } from 'zod';
 import { assembleRuleContext } from './rule-context.js';
 import { pathsOf, filePathsOf, rulesFor, routeRulesFor, rulesBlock, rulesLine, contentSha } from './project-rules.js';
+import { staleLine } from './session-file.js';
 
 const RECEIPT_ARG = 'receipt';
+const SS_ARG = 'ss';
+// No description: SS_STEP in the rule says what it is, and a description here would repeat on every acting tool.
+const ssSchema = z.string().optional();
 const RECEIPT_RE = /^sha256:[a-f0-9]{64}$/;
 const MAX_ISSUED = 200;
 const receiptSchema = z.string().optional().describe('required: the sha256:… receipt from aki__akidevrule_context');
@@ -102,21 +107,26 @@ function claimShown(receipt, files, shaOf) {
 // A tool is gated unless it declares it cannot write (readOnlyHint true, the same flag clients use to skip confirmation).
 export const isGated = (config) => config?.annotations?.readOnlyHint !== true;
 
-// The tool's input schema with receipt added: a raw shape, a zod object, or none at all.
+// The tool's input schema with receipt and ss added: a raw shape, a zod object, or none at all.
 export function withReceipt(inputSchema) {
-  if (inputSchema === undefined) return { [RECEIPT_ARG]: receiptSchema };
-  if (typeof inputSchema?.extend === 'function') {
-    if (inputSchema.shape?.[RECEIPT_ARG]) throw new Error(`a gated tool already has an input named ${RECEIPT_ARG}`);
-    return inputSchema.extend({ [RECEIPT_ARG]: receiptSchema });
-  }
-  if (inputSchema[RECEIPT_ARG]) throw new Error(`a gated tool already has an input named ${RECEIPT_ARG}`);
-  return { ...inputSchema, [RECEIPT_ARG]: receiptSchema };
+  const added = { [RECEIPT_ARG]: receiptSchema, [SS_ARG]: ssSchema };
+  if (inputSchema === undefined) return added;
+  const own = typeof inputSchema?.extend === 'function' ? inputSchema.shape : inputSchema;
+  for (const name of Object.keys(added)) if (own?.[name]) throw new Error(`a gated tool already has an input named ${name}`);
+  return typeof inputSchema?.extend === 'function' ? inputSchema.extend(added) : { ...inputSchema, ...added };
 }
 
-// Wraps a gated tool's handler: checks and strips receipt, then calls the tool as it was registered (a tool registered without an input schema gets only `extra`).
+// A ran call that names its chat's ss gets the D10 line when the file is missing or behind; a fresh file, a refused call or a rule push gets nothing.
+function withSsLine(result, ss) {
+  if (ss === undefined || ss === '' || !Array.isArray(result?.content)) return result;
+  const line = staleLine(ss);
+  return line ? { ...result, content: [...result.content, { type: 'text', text: line }] } : result;
+}
+
+// Wraps a gated tool's handler: checks and strips receipt and ss, then calls the tool as it was registered (a tool registered without an input schema gets only `extra`).
 export function gate(handler, hadSchema) {
   return async (input, ...rest) => {
-    const { [RECEIPT_ARG]: receipt, ...own } = input || {};
+    const { [RECEIPT_ARG]: receipt, [SS_ARG]: ss, ...own } = input || {};
     const { refused, entry, current } = await verify(receipt);
     if (refused) return { content: [{ type: 'text', text: `${refused.code}: ${refused.message}` }], isError: true };
     const pending = hadSchema ? await uncovered(own, entry, current) : null;
@@ -130,7 +140,7 @@ export function gate(handler, hadSchema) {
         { type: 'text', text: await rulesBlock(fresh) },
       ] };
     }
-    return hadSchema ? handler(own, ...rest) : handler(...rest);
+    return withSsLine(await (hadSchema ? handler(own, ...rest) : handler(...rest)), ss);
   };
 }
 

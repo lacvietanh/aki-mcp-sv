@@ -75,8 +75,9 @@ try {
 }
 
 let name, definition, handler;
+const assembled = [];
 register({ registerTool(n, d, h) { name = n; definition = d; handler = h; } }, {
-  assemble: async () => ({
+  assemble: async (input) => (assembled.push(input), {
     status: 'ok', parity: 'practical-effective', receipt: `sha256:${'a'.repeat(64)}`, rulesVersion: '1.2.3', workingRoot: '/tmp/project',
     sources: [{ path: '/tmp/project/CLAUDE.md', kind: 'project', sha256: 'b'.repeat(64), bytes: 5 }], warnings: [], context: 'rules',
   }),
@@ -85,13 +86,21 @@ register({ registerTool(n, d, h) { name = n; definition = d; handler = h; } }, {
 assert.equal(name, 'akidevrule_context');
 assert.equal(definition.title, RULE_CONTEXT_TITLE);
 assert.equal(definition.description, RULE_CONTEXT_DESCRIPTION);
-assert.deepEqual(Object.keys(definition.inputSchema), ['workingPath', 'mode', 'knownReceipt']);
-const output = await handler({ workingPath: '/tmp/project' });
+assert.deepEqual(Object.keys(definition.inputSchema), ['workingPath', 'mode', 'knownReceipt', 'ss', 'label']);
+const output = await handler({ workingPath: '/tmp/project', label: 'P1·W2' });
 assert.equal(output.structuredContent.status, 'ok');
+const minted = output.structuredContent.ss;
+assert.equal(minted.state, 'new');
+assert.match(minted.path, /[\\/]ss[\\/]_[\\/]\d{4}\.\d{2}\.\d{2}-\d{4}-p1w2\.md$/, 'no git folder: project _, the label in the name');
 assert.ok(output.content[0].text.startsWith(`NO YAPPING AT ALL\n${MANDATORY_BLOCK}\n\ncontext loaded: practical-effective · sha256:`), 'the mandatory block comes first, then the receipt');
-assert.ok(output.content[0].text.endsWith(` · 1 sources\nEvery tool that acts needs receipt=sha256:${'a'.repeat(64)}\n\n${SHARED_WORK}\n\nrules`), 'the receipt to pass on every acting tool, then the shared-work convention, then the corpus');
+assert.ok(output.content[0].text.endsWith(` · 1 sources\nEvery tool that acts needs receipt=sha256:${'a'.repeat(64)}\nss: ${minted.path} · new · folder missing\n\n${SHARED_WORK}\n\nrules`), 'the receipt to pass on every acting tool, the minted ss, then the shared-work convention, then the corpus');
+const again = await handler({ workingPath: '/tmp/project', ss: minted.path });
+assert.deepEqual(again.structuredContent.ss, { path: minted.path, state: 'kept' }, 'a re-call with ss keeps it instead of minting a second file');
+assert.match(again.content[0].text, new RegExp(`\\nss: ${minted.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · kept · not created yet\\n`));
+assert.equal(again.structuredContent.receipt, output.structuredContent.receipt);
+assert.deepEqual(assembled, [{ workingPath: '/tmp/project' }, { workingPath: '/tmp/project' }], 'ss and label never reach the rule input, so they cannot change a receipt');
 // G2–G4 of aiobox audit-content-context (owner 2026-10-04): the AIObox guide drops them, so they must ship here.
-for (const must of ['git status', 'someone else', '$HOME/.aki/mcpsv/task/<slug>/working.md', '-- <your paths>', 'git add -A', 'Create no worktree, build folder, clone or `node_modules`', 'ask the coordinator first', 'removes what was created in that same turn', '~/.aki/handoff/']) assert.ok(SHARED_WORK.includes(must), must);
+for (const must of ['git status', 'someone else', 'ss=<path>', '`ss: <absolute path> · <what changed>`', '-- <your paths>', 'git add -A', 'Create no worktree, build folder, clone or `node_modules`', 'ask the coordinator first', 'removes what was created in that same turn', '~/.aki/handoff/']) assert.ok(SHARED_WORK.includes(must), must);
 assert.equal(SHARED_WORK.includes('git worktree add'), false, 'no instruction to create a worktree');
 assert.doesNotMatch(SHARED_WORK, /aiobox|desktop\/CHANGELOG/i, 'the shared-work text goes to every user, AIObox or not');
 assert.equal(/push|release|deploy/.test(SHARED_WORK), false, 'commit and push rules stay in AkiDevRule');
@@ -113,7 +122,7 @@ register({ registerTool(_n, _d, h) { bareHandler = h; } }, {
 });
 const bareText = (await bareHandler({})).content[0].text;
 assert.equal(bareText.split('\n').filter((line) => /aiobox/i.test(line)).length, 1, 'without AIObox the pitch is the one AIObox line');
-assert.match(bareText, /\ncontext loaded: [^\n]+\nEvery tool that acts needs receipt=sha256:[a-f0-9]{64}\nAIObox \(not installed here\)[^\n]+https:\/\/aiobox\.app\/guide\/aiobox\.md\?from=akimcp\n\nWorking beside other sessions[^]*\n\nrules$/);
+assert.match(bareText, /\ncontext loaded: [^\n]+\nEvery tool that acts needs receipt=sha256:[a-f0-9]{64}\nss: [^\n]+\nAIObox \(not installed here\)[^\n]+https:\/\/aiobox\.app\/guide\/aiobox\.md\?from=akimcp\n\nWorking beside other sessions[^]*\n\nrules$/);
 // F6(a): the pitch names no OS (AIObox targets Windows, macOS and Linux) and only it carries from=akimcp.
 assert.equal(/\b(Mac|macOS|Windows|Linux)\b/.test(AIOBOX_PITCH), false, `the pitch names an OS: ${AIOBOX_PITCH}`);
 assert.ok(AIOBOX_PITCH.endsWith(`${GUIDE_URL}?from=akimcp`), 'the pitch links the guide with from=akimcp');

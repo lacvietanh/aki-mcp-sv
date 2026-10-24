@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// write_file / edit_file over an existing file keep its permission bits: the atomic temp-then-rename write must not drop a script's exec bit or widen a 0600 secret.
+// write_file / edit_file keep an existing file's permission bits through the atomic temp-then-rename write, and name an ss write in their result.
 import './setup.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -14,8 +14,9 @@ const home = path.join(tmp, 'home');
 fs.mkdirSync(path.join(home, 'work'), { recursive: true });
 process.env.HOME = home;
 process.env.USERPROFILE = home;
-process.env.AKI_MCP_DATA_DIR = path.join(tmp, 'data');
+process.env.AKI_MCP_DATA_DIR = path.join(home, '.aki', 'mcpsv');
 const { register } = await import('../scripts/filesystem-mcp.js');
+const { SS_DIR } = await import('../scripts/session-file.js');
 
 const server = new McpServer({ name: 'fs-test', version: '0' });
 register(server);
@@ -26,7 +27,17 @@ await client.connect(b);
 const call = async (name, args) => {
   const r = await client.callTool({ name, arguments: args });
   assert.ok(!r.isError, r.content?.[0]?.text);
+  return r.content.map((c) => c.text).join('\n');
 };
+
+// D9 of docs/plan/ss-session-file.md: a write of a chat's ss or of a legacy task working.md ends with a fact line naming it, never an order; any other write does not.
+const ssFile = path.join(SS_DIR, 'demo', '2026.10.24-1812-ab.md');
+const legacy = path.join(home, '.aki', 'mcpsv', 'task', 'old-thread', 'working.md');
+for (const f of [ssFile, legacy]) fs.mkdirSync(path.dirname(f), { recursive: true });
+assert.equal(await call('write_file', { path: ssFile, content: '# goal\n' }), `wrote ${ssFile}\nss file written: ${ssFile}`);
+assert.match(await call('edit_file', { path: ssFile, edits: [{ oldText: 'goal', newText: 'state' }] }), new RegExp(`\\nss file written: ${ssFile.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`));
+assert.equal(await call('write_file', { path: legacy, content: 'x\n' }), `wrote ${legacy}\nss file written: ${legacy}`);
+assert.equal(await call('write_file', { path: path.join(home, 'work', 'plain.md'), content: 'x\n' }), `wrote ${path.join(home, 'work', 'plain.md')}`);
 
 if (process.platform !== 'win32') {
   const script = path.join(home, 'work', 'run.sh');

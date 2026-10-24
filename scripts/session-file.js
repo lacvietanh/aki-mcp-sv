@@ -1,0 +1,91 @@
+// A chat's session file (ss): aki__akidevrule_context mints its path, the chat passes it back, and this module names, checks and ages it (docs/plan/ss-session-file.md D2-D5, D9-D12). Nothing here creates a file or a folder.
+import fs from 'node:fs';
+import path from 'node:path';
+import { randomInt } from 'node:crypto';
+import { USER_DIR } from './userdata.js';
+import { getRoots, containedIn } from './roots.js';
+
+export const SS_DIR = path.resolve(USER_DIR, 'ss');
+// D10: an ss this far behind an acting call is named in that call's result.
+export const SS_STALE_MS = 15 * 60_000;
+// D12: the file sessions kept before ss, still matched while old threads write it.
+export const LEGACY_WORKING_FILE = /[\\/]\.aki[\\/]mcpsv[\\/]task[\\/][^\\/]+[\\/]working\.md$/;
+// D2, D4: <YYYY.MM.DD-HHMM>-<label of at most 16>, plus a 3-character collision suffix.
+const SS_NAME = /^\d{4}\.\d{2}\.\d{2}-\d{4}-[a-z0-9-]{1,19}\.md$/;
+const PROJECT_NAME = /^[A-Za-z0-9._-]+$/;
+
+const random2 = () => randomInt(36 * 36).toString(36).padStart(2, '0');
+const two = (n) => String(n).padStart(2, '0');
+const sanitizeProject = (name) => (/^\.*$/.test(name) ? '_' : name.replace(/[^A-Za-z0-9._-]/g, '-'));
+
+// D3: basename of the nearest folder holding `.git` (a folder, or the file a worktree or submodule has), walking up from workingPath and stopping at workingRoot; none, or no workingPath, is `_`.
+export function projectKey(workingPath, workingRoot) {
+  if (!workingPath || !workingRoot) return '_';
+  const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+  const stop = real(workingRoot);
+  for (let dir = real(workingPath); ; dir = path.dirname(dir)) {
+    const rel = path.relative(stop, dir);
+    if (rel.startsWith('..') || path.isAbsolute(rel)) return '_';
+    if (fs.existsSync(path.join(dir, '.git'))) return sanitizeProject(path.basename(dir));
+    if (rel === '') return '_';
+  }
+}
+
+// D4: folded to ASCII and lowercased; spaces and underscores become `-`, other symbols drop (`P37·W8` → `p37w8`), at most 16 characters.
+export function sanitizeLabel(label) {
+  if (typeof label !== 'string') return '';
+  return label.normalize('NFKD').replace(/\p{M}/gu, '').replace(/[đĐ]/g, 'd').toLowerCase()
+    .replace(/[\s_]+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '')
+    .slice(0, 16).replace(/-$/, '');
+}
+
+// D2, D4: the local clock the owner reads; a name already taken gets 2 random base36 characters more.
+export function mintSessionPath({ project, label, now = new Date(), dir = SS_DIR }) {
+  const stamp = `${now.getFullYear()}.${two(now.getMonth() + 1)}.${two(now.getDate())}-${two(now.getHours())}${two(now.getMinutes())}`;
+  const base = `${stamp}-${sanitizeLabel(label) || random2()}`;
+  let file = path.join(dir, project, `${base}.md`);
+  while (fs.existsSync(file)) file = path.join(dir, project, `${base}-${random2()}.md`);
+  return file;
+}
+
+// D5: the absolute ss path when p is one (directly under <data dir>/ss/<project>/, an ss name, no `..`), else null. pathApi lets a test check Windows paths on any OS.
+export function acceptSessionPath(p, { dir = SS_DIR, pathApi = path } = {}) {
+  if (typeof p !== 'string' || !pathApi.isAbsolute(p) || p.split(/[\\/]/).includes('..')) return null;
+  const file = pathApi.resolve(p);
+  const project = pathApi.basename(pathApi.dirname(file));
+  const parent = pathApi.dirname(pathApi.dirname(file));
+  const root = pathApi.resolve(dir);
+  const sameDir = pathApi.sep === '\\' ? parent.toLowerCase() === root.toLowerCase() : parent === root;
+  return sameDir && PROJECT_NAME.test(project) && !/^\.+$/.test(project) && SS_NAME.test(pathApi.basename(file)) ? file : null;
+}
+
+// D9: a write the filesystem tools name as an ss write.
+export const isSessionFile = (real) => Boolean(acceptSessionPath(real)) || LEGACY_WORKING_FILE.test(real);
+
+// D11: whole minutes since the file was last written, -1 when it does not exist.
+export function ssAgeMinutes(file, now = Date.now()) {
+  const stat = fs.statSync(file, { throwIfNoEntry: false });
+  return stat ? Math.max(0, Math.floor((now - stat.mtimeMs) / 60_000)) : -1;
+}
+
+// D10: the line an acting call that names its ss ends with, or null while the file is current. A fact about a file, never an order (F6).
+export function staleLine(ss, now = Date.now()) {
+  const file = acceptSessionPath(ss);
+  if (!file) return 'ss: not an ss path, ignored';
+  const age = ssAgeMinutes(file, now);
+  if (age < 0) return `ss: ${file} · not created yet`;
+  return age * 60_000 >= SS_STALE_MS ? `ss: ${file} · last written ${age} min ago` : null;
+}
+
+// D5: the ss a context call hands back with its header line: the one passed in when it is an ss path (kept), else a new one. `unavailable` when the file tools cannot write the data dir (F8).
+export function sessionFor({ ss, label, workingPath, workingRoot, now = new Date() }) {
+  if (!getRoots().some((root) => containedIn(SS_DIR, root))) {
+    return { path: null, state: 'unavailable', line: `ss: unavailable · ${path.resolve(USER_DIR)} is outside the allowed folders; add it under Folders in the panel` };
+  }
+  const given = typeof ss === 'string' && ss !== '';
+  const kept = given ? acceptSessionPath(ss) : null;
+  if (kept) return { path: kept, state: 'kept', line: `ss: ${kept} · kept${fs.existsSync(kept) ? '' : ' · not created yet'}` };
+  const file = mintSessionPath({ project: projectKey(workingPath, workingRoot), label, now });
+  if (given) return { path: file, state: 'ignored', line: `ss: ${file} · new (the ss given was ignored: not an ss path)` };
+  return { path: file, state: 'new', line: `ss: ${file} · new · folder ${fs.existsSync(path.dirname(file)) ? 'ready' : 'missing'}` };
+}

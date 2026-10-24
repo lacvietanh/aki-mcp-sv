@@ -100,7 +100,7 @@ async function run() {
     assert.equal(contextTool.title, 'Load Effective Aki/Claude Context');
     assert.match(contextTool.description, /Call once before the first substantive action/);
     assert.equal(contextTool.inputSchema.type, 'object');
-    assert.deepEqual(Object.keys(contextTool.inputSchema.properties), ['workingPath', 'mode', 'knownReceipt']);
+    assert.deepEqual(Object.keys(contextTool.inputSchema.properties), ['workingPath', 'mode', 'knownReceipt', 'ss', 'label']);
     // A browser-driving tool call is logged once, with caller and op, never its argument text; a bad op names the stale-schema cause.
     const callTool = (id, args) => fetch(baseUrl, {
       method: 'POST',

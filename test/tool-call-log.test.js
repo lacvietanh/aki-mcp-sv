@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { traceFields, errorCodeOf, isLoggedTool, normalizeLogSettings, buildLogEntry, appendLogEntry, datedLogFiles, LOG_DEFAULTS } from '../scripts/tool-call-log.js';
+import { SS_DIR } from '../scripts/session-file.js';
 
 const dayBefore = (n) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 const linesOf = (f) => fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).length;
@@ -94,6 +95,18 @@ test('buildLogEntry records the rule gate outcome, refused or pushed', () => {
   assert.equal(pushed.rule, 'RULE_PUSH');
   assert.equal(pushed.ok, true);
   assert.equal(call({ content: [{ type: 'text', text: 'wrote 3 bytes' }] }).rule, undefined);
+});
+
+test('buildLogEntry records whether a call carried a valid ss, its age and a context call\'s ss state, never the path', () => {
+  const ssPath = path.join(SS_DIR, 'demo', '2026.10.24-1812-ab.md');
+  const entry = (args, extra = {}, result = {}) => buildLogEntry({ sessionId: 's', agent: 'A', params: { name: 'aki__write_file', arguments: args }, response: { result }, ms: 1, ...extra }, { level: 'detail' }, new Set());
+  const carried = entry({ ss: ssPath }, { ssAge: 3 });
+  assert.equal(carried.ss, true);
+  assert.equal(carried.ssAge, 3);
+  assert.ok(!JSON.stringify(carried).includes(ssPath), 'the path is never logged');
+  assert.equal(entry({ ss: '/etc/hosts' }).ss, false);
+  assert.equal(entry({}).ss, undefined);
+  assert.equal(entry({}, {}, { structuredContent: { ss: { path: ssPath, state: 'kept' } } }).ssState, 'kept');
 });
 
 test('buildLogEntry writes the request headers once per session', () => {

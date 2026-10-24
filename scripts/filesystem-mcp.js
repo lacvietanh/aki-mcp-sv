@@ -16,6 +16,7 @@ import { createTwoFilesPatch } from 'diff';
 import { z } from 'zod';
 import { getRoots, resolveRealUnderRoot, resolveRealWritable, resolveRealWritableDir } from './roots.js';
 import { ok, fail } from './mcp-tool.js';
+import { isSessionFile } from './session-file.js';
 
 const normalizeLineEndings = (text) => text.replace(/\r\n/g, '\n');
 
@@ -148,9 +149,8 @@ async function applyFileEdits(filePath, edits, dryRun) {
   return formatted;
 }
 
-// WORKING_FILE_STEP (rule-context-mcp.js) again, in the result of the write itself: a long chat or a compaction may have dropped the rule read at session start.
-const WORKING_FILE = /[\\/]\.aki[\\/]mcpsv[\\/]task[\\/][^\\/]+[\\/]working\.md$/;
-const withReportStep = (real, text) => (WORKING_FILE.test(real) ? `${text}\nTell the user in this reply what changed in ${real}, with that full path.` : text);
+// D9 (docs/plan/ss-session-file.md): an ss write is named as a fact, never an order; host firewalls stop on orders in tool output.
+const withSessionLine = (real, text) => (isSessionFile(real) ? `${text}\nss file written: ${real}` : text);
 
 export const provider = { id: 'filesystem', title: 'Filesystem', required: true, register };
 
@@ -192,7 +192,7 @@ export function register(server) {
       try {
         const real = await resolveRealWritable(p);
         await writeFileAtomic(real, content);
-        return ok(withReportStep(real, `wrote ${real}`));
+        return ok(withSessionLine(real, `wrote ${real}`));
       } catch (e) {
         return fail(e);
       }
@@ -215,7 +215,7 @@ export function register(server) {
       try {
         const real = await resolveRealWritable(p);
         const diff = await applyFileEdits(real, edits, dryRun);
-        return ok(dryRun ? diff : withReportStep(real, diff));
+        return ok(dryRun ? diff : withSessionLine(real, diff));
       } catch (e) {
         return fail(e);
       }

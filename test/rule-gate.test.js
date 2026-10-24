@@ -40,9 +40,10 @@ assert.equal((await checkReceipt(A)).code, 'RULE_RECEIPT_UNCHECKED', 'rules that
 assert.equal(isGated({ annotations: { readOnlyHint: true } }), false);
 assert.equal(isGated({ annotations: { readOnlyHint: false } }), true);
 assert.equal(isGated({}), true, 'a tool that does not say it is read-only is gated');
-assert.deepEqual(Object.keys(withReceipt({ path: 1 })), ['path', 'receipt']);
-assert.deepEqual(Object.keys(withReceipt(undefined)), ['receipt']);
+assert.deepEqual(Object.keys(withReceipt({ path: 1 })), ['path', 'receipt', 'ss']);
+assert.deepEqual(Object.keys(withReceipt(undefined)), ['receipt', 'ss']);
 assert.throws(() => withReceipt({ receipt: 1 }), /already has an input named receipt/);
+assert.throws(() => withReceipt({ ss: 1 }), /already has an input named ss/);
 setAssembler(async () => ({ receipt: A }));
 recordIssued(A);
 const seen = [];
@@ -70,6 +71,7 @@ const props = (name) => Object.keys(tools.find((t) => t.name === name)?.inputSch
 for (const t of tools) {
   const gated = t.annotations?.readOnlyHint !== true;
   assert.equal(props(t.name).includes('receipt'), gated, `${t.name}: receipt only on tools that act`);
+  if (t.name !== 'aki__akidevrule_context') assert.equal(props(t.name).includes('ss'), gated, `${t.name}: ss beside receipt only`);
 }
 assert.ok(props('aki__write_file').includes('receipt') && props('aki__run_cmd').includes('receipt'));
 assert.ok(!props('aki__read_text_file').includes('receipt') && !props('aki__akidevrule_context').includes('receipt'));
@@ -215,6 +217,21 @@ assert.match(docsFirst.content[1].text, /# docs rule/, 'the first .md write afte
 assert.doesNotMatch(docsFirst.content[1].text, /# coding rule/, 'rules already delivered are not pushed again');
 assert.ok(!newReceipt(await write(path.join(r4, 'README.md'), newReceipt(docsFirst))), 'the retry runs');
 fs.rmSync(path.join(ruleDir, 'route-map.json'));
+
+// An acting call that names its chat's ss ends with one line when that file is missing or behind, and with nothing while it is current (D10).
+const { SS_DIR } = await import('../scripts/session-file.js');
+const ssFile = path.join(SS_DIR, 'demo', '2026.10.24-1812-ab.md');
+const ssReceipt = (await client.callTool({ name: 'aki__akidevrule_context', arguments: { workingPath: tmp } })).structuredContent.receipt;
+const ssCall = (ss, p = path.join(tmp, 'ss-target.txt')) => client.callTool({ name: 'aki__write_file', arguments: { path: p, content: 's', receipt: ssReceipt, ss } });
+assert.equal((await ssCall(ssFile)).content.at(-1).text, `ss: ${ssFile} · not created yet`);
+fs.mkdirSync(path.dirname(ssFile), { recursive: true });
+assert.equal(text(await ssCall(ssFile, ssFile)), `wrote ${ssFile}\nss file written: ${ssFile}`, 'the call that writes the ss gets the fact line and no stale line');
+assert.equal((await ssCall(ssFile)).content.length, 1, 'a current ss adds nothing');
+const twentyMinutesAgo = new Date(Date.now() - 20 * 60_000);
+fs.utimesSync(ssFile, twentyMinutesAgo, twentyMinutesAgo);
+assert.equal((await ssCall(ssFile)).content.at(-1).text, `ss: ${ssFile} · last written 20 min ago`);
+assert.equal((await ssCall('/etc/hosts')).content.at(-1).text, 'ss: not an ss path, ignored');
+assert.equal((await client.callTool({ name: 'aki__write_file', arguments: { path: path.join(tmp, 'ss-target.txt'), content: 's', ss: ssFile } })).content.length, 1, 'a refused call gets no ss line');
 
 const big = path.join(tmp, 'big', 'CLAUDE.md');
 fs.mkdirSync(path.dirname(big));
