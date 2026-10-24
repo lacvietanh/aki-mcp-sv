@@ -1,5 +1,7 @@
 # ss: one session file per chat, its path minted by the server
 
+Superseded in part 2026-10-25 by [`v2-ss-session-file.md`](v2-ss-session-file.md): D6 (shape), the handoff sentence of D7/D8 and the seat clause of D14 are replaced there; every other decision here stands.
+
 Status: P1-P5 and P7 done 2026-10-24; P6 (live check) passed 2026-10-24. Ships in 3.1.0, not 3.2.0: 3.1.0 was never tagged, pushed or published, and `release.A5` forbids opening a second unshipped version on top of it, so the work joins the open one (owner 2026-10-24: "phải làm hết… trong 1 lượt yêu cầu này", shipped later by Claude Code). Decided 2026-10-23. Every point below is decided; nothing is left as an owner question (owner 2026-10-23: "file plan này là bản chốt cải thiện vụ bớt phải nhắc ghi phiên, và refactor cách ghi phiên. tất cả đều quyết, không có cái nào bỏ lại." · "sẽ để dành cho phiên bản sau"). Record of how it was decided: 2-seat council room `/Users/aki/.aki/agent-council/aki-mcp-sv/2026.10.23-2123-akimcp-ss-session-file/` (`chat.md` holds the owner's message verbatim and three turns, `lead.md` the analysis with sources, `challenger.md` the AkiMCP Worker's attack, `checklist.md` the requirement ledger), then a self-run deep-think pass per aspect (2 to 6 rounds each) that closed the room's two owner questions and the points below marked "new". Working file of that session: `/Users/aki/.aki/mcpsv/task/akimcp-ss-session-file/working.md`.
 
 ## Goal
