@@ -19,7 +19,7 @@ const SS_STEP = 'Session file (ss): the `ss:` line of the aki__akidevrule_contex
 export const SHARED_WORK = [
   'Working beside other sessions (AkiMCP convention):',
   "- Every session edits the same checkout. Before editing: `git status`. A file already dirty that you did not change is someone else's: do not edit, stash, check out or commit it; ask the coordinator whose it is.",
-  `- ${SS_STEP} Drafts and probes go in /tmp; files that must persist go in the project's \`scripts/\`.`,
+  `- ${SS_STEP}`,
   '- Files everyone touches (`CHANGELOG.md`, an ss another session also writes): edit only your own lines, right before committing. Commit with `git commit -m "…" -- <your paths>`, never `git add -A` or `.`.',
   '- Work in the shared checkout in turns, committing `-- <your paths>`. Create no worktree, build folder, clone or `node_modules` unless the work cannot be done without it (ask the coordinator first); whoever merges removes what was created in that same turn.',
   "- Handing work over: a letter in `~/.aki/handoff/` named for the successor's role. The successor reads the letter, the ss and the old chat, keeps writing that ss, takes over its Files list and tells the related sessions.",
