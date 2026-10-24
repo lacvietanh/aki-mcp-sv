@@ -1,6 +1,6 @@
 # Plan — npm Trusted Publishing through GitHub Actions OIDC
 
-Status: active · not started
+Status: wishlist · deferred, not started (owner 2026-10-24: "cái npm trusted pub là deffered/wishlist rồi"); `npm publish` with the owner's OTP stays the release step until the owner names this plan.
 
 ## Goal
 
