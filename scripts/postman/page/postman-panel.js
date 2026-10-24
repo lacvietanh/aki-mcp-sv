@@ -1590,7 +1590,7 @@
     sendAiPrompt(config.instruction);
   }
 
-  // Presses Summarize once per chat that grows across the mark by less than the amber-to-red span (a bigger jump is a switch to another chat), only while idle; why: docs/plan/done/postman-auto-summarize.md decisions 1-2.
+  // Presses Summarize once per chat crossing the mark by less than the amber-to-red span (a bigger jump is a chat switch), only while idle; docs/plan/done/postman-auto-summarize.md decisions 1-2.
   const IDLE_MS = 5000;
   let ctxPrev = null;
   let ctxChangedAt = 0;

@@ -33,7 +33,7 @@ const WEB_PROMPT = [
   'You MUST follow /akirule in every chat, in full, from your first action on. Never skip it, even for a small task.',
 ].join('\n');
 
-// Footer mirrors the AkiTao ecosystem list (akitao.com app/components/AppFooter.vue `products` and `socialLinks`, UNIDOC Web §2.4b): same order, names and URLs. Icons are hotlinked from akitao.com by one rule from the canonical icon key; a name always sits beside its icon, so the footer still reads offline.
+// Footer = akitao.com AppFooter.vue `products`/`socialLinks` (UNIDOC Web §2.4b): same order, names, URLs; icons hotlinked from akitao.com, a name beside each so it reads offline.
 const SITE = 'https://akitao.com';
 // [name, url, icon key, ecosystem]: every row gets the UTM; ecosystem true = Aki-owned domain, which keeps its referrer, false = third party (noopener noreferrer).
 const ECOSYSTEM = [

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Reads tool-calls.jsonl: bypass (browser tools on an AIObox port), writes with no prior op=state, stale-schema/version errors, refusal codes. Detail: docs/plan/done/akimcp-aiobox-boundary-plan.md § 4 I1.
+// Reads tool-calls.jsonl: bypass (browser tools on an AIObox port), writes with no prior op=state, stale-schema/version errors, refusal codes (docs/plan/done/akimcp-aiobox-boundary-plan.md § 4 I1).
 // Usage: node scripts/tool-calls-report.js [file] [--days N]
 import fs from 'node:fs';
 import path from 'node:path';
