@@ -1552,7 +1552,6 @@
   }
 
   const HANDOFF_POLL_MS = 250;
-  const CHAT_OPEN_POLLS = 20;
   const HANDOFF_TIMEOUT_MS = 5 * 60 * 1000;
   const NEW_CHAT_BUTTON = '[data-testid="ai-chat-new-conversation-button"]';
   const AGENT_REPLY = '.ai-chat-message-group--last .ai-chat-agent-message';
@@ -1611,10 +1610,10 @@
     if (el) el.textContent = message;
   }
 
-  // The right sidebar can be collapsed when a button is pressed: open it and give the composer a moment to mount before giving up.
+  // The right sidebar can be collapsed when a button is pressed: open it and wait the same few frames openModelMenu waits for its menu, then let the caller report a miss.
   async function chatInputOrOpen() {
     if (!findChatInput()) ensureAiChatOpen();
-    for (let i = 0; i < CHAT_OPEN_POLLS && !findChatInput(); i++) await new Promise((r) => setTimeout(r, HANDOFF_POLL_MS));
+    for (let i = 0; i < 6 && !findChatInput(); i++) await new Promise((r) => requestAnimationFrame(r));
     return findChatInput();
   }
 
