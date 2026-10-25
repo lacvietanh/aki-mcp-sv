@@ -18,7 +18,8 @@ const FIVE_MINUTES_MS = 5 * 60 * 1000;
 
 // Runs the real page scripts in a vm against a scripted Postman: the composer shows Send only while idle, a click on Send records the message and turns busy, and a fake clock drives the handoff's polling.
 function loadPage(config = {}) {
-  const state = { busy: false, noButtons: false, flipDelayMs: 0, approval: false, conversation: '', input: '', sent: [], newChats: 0, clipboard: null, reply: '', thinking: '' };
+  const state = { busy: false, noButtons: false, flipDelayMs: 0, approval: false, conversation: '', input: '', sent: [], newChats: 0, clipboard: null, clipboardFails: false, noInput: false, reply: '', thinking: '' };
+  const statusNode = { textContent: '' };
   const logs = [];
   const timers = [];
   let now = 0;
@@ -58,7 +59,7 @@ function loadPage(config = {}) {
     [CHAT]: () => chat,
     [`${CHAT} ${CONVERSATION}`]: () => conversation,
     [CONVERSATION]: () => conversation,
-    '[data-testid="ai-chat-input-editor"] [contenteditable="true"]': () => input,
+    '[data-testid="ai-chat-input-editor"] [contenteditable="true"]': () => (state.noInput ? null : input),
     '.ai-chat-input-send-button': () => (state.busy || state.noButtons ? null : sendButton),
     '.ai-chat-input-cancel-button': () => (state.busy ? {} : null),
     [APPROVAL_CARD]: () => (state.approval ? {} : null),
@@ -73,12 +74,12 @@ function loadPage(config = {}) {
     document: {
       querySelector: query,
       querySelectorAll: (selector) => (selector === '.ai-chat-message-group--last .ai-chat-agent-message' && state.reply ? [replyNode] : []),
-      getElementById: () => null,
+      getElementById: (id) => (id === 'aki-chat-status' ? statusNode : null),
       addEventListener() {},
       createRange: () => ({ selectNodeContents() {} }),
       execCommand: (command, _ui, value) => { if (command === 'insertText') state.input = value; },
     },
-    navigator: { clipboard: { writeText: async (text) => { state.clipboard = text; } } },
+    navigator: { clipboard: { writeText: async (text) => { if (state.clipboardFails) throw new Error('Document is not focused'); state.clipboard = text; } } },
     localStorage: { getItem: () => null },
     console: { log: (...args) => logs.push(args.join(' ')), error() {}, warn() {} },
     setTimeout: schedule,
@@ -97,6 +98,7 @@ function loadPage(config = {}) {
   const settle = async () => { for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve)); };
   async function advance(ms) {
     const target = now + ms;
+    await settle();
     for (;;) {
       timers.sort((a, b) => a.at - b.at);
       if (!timers.length || timers[0].at > target) break;
@@ -108,7 +110,7 @@ function loadPage(config = {}) {
     now = target;
     await settle();
   }
-  return { state, logs, advance, summarize: () => sandbox.__pmDeliverSummarizePrompt('SUMMARIZE'), locked: () => sandbox.__pmSendInFlight };
+  return { state, logs, advance, summarize: () => sandbox.__pmDeliverSummarizePrompt('SUMMARIZE'), locked: () => sandbox.__pmSendInFlight, status: () => statusNode.textContent };
 }
 
 function agentAnswers(page, text) {
@@ -146,6 +148,7 @@ test('sends the summarize prompt once the agent stops, then pastes its reply uns
   assert.equal(page.state.input, 'Summary: X');
   assert.equal(page.state.sent.length, 1, 'the summary is pasted, never sent');
   assert.equal(page.locked(), false);
+  assert.equal(page.status(), '');
 });
 
 test('does not send while a tool approval card is up even though Send is showing', async () => {
@@ -192,4 +195,30 @@ test('gives up after five minutes with neither Send nor Stop showing, sends noth
   assert.equal(page.state.input, 'SUMMARIZE');
   assert.equal(page.locked(), false);
   assert.ok(page.logs.some((line) => line.includes('[⚡ AutoRun]') && line.includes('timed out')));
+  assert.match(page.status(), /^Stopped: timed out waiting for .+\. Try again\.$/);
+});
+
+test('says the chat panel did not open and frees the composer when no chat input ever mounts', async () => {
+  const page = loadPage();
+  page.state.noInput = true;
+  page.summarize();
+
+  await page.advance(10_000);
+  assert.deepEqual(page.state.sent, []);
+  assert.equal(page.locked(), false);
+  assert.match(page.status(), /^Stopped: the AI chat panel did not open\./);
+});
+
+test('pastes the summary and says copying was skipped when the clipboard write fails', async () => {
+  const page = loadPage();
+  page.state.clipboardFails = true;
+  page.state.conversation = 'earlier work';
+  page.summarize();
+  await page.advance(1_000);
+  agentAnswers(page, 'Summary: X');
+  await page.advance(1_000);
+
+  assert.equal(page.state.input, 'Summary: X');
+  assert.equal(page.state.clipboard, null);
+  assert.match(page.status(), /Copying it was skipped/);
 });

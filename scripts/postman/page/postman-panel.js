@@ -670,7 +670,7 @@
   const PANEL_WIDTH = 350;
   const ANCHOR_GAP = 4;
   const VIEWPORT_PAD = 8;
-  const AKI_UI_V = 'aether22';
+  const AKI_UI_V = 'aether23';
 
   function togglePanel(forcedState) {
     const panel = document.getElementById('aki-control-panel');
@@ -1263,10 +1263,10 @@
             <label class="aki-label" title="GPT-5.6 Luna">
               <input type="radio" name="aki-model" value="56lu"> <span>5.6 Luna</span>
             </label>
-            <label class="aki-label" title="Opus 4.8 — logic sâu nhất, coding phức tạp & agentic dài hơi; suy luận đa bước bền. Chậm/đắt hơn — để dành việc khó.">
+            <label class="aki-label" title="Opus 4.8: deepest reasoning, best for complex coding and long agent runs. Slower and costlier, keep it for hard tasks.">
               <input type="radio" name="aki-model" value="48op"> <span>Opus 4.8</span>
             </label>
-            <label class="aki-label" title="Auto — Postman tự chọn model phù hợp cho từng bước">
+            <label class="aki-label" title="Auto: Postman picks the model for each step">
               <input type="radio" name="aki-model" value="auto"> <span>Auto</span>
             </label>
           </div>
@@ -1321,6 +1321,7 @@
             <span class="aki-section-label">SUMMARIZE FOR HANDOFF<span class="aki-help" title="Waits until the assistant has finished, asks it for a handoff summary, copies it, opens a new chat and pastes it there unsent, keeping the context when this one gets long.">?</span></span>
             <button type="button" id="aki-btn-summarize-chat" class="aki-btn" title="Waits until the assistant has finished, asks it for a handoff summary, copies the reply, opens a new chat and pastes the summary there unsent, so you read it before you send it.">SUMMARIZE TO A NEW CHAT</button>
           </div>
+          <div id="aki-chat-status" class="aki-err"></div>
           <div class="aki-row">
             <label class="aki-label" title="Runs Summarize to a new chat for you once, when a chat you are working in fills the Context bar to this percent and the assistant has finished replying. 100% is the bar's red mark. A chat that is already past it when you open it is left alone.">
               <input type="checkbox" id="aki-opt-auto-summarize" ${config.autoSummarize ? 'checked' : ''}>
@@ -1551,6 +1552,7 @@
   }
 
   const HANDOFF_POLL_MS = 250;
+  const CHAT_OPEN_POLLS = 20;
   const HANDOFF_TIMEOUT_MS = 5 * 60 * 1000;
   const NEW_CHAT_BUTTON = '[data-testid="ai-chat-new-conversation-button"]';
   const AGENT_REPLY = '.ai-chat-message-group--last .ai-chat-agent-message';
@@ -1597,9 +1599,23 @@
   async function copyToClipboard(text) {
     try {
       await navigator.clipboard.writeText(text);
+      return true;
     } catch (e) {
       console.log('[⚡ AutoRun] Summarize handoff: clipboard copy failed: ' + e.message);
+      return false;
     }
+  }
+
+  function showChatStatus(message) {
+    const el = document.getElementById('aki-chat-status');
+    if (el) el.textContent = message;
+  }
+
+  // The right sidebar can be collapsed when a button is pressed: open it and give the composer a moment to mount before giving up.
+  async function chatInputOrOpen() {
+    if (!findChatInput()) ensureAiChatOpen();
+    for (let i = 0; i < CHAT_OPEN_POLLS && !findChatInput(); i++) await new Promise((r) => setTimeout(r, HANDOFF_POLL_MS));
+    return findChatInput();
   }
 
   // Owns the composer from the summarize prompt to the unsent paste; the caller holds __pmSendInFlight, so every loop step and button stands down until PASTE.
@@ -1610,7 +1626,7 @@
     await awaitReply();
     const summary = lastAgentReplyText();
     if (!summary) throw new Error('the summary reply was empty');
-    await copyToClipboard(summary);
+    const copied = await copyToClipboard(summary);
     setLabel('NEW CHAT…');
     const newChatBtn = document.querySelector(NEW_CHAT_BUTTON);
     if (!newChatBtn) throw new Error('the new-chat button is missing');
@@ -1626,23 +1642,26 @@
       await awaitReply();
     }
     await typeChatText(findChatInput(), summary);
+    if (!copied) showChatStatus('The summary is in the new chat box. Copying it was skipped (Postman window not focused), so your clipboard still holds older text.');
   }
 
   async function withChatLock(btnId, task) {
     if (window.__pmSendInFlight) return false;
-    const input = findChatInput();
-    if (!input) return false;
     window.__pmSendInFlight = true;
+    showChatStatus('');
     const btn = document.getElementById(btnId);
     const oldLabel = btn ? btn.textContent : null;
     const setLabel = (label) => { if (btn) btn.textContent = label; };
     if (btn) btn.disabled = true;
     setLabel('SENDING…');
     try {
+      const input = await chatInputOrOpen();
+      if (!input) throw new Error('the AI chat panel did not open');
       await task(input, setLabel);
       return true;
     } catch (e) {
       console.log('[⚡ AutoRun] Chat send stopped: ' + e.message);
+      showChatStatus('Stopped: ' + e.message + '. Try again.');
       return false;
     } finally {
       window.__pmSendInFlight = false;
