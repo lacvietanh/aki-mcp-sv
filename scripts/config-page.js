@@ -140,7 +140,7 @@ function secretSnippet(label, value, secrets, id) {
 
 export function renderPanel({ origin, ingress = 'funnel', client, passphrase, token, accessToken, repoRoot, rulesDir, userDir, updateInfo = {}, savedIngress = null, isDev = false }) {
   const url = origin ? `${origin}/mcp` : 'not available yet, see section 0';
-  // Local clients connect straight to loopback (no WAN, no tunnel); only remote web connectors (Claude.ai, ChatGPT) need the public `url`.
+  // Local clients connect straight to loopback (no WAN, no tunnel); only remote web connectors need the public `url`.
   const localUrl = `http://127.0.0.1:${process.env.GATEKEEPER_PORT || 9999}/mcp`;
   const postmanJson = JSON.stringify({
     mcpServers: { 'aki-mcp-sv': { url: localUrl, headers: { Authorization: `Bearer ${accessToken}` } } },
@@ -219,7 +219,7 @@ ${updateBanner}
 <section id="s0" class="collapsible-card${origin ? ' is-complete' : ''}"><details class="collapsible"${origin ? '' : ' open'}>
 <summary><span class="collapse-heading">0 · Remote ingress (Web &amp; Mobile AI) — optional</span>${origin ? '<span class="done-tag">ingress active</span>' : '<span class="done-tag" style="color:var(--muted);border-color:var(--line)">optional · local is live</span>'}<span class="collapse-icon" aria-hidden="true"></span></summary>
 <div class="collapse-body">
-<p class="helptext">${origin ? `AKIMCP is live at ${copyEl(origin)} through <strong>${esc(ingressLabel)}</strong>. Expand this card only when you need to change ingress.` : `Local clients already work with no setup — the engine is live on <span class="mono">127.0.0.1</span>. Configure ingress here <em>only</em> to also let remote/mobile web AI (Claude.ai, ChatGPT) reach this machine over the internet. Restart after switching ingress.`}</p>
+<p class="helptext">${origin ? `AKIMCP is live at ${copyEl(origin)} through <strong>${esc(ingressLabel)}</strong>. Expand this card only when you need to change ingress.` : `Local clients already work with no setup — the engine is live on <span class="mono">127.0.0.1</span>. Configure ingress here <em>only</em> to also let remote/mobile web AI reach this machine over the internet. Restart after switching ingress.`}</p>
 ${ingress === 'cloudflared' ? '' : `<p class="helptext"><strong>Cloudflare Tunnel is the recommended ingress</strong> (the "Owned public origin" tab): it holds a steadier connection, carries more bandwidth and answers from a far larger global network than Tailscale Funnel. Funnel needs no domain and <span class="mono">npm start</span> sets it up by itself, so it is what runs until you choose otherwise.</p>`}
 
 <nav class="tabs" role="tablist">
