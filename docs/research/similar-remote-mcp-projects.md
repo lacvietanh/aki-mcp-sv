@@ -1,5 +1,7 @@
 # So sánh aki-mcp-sv với các remote MCP server / pattern tương tự
 
+Status: amended 2026-10-25
+
 Nguồn: web search 08/08/2026 (xem link cuối mỗi mục) + đọc trực tiếp README/CHANGELOG của aki-mcp-sv. Dùng file này làm nguồn tái sử dụng cho mọi bài viết (news, knowledge, akidev, trang `/pj/`) — không copy nguyên văn, diễn giải lại theo văn cảnh từng bài.
 
 ## Bảng tổng hợp
@@ -30,3 +32,7 @@ mcp.directory (bài hướng dẫn Desktop Commander, cập nhật 11/05/2026) d
 - Desktop Commander: github.com/wonderwhy-er/DesktopCommanderMCP, desktopcommander.app/mcp/, mcp.directory/blog/desktop-commander-mcp-complete-guide-2026 (11/05/2026)
 - mcp-remote: github.com/geelen/mcp-remote, npmjs.com/package/mcp-remote, deepwiki.com/geelen/mcp-remote
 - @modelcontextprotocol/server-filesystem: github.com/modelcontextprotocol/servers/tree/main/src/filesystem, github.com/modelcontextprotocol/servers/issues/3752
+
+## Amendments
+
+- 2026-10-25 · § Bảng tổng hợp, dòng **aki-mcp-sv**: cột "Xác thực" không còn đúng. Mọi connector web (Claude, ChatGPT, Grok, Gemini, Notion, ClickUp) tự đăng ký qua DCR (RFC 7591), người dùng chỉ dán URL + passphrase; Client ID/Secret cấp sẵn chỉ còn cho client nào muốn một client tĩnh, còn Buda dùng Bearer token (`CLAUDE.md` § Two client paths, one OAuth server). Cột "Cơ chế expose" cũng thiếu: ngoài Tailscale Funnel còn Cloudflare Tunnel (`--tunnel`) và origin công khai tự sở hữu (`PUBLIC_ORIGIN`), ưu tiên Cloudflare > `PUBLIC_ORIGIN` > Funnel (`CLAUDE.md` § RECURRING #1, dòng Bypass / Ingress precedence; `README.md` § Exposing to the internet, mục Recommended ingress: Cloudflare tunnel or your own edge); client cùng máy nối thẳng `127.0.0.1:9999` hoặc chạy tools qua stdio, không cần ingress (`README.md` § Connecting local IDEs (Cursor, Claude Code, Claude app, AGY, Codex)).

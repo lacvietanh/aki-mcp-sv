@@ -1,6 +1,6 @@
 # Check-update — version-check for aki-mcp-sv and akidevrule
 
-> updated 2026-09-27 · v2.1.0
+> updated 2026-10-25 · v3.1.0
 
 "Checkupdate" covers **two independent version checks bundled into one pipeline**: this repo's own package (`@akinet/akimcp`, compared against `package.json` on GitHub) and the akidevrule rule corpus (compared against its `CHANGELOG.md` on GitHub). Both live in `checkForUpdate()` (`scripts/update-check.js`) and both are shown from the same `updateInfo` object — `{ mcp, rule }` — in the web panel and the Postman panel.
 
@@ -76,11 +76,11 @@ Green nodes = the one shared classification core (`rule-version-core.cjs`). Oran
 
 | Trigger | What runs | Network call? | Where |
 |---|---|---|---|
-| Main process boot (`npm start`) | `checkForUpdate()` — fetches both `mcp.latest` and `rule.latest` from GitHub | **Yes** | `scripts/start.js:157` |
-| Web panel "Install / update" click (`POST /api/install-rules`) | `installRules()` then `refreshLocalVersions(ctx.updateInfo)` | No — reuses the `latest` already in `ctx.updateInfo` | `scripts/panel.js:223-227` |
-| Web panel "Pull & restart" click (`POST /api/pull-update`, this repo's own code) | `git pull --ff-only` | No version check at all; banner clears only on the next boot | `scripts/panel.js:234` |
+| Main process boot (`npm start`) | `checkForUpdate()` — fetches both `mcp.latest` and `rule.latest` from GitHub | **Yes** | `scripts/start.js`, the `checkForUpdate()` call |
+| Web panel "Install / update" click (`POST /api/install-rules`) | `installRules()` then `refreshLocalVersions(ctx.updateInfo)` | No — reuses the `latest` already in `ctx.updateInfo` | `scripts/panel.js`, route `POST /api/install-rules` |
+| Web panel "Pull & restart" click (`POST /api/pull-update`, this repo's own code) | `git pull --ff-only` | No version check at all; banner clears only on the next boot | `scripts/panel.js`, route `POST /api/pull-update` |
 | Postman daemon launch (clicking "Launch Postman" in the panel) | `localSnapshot()` for the immediate page injection, then async `refreshFromNetwork()` — fetches, writes `STATUS_PATH`, reassigns `cachedUpdateInfo`, pushes to every attached client | **Yes** — same `fetchLatestRuleVersion()` as boot | `scripts/postman/postman-daemon.cjs` `main()` → `postman-rule-update-check.cjs` |
-| Postman injected page "Install/update" click | `installAkiRule()` then `refreshLocalVersions(cachedUpdateInfo)` | No — same status-file read | `scripts/postman/postman-daemon.cjs:361-366` |
+| Postman injected page "Install/update" click | `installAkiRule()` then `refreshLocalVersions(cachedUpdateInfo)` | No — same status-file read | `scripts/postman/postman-daemon.cjs`, the `installAkiRule()` caller |
 
 **There is no periodic/interval/cron re-check.** Both network triggers above are one-shot, each per its own process's start (main-process boot, Postman daemon launch) — not on a timer. The `mcp`/`rule` "latest" values are frozen for the lifetime of each process between those triggers; the way to learn about a newer release is either restarting `npm start` or clicking "Launch Postman" again. The install-click rows only re-check **local install state** against the already-known `latest` — never a new GitHub round-trip.
 

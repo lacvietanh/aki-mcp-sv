@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Mac handoff check for B1 of docs/plan/done/akimcp-aiobox-boundary-plan.md (steps: docs/plan/boundary-handoff-mac.md); the dev box ran the full suite green; here it is confirmed on macOS.
+# Mac handoff check for B1 of docs/plan/done/akimcp-aiobox-boundary-plan.md (steps: docs/plan/done/boundary-handoff-mac.md); the dev box ran the full suite green; here it is confirmed on macOS.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

@@ -53,7 +53,7 @@ Everything that exists for Postman alone sits under `scripts/postman/` and every
 | `page/` | Postman's renderer | `PAGE_FILES` in the daemon: matcher, DOM helpers, `postman-autoclick.js` (permission cards), `postman-page-loop.js` (500 ms task loop), `postman-panel.js` (panel UI, chat/model control; entry, last) |
 | `debug/` | a terminal, by hand | read-only DOM probe and the instruction safety-flag probe (`docs/research/postman-instruction-safety-flag.md`) |
 | `prompts/` | the daemon | bundled prompt texts (`postman.md` is the Postman panel instruction) |
-| `test/` | `npm test` | every Postman-only test; `test/postman.test.js` at the repo root is the single entry that runs them |
+| `test/` | `npm test` | every Postman-only test; `npm test` runs them through its own glob `scripts/postman/test/*.test.*` (`package.json` `scripts.test`), beside the root `test/*.test.js` |
 
 ## Two classes — and why the second is not redundant
 

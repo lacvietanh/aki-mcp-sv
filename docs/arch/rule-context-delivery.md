@@ -45,12 +45,12 @@ Prompt refinement cannot fully solve this ownership error because the prompt sti
 
 ## Architecture overview
 
-The architecture has four layers:
+The architecture has four layers; two are live (1, 2), one was replaced by the receipt gate (3) and one is not built (4):
 
 1. **Static handshake instruction:** the MCP initialize response says to call `aki__akidevrule_context` once before the first substantive action and pass an absolute working path when known.
 2. **Dedicated context tool:** the server resolves sources, imports, ordering, project applicability, hashes, warnings, and assembled Markdown.
-3. **Temporary Postman fallback:** PM control injects one short line naming the tool only when initialize instructions are not proven to reach Agent Mode reliably.
-4. **Optional inspection resource:** `akidevrule://effective-context` exposes global effective context for clients supporting resources; it delegates to the same assembler and is never required for bootstrap.
+3. **Postman fallback (replaced):** PM control was to inject one short line naming the tool until initialize instructions were proven to reach Agent Mode. That trigger was never needed: Gate 1 was dropped on 2026-10-22 because every tool that acts refuses a call without the receipt (`plan/done/rule-receipt-gate.md`), so a client calls the context tool whether or not its model sees the instructions. The bundled Postman instruction (`scripts/postman/prompts/postman.md`) is a tool-preference line that names no tool.
+4. **Optional inspection resource (not built):** `akidevrule://effective-context` would expose global effective context for clients supporting resources, through the same assembler, never as a bootstrap dependency. No resource is registered today.
 
 All surfaces share one pure context-assembler module so path resolution, import parsing, precedence, hashing, and failure policy have one source of truth.
 
@@ -116,7 +116,7 @@ Machine-local guidance is included through the same import semantics rather than
 
 When `workingPath` is provided, the assembler identifies the applicable project chain using fixed candidate names and orders broader ancestor guidance before deeper project guidance so the most specific context is last.
 
-Initial supported project candidates are `CLAUDE.md`, `CLAUDE.local.md`, and `AGENTS.md`; additions require evidence of a real client convention.
+Supported project candidates, in load order within one folder, are `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md` and `GEMINI.md` (`PROJECT_FILES` in `scripts/rule-context.js`: the files Claude Code, Codex and Gemini CLI read); additions require evidence of a real client convention.
 
 Missing optional project files are normal; missing required global core files produce degraded status.
 
