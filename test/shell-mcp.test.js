@@ -83,7 +83,7 @@ async function run() {
   assert.match(missing.content[0].text, /^\["aki-no-such-binary-xyz" is not an executable on PATH \(on Windows: grep, tail and the other Unix tools come with Git for Windows/, 'a binary that is not there says so, with the Windows cause');
 
   // Windows rules, driven here through the platform argument: Git's usr/bin joins PATH once, at the end, and only when it exists.
-  const { extendPath, launchOf } = await import('../scripts/find-on-path.js');
+  const { extendPath, launchOf, launchShim } = await import('../scripts/find-on-path.js');
   const gitRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'git-for-windows-'));
   for (const dir of ['cmd', 'usr/bin']) fs.mkdirSync(path.join(gitRoot, dir), { recursive: true });
   for (const name of ['git', 'git.exe']) fs.writeFileSync(path.join(gitRoot, 'cmd', name), '', { mode: 0o755 });
@@ -95,6 +95,23 @@ async function run() {
   assert.deepEqual(extendPath({ ...env }, 'linux'), [], 'other platforms add nothing');
   assert.deepEqual(launchOf('git', ['status'], 'win32'), ['git', ['status']], 'a real executable starts as itself');
   fs.rmSync(gitRoot, { recursive: true, force: true });
+
+  // A win32 .cmd shim starts through cmd.exe with one verbatim, fully quoted line; the header argument keeps its space; anything else starts as itself.
+  const shimEnv = { ComSpec: 'C:\\Windows\\System32\\cmd.exe' };
+  const header = 'Authorization: Bearer abc';
+  const viaCmd = launchShim('claude', ['mcp', 'add', '--header', header], { platform: 'win32', env: shimEnv, find: () => 'C:\\Program Files\\nodejs\\claude.cmd' });
+  assert.deepEqual(viaCmd, { file: 'C:\\Windows\\System32\\cmd.exe', args: ['/d', '/s', '/c', '""C:\\Program Files\\nodejs\\claude.cmd" mcp add --header "Authorization: Bearer abc""'], options: { windowsVerbatimArguments: true } });
+  assert.deepEqual(launchShim('claude', ['--version'], { platform: 'win32', env: shimEnv, find: () => null }), { file: 'claude', args: ['--version'], options: {} }, 'a real executable starts as itself');
+  assert.deepEqual(launchShim('claude', ['--version'], { platform: 'linux', find: () => '/x/claude.cmd' }), { file: 'claude', args: ['--version'], options: {} }, 'other platforms never reach cmd.exe');
+  // npm leaves claude (sh), claude.cmd and claude.ps1 side by side: the real finder must land on the .cmd, not the bare name.
+  const npmBin = fs.mkdtempSync(path.join(os.tmpdir(), 'npm-bin-'));
+  for (const name of ['claude', 'claude.cmd', 'claude.ps1']) fs.writeFileSync(path.join(npmBin, name), '', { mode: 0o755 });
+  const found = launchShim('claude', ['--version'], { platform: 'win32', env: { PATH: npmBin, ComSpec: 'cmd.exe' } });
+  assert.equal(found.args[3], `""${path.join(npmBin, 'claude.cmd')}" --version"`);
+  fs.rmSync(path.join(npmBin, 'claude.cmd'));
+  assert.deepEqual(launchShim('claude', ['--version'], { platform: 'win32', env: { PATH: npmBin } }), { file: 'claude', args: ['--version'], options: {} }, 'no .cmd or .bat: start the bare name as today');
+  fs.rmSync(npmBin, { recursive: true, force: true });
+  assert.throws(() => launchShim('claude', ['%PATH%'], { platform: 'win32', env: shimEnv, find: () => 'C:\\n\\claude.cmd' }), /cmd\.exe would reinterpret/);
 
   console.log('shell-mcp.test.js: ok');
 }

@@ -30,24 +30,24 @@ function run(args, cwd) {
     execFile('agy', args, { cwd, timeout: 120_000, maxBuffer: 4 * 1024 * 1024 }, (error, stdout, stderr) => {
       if (error) {
         // agy writes its own errors to stdout, not stderr — check stdout first or real failures show up as Node's generic "Command failed: <cmd>" with no explanation (see shell-mcp.js's same bug).
-        return resolve(err(stdout || stderr || error.message));
+        return resolve({ result: err(stdout || stderr || error.message), said: Boolean(stdout || stderr) });
       }
       // agy headless can't prompt for permission: a denied action auto-fails but still exits 0 with an empty response (harness-facts.md § Cross-CLI worker). Treat empty stdout as inconclusive, not clean.
       if (!stdout || !stdout.trim()) {
-        return resolve(err('agy returned no output — the call may have been silently denied rather than a clean empty result. Re-check the prompt/scope.'));
+        return resolve({ result: err('agy returned no output — the call may have been silently denied rather than a clean empty result. Re-check the prompt/scope.') });
       }
-      resolve(ok(stdout));
+      resolve({ result: ok(stdout) });
     });
   });
 }
 
 // agy rejects an unknown model/effort/output-format naming the field (spike 2026-10-25: "invalid model selection … conflicts with --effort"). On such a failure, refresh the probe once (the list may have moved server-side) and return agy's own error plus the live valid values, so the caller sees what agy accepts now without a second tool.
-const VALUE_COMPLAINT = /invalid|unknown|not a valid|unsupported|conflicts|model|effort|output-format/i;
+export const VALUE_COMPLAINT = /invalid (?:model|effort|output)|not a valid|unsupported|conflicts with --|unknown (?:model|effort|output|option|flag)/i;
 async function runWithValueHelp(args, cwd) {
-  const result = await run(args, cwd);
+  const { result, said } = await run(args, cwd);
   if (!result.isError) return result;
   const message = result.content[0].text;
-  if (!VALUE_COMPLAINT.test(message)) return result;
+  if (!said || !VALUE_COMPLAINT.test(message)) return result;
   const caps = await refresh({ cwd });
   const models = caps.models ? caps.models.map((m) => m.id).join(', ') : 'unavailable (agy models did not parse)';
   const line = (label, values) => `${label}: ${values ? values.join(', ') : 'unavailable'}`;

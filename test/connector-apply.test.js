@@ -30,6 +30,22 @@ async function runTests() {
   assert.ok(codex.includes('[other]') && codex.includes('keep = true'), 'the sibling table survives');
   assert.ok(codex.includes(`Bearer ${token}`), 'the table carries the live token');
 
+  // Codex: a quoted key with a trailing comment and a subtable are one table to replace; the file is owner-only afterwards even when it was world-readable.
+  fs.writeFileSync(codexPath, '[other]\nkeep = true\n\n[mcp_servers."aki-mcp"] # old\nurl = "x"\n\n[mcp_servers.aki-mcp.http_headers]\nAuthorization = "Bearer old"\n\n[tail]\nz = 1\n');
+  fs.chmodSync(codexPath, 0o644);
+  await ROUTES['POST /api/codex-apply']();
+  const swept = read('.codex/config.toml');
+  assert.equal(swept.match(/^\[mcp_servers\./gm).length, 1, 'the quoted table and its subtable are gone, one table written');
+  assert.ok(!swept.includes('Bearer old') && swept.includes('[other]') && swept.includes('[tail]'), 'old subtable dropped, siblings kept');
+  if (process.platform !== 'win32') assert.equal(fs.statSync(codexPath).mode & 0o777, 0o600, 'a token file is not world-readable');
+
+  // Codex: a literal-quoted key is the same table, and an array row inside it does not end it.
+  fs.writeFileSync(codexPath, "[other]\nkeep = true\n\n[mcp_servers.'aki-mcp']\nargs = [\n  [1, 2],\n  [3, 4]\n]\n\n[tail]\nz = 1\n");
+  await ROUTES['POST /api/codex-apply']();
+  const literal = read('.codex/config.toml');
+  assert.equal(literal.match(/^\[mcp_servers\./gm).length, 1, 'the literal-key table is replaced, not duplicated');
+  assert.ok(!literal.includes('[3, 4]') && literal.includes('[tail]'), 'the whole old table goes, the next one stays');
+
   // Codex: a corrupt file stops with the path named, never a half-write.
   fs.writeFileSync(codexPath, 'ok = 1\n\u0000');
   await assert.rejects(async () => ROUTES['POST /api/codex-apply'](), /config\.toml/);

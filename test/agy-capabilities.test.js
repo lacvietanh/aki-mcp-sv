@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 import './setup.js';
 import assert from 'node:assert/strict';
-import { parseModels, parseHelpEnum, newestFlashMedium, probe } from '../scripts/agy-capabilities.js';
+import { parseModels, parseHelpEnum, newestFlashMedium, probe, capabilities, refresh, resetCache } from '../scripts/agy-capabilities.js';
+import { VALUE_COMPLAINT } from '../scripts/agy-mcp.js';
+import { MODEL_COMPLAINT } from '../scripts/kiro-mcp.js';
 
 // Recorded verbatim from this machine, agy 1.4.7, 2026-10-25 (docs/plan/audit-tool-drift-oct25.md § P0).
 const MODELS_2026_10_25 = [
@@ -74,6 +76,21 @@ async function runTests() {
   assert.equal(blind.models, null);
   assert.equal(blind.efforts, null);
   assert.equal(blind.modes, null);
+
+  // A failed models probe is retried after a minute, not an hour, and a failed refresh keeps the entry that has models.
+  resetCache();
+  await capabilities({ spawn: blindSpawn });
+  assert.equal((await capabilities({ spawn: fakeSpawn })).models, null, 'inside the retry window the failure is reused');
+  assert.equal((await capabilities({ spawn: fakeSpawn, now: () => Date.now() + 61_000 })).models.length, 13, 'after the retry window it probes again');
+  assert.equal((await refresh({ spawn: blindSpawn })).models.length, 13, 'a failed refresh does not erase a good list');
+
+  // The two CLI arms re-probe or point at the model list only for a complaint about the value, not for quota or the "Command failed" fallback that names the model.
+  assert.ok(VALUE_COMPLAINT.test('invalid model selection: nope conflicts with --effort'));
+  assert.ok(!VALUE_COMPLAINT.test('Resource exhausted: quota for model gemini-3.8-flash-medium'));
+  assert.ok(!VALUE_COMPLAINT.test('Command failed: agy --mode plan --model gemini-3.8-flash-medium --effort high -p hello'));
+  assert.ok(MODEL_COMPLAINT.test('Error: model claude-sonnet-4.5 not found'));
+  assert.ok(!MODEL_COMPLAINT.test('Rate limit: quota exhausted for model claude-sonnet-4.5'));
+  assert.ok(!MODEL_COMPLAINT.test('Command failed: kiro-cli chat --no-interactive --model claude-sonnet-4.5 --trust-tools=fs_read hello'));
 
   console.log('agy-capabilities.test.js: ok');
 }

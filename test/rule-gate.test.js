@@ -216,7 +216,24 @@ const docsFirst = await write(path.join(r4, 'README.md'), recCode);
 assert.match(docsFirst.content[1].text, /# docs rule/, 'the first .md write after code gets the docs rules');
 assert.doesNotMatch(docsFirst.content[1].text, /# coding rule/, 'rules already delivered are not pushed again');
 assert.ok(!newReceipt(await write(path.join(r4, 'README.md'), newReceipt(docsFirst))), 'the retry runs');
-fs.rmSync(path.join(ruleDir, 'route-map.json'));
+// Every gated call asks for the map: it is parsed once per file state, and a rewritten file is read again.
+const { routeRulesFor } = await import('../scripts/project-rules.js');
+const fsp = (await import('node:fs/promises')).default;
+const mapFile = path.join(ruleDir, 'route-map.json');
+const realRead = fsp.readFile;
+let mapReads = 0;
+fsp.readFile = (file, ...rest) => { if (file === mapFile) mapReads++; return realRead(file, ...rest); };
+try {
+  await routeRulesFor([path.join(r4, 'a.js')], [tmp]);
+  await routeRulesFor([path.join(r4, 'b.js')], [tmp]);
+  assert.equal(mapReads, 0, 'the gated calls above already parsed this file state');
+  fs.writeFileSync(mapFile, JSON.stringify({ routes: [{ rules: ['RULE-docs.md'], ext: ['js'] }], ungated: { segments: [] } }));
+  assert.deepEqual(await routeRulesFor([path.join(r4, 'a.js')], [tmp]), [path.join(ruleDir, 'RULE-docs.md')], 'a rewritten map takes effect');
+  assert.equal(mapReads, 1, 'and a changed file is parsed once more');
+} finally {
+  fsp.readFile = realRead;
+}
+fs.rmSync(mapFile);
 
 // An acting call that names its chat's ss ends with one line when that file is missing or behind, and with nothing while it is current (D10).
 const { SS_DIR, shapeOf } = await import('../scripts/session-file.js');

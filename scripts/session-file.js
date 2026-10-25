@@ -48,12 +48,16 @@ function cutAtWord(label) {
   return wordEnd > 0 ? head.slice(0, wordEnd) : head;
 }
 
-// D2, D4: the local clock the owner reads; a name already taken gets 2 random base36 characters more.
+// A minted path creates no file, so a second chat in the same minute would find it free: this process (the only one that mints, CLAUDE.md § Process topology) remembers what it handed out.
+const minted = new Set();
+
+// D2, D4: the local clock the owner reads; a name already taken or already minted gets 2 random base36 characters more.
 export function mintSessionPath({ project, label, now = new Date(), dir = SS_DIR }) {
   const stamp = `${now.getFullYear()}.${two(now.getMonth() + 1)}.${two(now.getDate())}-${two(now.getHours())}${two(now.getMinutes())}`;
   const base = `${stamp}-${sanitizeLabel(label) || random2()}`;
   let file = path.join(dir, project, `${base}.md`);
-  while (fs.existsSync(file)) file = path.join(dir, project, `${base}-${random2()}.md`);
+  while (fs.existsSync(file) || minted.has(file)) file = path.join(dir, project, `${base}-${random2()}.md`);
+  minted.add(file);
   return file;
 }
 
@@ -97,9 +101,10 @@ export function shapeFromResult(text) {
   return m ? (m[1] ? 'ok' : m[2].split(', ').length) : undefined;
 }
 
-// D11: whole minutes since the file was last written, -1 when it does not exist.
+// D11: whole minutes since the file was last written, -1 when it does not exist, null when it cannot be read (the tool call it trails has already run).
 export function ssAgeMinutes(file, now = Date.now()) {
-  const stat = fs.statSync(file, { throwIfNoEntry: false });
+  let stat;
+  try { stat = fs.statSync(file, { throwIfNoEntry: false }); } catch { return null; }
   return stat ? Math.max(0, Math.floor((now - stat.mtimeMs) / 60_000)) : -1;
 }
 
@@ -108,6 +113,7 @@ export function staleLine(ss, now = Date.now()) {
   const file = acceptSessionPath(ss);
   if (!file) return 'ss: not an ss path, ignored';
   const age = ssAgeMinutes(file, now);
+  if (age === null) return null;
   if (age < 0) return `ss: ${file} · not created yet`;
   return age * 60_000 >= SS_STALE_MS ? `ss: ${file} · last written ${age} min ago` : null;
 }

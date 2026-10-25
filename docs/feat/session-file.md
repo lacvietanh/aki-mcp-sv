@@ -96,7 +96,7 @@ All of these are facts about a file, never orders.
 
 - **On a write**: a `write_file` or `edit_file` of an ss ends with `ss file written: <path> · shape ok`, or `· shape: missing <keys and headings>` naming each missing frontmatter key and heading. The write always succeeds. A legacy `task/<slug>/working.md` write keeps `ss file written: <path>` (`scripts/filesystem-mcp.js`).
 - **On an acting call**: acting tools take an optional `ss` beside `receipt`. When the call did not write that file itself, the result ends with `ss: <path> · not created yet` (file missing) or `ss: <path> · last written N min ago` (15 minutes or more behind); an invalid `ss` gets `ss: not an ss path, ignored` (`scripts/rule-gate.js`).
-- **In the call log** (`tool-calls.jsonl`, `scripts/tool-call-log.js`): gated calls carry `ss` (a valid ss was passed) and `ssAge` (minutes since its last write, `-1` when missing); context calls carry `ssState` (`new`, `kept`, `ignored`, `unavailable`); ss writes carry `ssShape` (`ok` or the count missing). No path is logged.
+- **In the call log** (`tool-calls.jsonl`, `scripts/tool-call-log.js`): gated calls carry `ss` (a valid ss was passed) and `ssAge` (minutes since its last write, `-1` when missing, `null` on any other read error); context calls carry `ssState` (`new`, `kept`, `ignored`, `unavailable`); ss writes carry `ssShape` (`ok` or the count missing). No path is logged.
 
 ## Finding open sessions
 

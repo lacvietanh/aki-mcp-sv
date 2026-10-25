@@ -110,15 +110,20 @@ function warnMap(file, why) {
   process.stderr.write(`[rule-gate] ${file} ${why}: only project rule files are pushed\n`);
 }
 
-// null when no map is installed, or when it carries a field this reader does not know: guessing its meaning could push the wrong rules.
+// null when no map is installed, or when it carries a field this reader does not know: guessing its meaning could push the wrong rules. Parsed once per mtime and size: every gated call asks for it.
+let mapCache = null;
 async function routeMap(file) {
+  const stat = await fs.stat(file).catch(() => null);
+  if (!stat) return null;
+  const stamp = `${stat.mtimeMs}:${stat.size}`;
+  if (mapCache?.file === file && mapCache.stamp === stamp) return mapCache.map;
   let map;
   try { map = JSON.parse(await fs.readFile(file, 'utf8')); } catch { return null; }
   const known = Array.isArray(map?.routes) && map.routes.every((r) => Array.isArray(r?.rules) && Object.keys(r).every((k) => ROUTE_FIELDS.has(k)))
     && map.ungated && typeof map.ungated === 'object' && Object.keys(map.ungated).every((k) => UNGATED_FIELDS.has(k));
-  if (known) return map;
-  warnMap(file, 'has a field this AkiMCP does not read');
-  return null;
+  if (!known) warnMap(file, 'has a field this AkiMCP does not read');
+  mapCache = { file, stamp, map: known ? map : null };
+  return mapCache.map;
 }
 
 // The path with the symlinks of its existing part resolved and its not-yet-created tail kept.

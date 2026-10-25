@@ -53,6 +53,9 @@ test('mintSessionPath names the file by local time and label, and never reuses a
   const second = mintSessionPath({ project: 'aki-mcp-sv', label: 'P37·W8', now: at, dir });
   assert.match(path.basename(second), /^2026\.10\.24-1812-p37w8-[a-z0-9]{2}\.md$/);
   assert.equal(acceptSessionPath(second, { dir }), second, 'the collision name is still an ss name');
+  const twinA = mintSessionPath({ project: 'aki-mcp-sv', label: 'twin', now: at, dir });
+  const twinB = mintSessionPath({ project: 'aki-mcp-sv', label: 'twin', now: at, dir });
+  assert.notEqual(twinA, twinB, 'two chats minting in the same minute never share a path, though neither file exists yet');
   const longest = mintSessionPath({ project: 'aki-mcp-sv', label: 'a'.repeat(30), now: at, dir });
   assert.equal(path.basename(longest), `2026.10.24-1812-${'a'.repeat(24)}.md`);
   assert.equal(acceptSessionPath(longest, { dir }), longest, 'a 24-character label is accepted back, so a kept ss stays kept');
@@ -94,6 +97,9 @@ test('staleLine says nothing for a fresh file and names a missing or stale one',
   assert.equal(ssAgeMinutes(file), 20);
   assert.equal(staleLine(file), `ss: ${file} · last written 20 min ago`);
   assert.equal(staleLine('/etc/hosts'), 'ss: not an ss path, ignored');
+  const unreadable = path.join(SS_DIR, 'p'.repeat(300), '2026.10.24-1812-ab.md');
+  assert.equal(ssAgeMinutes(unreadable), null, 'a stat error other than a missing file is not a throw');
+  assert.equal(staleLine(unreadable), null);
 });
 
 test('sessionFor mints, keeps, ignores, and reports an unreachable data dir', () => {

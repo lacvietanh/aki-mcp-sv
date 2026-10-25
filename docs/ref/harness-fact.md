@@ -15,7 +15,7 @@ Fully runnable on this machine; facts are [obs] unless noted.
 
 How agy and the Antigravity IDE load MCP servers (config file, transports, permissions) is a separate subject: [`fact-agy-mcp-config.md`](fact-agy-mcp-config.md).
 
-**The model list, the effort levels, the modes and the output formats are read from the CLI at call time** by `scripts/agy-capabilities.js` (`agy models`, `agy --help`, `agy --version`), cached 1 h and per version. `agy-mcp.js` holds none of them as a literal — this is the fix for the drift the 1.x docs carried, where a hardcoded list rotted silently when agy's server-side list moved (`docs/plan/audit-tool-drift-oct25.md` F1–F5, D1). So the rows below are behavior that is stable across agy releases; the volatile values are an example of one probe, not a fact to maintain.
+**The model list, the effort levels, the modes and the output formats are read from the CLI at call time** by `scripts/agy-capabilities.js` (`agy models`, `agy --help`, `agy --version`), cached 1 h, or 1 min after a failed models probe so one transient failure does not switch the default model off for an hour. `agy-mcp.js` holds none of them as a literal — this is the fix for the drift the 1.x docs carried, where a hardcoded list rotted silently when agy's server-side list moved (`docs/plan/audit-tool-drift-oct25.md` F1–F5, D1). So the rows below are behavior that is stable across agy releases; the volatile values are an example of one probe, not a fact to maintain.
 
 | Fact (behavior, stable) | Checked | Where it is encoded |
 |---|---|---|

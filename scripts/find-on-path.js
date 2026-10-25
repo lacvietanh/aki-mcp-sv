@@ -52,3 +52,18 @@ export function launchOf(bin, args, platform = process.platform) {
   const [file, lead] = LAUNCH[platform]?.(bin) ?? [bin, []];
   return [file, [...lead, ...args]];
 }
+
+// An npm-installed CLI on win32 is a .cmd/.bat shim that only cmd.exe starts (execFile refuses it since CVE-2024-27980), so its command line is quoted here and passed verbatim. npm writes the bare name (a sh script), name.cmd and name.ps1 side by side, so the .cmd is asked for by name. Kept apart from launchOf, whose callers pass user text.
+const cmdWord = (word) => (/[\s&|<>^()]/.test(word) ? `"${word}"` : word);
+const SHIM_LAUNCH = {
+  win32: (bin, args, env, find) => {
+    const shim = find(`${bin}.cmd`, env) ?? find(`${bin}.bat`, env);
+    if (!shim) return null;
+    if (args.some((arg) => /["%\r\n]/.test(arg))) throw new Error(`${bin}: an argument holds a character cmd.exe would reinterpret`);
+    return { file: env.ComSpec || 'cmd.exe', args: ['/d', '/s', '/c', `"${[`"${shim}"`, ...args.map(cmdWord)].join(' ')}"`], options: { windowsVerbatimArguments: true } };
+  },
+};
+
+export function launchShim(bin, args, { platform = process.platform, env = process.env, find = findOnPath } = {}) {
+  return SHIM_LAUNCH[platform]?.(bin, args, env, find) ?? { file: bin, args, options: {} };
+}

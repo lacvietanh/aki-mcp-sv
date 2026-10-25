@@ -1,9 +1,10 @@
 // The one place that knows what the agy CLI offers: it runs `agy --version`, `agy models` and `agy --help`, parses them, and caches the result (docs/plan/audit-tool-drift-oct25.md D1). agy-mcp.js holds no model list, no effort/mode/output-format enum — this module reads them live so a new agy release needs no AkiMCP edit.
-// The model list is server-side (`agy models` prints "Fetching available models…"), so it moves without an agy version bump: the cache is keyed by both a 1 h TTL and the version string, and a probe that fails or parses to nothing leaves that field null, which the tool treats as a pass-through.
+// The model list is server-side (`agy models` prints "Fetching available models…"), so it moves without an agy version bump: the cache lives 1 h (1 min when the models probe failed, so one transient failure cannot switch the default model off for an hour), and a probe that fails or parses to nothing leaves that field null, which the tool treats as a pass-through.
 import { execFile } from 'node:child_process';
 
 const PROBE_TIMEOUT_MS = 15_000;
 const TTL_MS = 60 * 60_000;
+const RETRY_MS = 60_000;
 
 // Defaults are injectable so the fixture tests exercise the parsers and resolver with recorded CLI text and never spawn agy (docs/plan/audit-tool-drift-oct25.md D7).
 function runAgy(args, { cwd } = {}) {
@@ -60,7 +61,7 @@ export function newestFlashMedium(models) {
 
 let cache = null;
 
-// One probe of the three commands; each field is null when its command failed or parsed to nothing. `at` and `version` key the cache.
+// One probe of the three commands; each field is null when its command failed or parsed to nothing.
 export async function probe({ spawn = runAgy, cwd } = {}) {
   const ver = await spawn(['--version'], { cwd });
   const version = ver.ok ? ver.stdout.trim() || null : null;
@@ -76,18 +77,21 @@ export async function probe({ spawn = runAgy, cwd } = {}) {
   };
 }
 
-// Lazily probed and cached (D1): the first list/default/error-refresh pays the probe once; a fresh cache within the TTL and the same version is reused. Never runs at boot — an opt-in provider switched off must not spawn a CLI.
-export async function capabilities({ spawn = runAgy, cwd, now = Date.now } = {}) {
-  if (cache && now() - cache.at < TTL_MS) return cache;
-  cache = await probe({ spawn, cwd });
+// A probe whose models failed keeps the models an earlier probe found, and waits RETRY_MS from now before the next one.
+async function load({ spawn, cwd }) {
+  const fresh = await probe({ spawn, cwd });
+  cache = fresh.models ? { ...fresh, ttl: TTL_MS } : { ...(cache?.models ? cache : fresh), at: fresh.at, ttl: RETRY_MS };
   return cache;
 }
 
-// Forced re-probe, used after a call fails naming a model/effort/output-format: the list may have changed server-side with no version bump.
-export async function refresh({ spawn = runAgy, cwd } = {}) {
-  cache = await probe({ spawn, cwd });
-  return cache;
+// Lazily probed and cached (D1): the first list/default/error-refresh pays the probe once; a cache within its TTL is reused. Never runs at boot — an opt-in provider switched off must not spawn a CLI.
+export async function capabilities({ spawn = runAgy, cwd, now = Date.now } = {}) {
+  if (cache && now() - cache.at < cache.ttl) return cache;
+  return load({ spawn, cwd });
 }
+
+// Forced re-probe, used after a call fails naming a model/effort/output-format: the list may have changed server-side with no version bump.
+export const refresh = ({ spawn = runAgy, cwd } = {}) => load({ spawn, cwd });
 
 // Test seam: drop the cache so a test starts cold.
 export function resetCache() { cache = null; }

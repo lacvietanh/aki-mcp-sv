@@ -8,6 +8,8 @@ import { ok, err, fail } from './mcp-tool.js';
 // Owner requirement ("khóa cứng"): the model is not a tool parameter, so a prompt cannot escalate to a pricier or different tier.
 // Verified 2026-08-09 against `kiro-cli chat --list-models` (kiro-cli 2.16.2): claude-sonnet-4.5 is a real id (1.30x credits). See docs/ref/harness-fact.md § Kiro.
 const MODEL = 'claude-sonnet-4.5';
+// A complaint about the model value itself, not any failure whose text names the model (quota, overload, the "Command failed: … --model <id>" fallback).
+export const MODEL_COMPLAINT = /(?:invalid|unknown|unsupported|unavailable|not (?:a )?valid|not found)[^\n]{0,30}model|model[^\n]{0,30}(?:invalid|unknown|unsupported|unavailable|not (?:a )?valid|not found|retired)/i;
 
 function run(trustTools, { prompt, effort, cwd }) {
   const r = resolveOrFail(cwd);
@@ -21,9 +23,10 @@ function run(trustTools, { prompt, effort, cwd }) {
   return new Promise((resolve) => {
     execFile('kiro-cli', args, { cwd: dir, timeout: 120_000, maxBuffer: 4 * 1024 * 1024 }, (error, stdout, stderr) => {
       if (error) {
-        const message = stdout || stderr || error.message;
+        const said = stdout || stderr;
+        const message = said || error.message;
         // D8: the model is hard-locked, so a model complaint means the pinned id was retired; point at the one command that lists what kiro-cli accepts now, rather than leaving a bare error.
-        if (/model/i.test(message)) return resolve(err(`${message}\n\nnext: run \`kiro-cli chat --list-models\` to see the ids this kiro-cli accepts (the tool is locked to ${MODEL}).`));
+        if (said && MODEL_COMPLAINT.test(said)) return resolve(err(`${message}\n\nnext: run \`kiro-cli chat --list-models\` to see the ids this kiro-cli accepts (the tool is locked to ${MODEL}).`));
         return resolve(err(message));
       }
       if (!stdout || !stdout.trim()) {

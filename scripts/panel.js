@@ -20,6 +20,7 @@ import { getLocalVersions, cmpSemver, writeStatusFile, getRuleStatus } from './u
 import { getDaemonStatus, launchPostmanDaemon, killPostmanDaemon, requestNewWindow } from './postman/postman-mcp.js';
 import { listProviders, setEnabled, redetect } from './provider-registry.js';
 import { fileURLToPath } from 'node:url';
+import { launchShim } from './find-on-path.js';
 
 const IS_WIN = process.platform === 'win32';
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -28,17 +29,13 @@ const SOURCE_REPO_FILE = path.join(RULES_DIR, '.source-repo');
 const RULES_CLONE_DIR = path.join(os.homedir(), '.aki', 'akidevrule-src');
 const RULES_REPO_URL = 'https://github.com/lacvietanh/akidevrule.git';
 
-function writeJsonAtomic(file, data) {
-  mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
-  writeFileSync(tmp, `${JSON.stringify(data, null, 2)}\n`);
-  renameSync(tmp, file);
-}
+const writeJsonAtomic = (file, data) => writeTextAtomic(file, `${JSON.stringify(data, null, 2)}\n`);
 
+// User config files, never looser than 0600: some of them carry the live /mcp bearer token, and the rename replaces the target's own mode.
 function writeTextAtomic(file, text) {
   mkdirSync(path.dirname(file), { recursive: true });
   const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
-  writeFileSync(tmp, text);
+  writeFileSync(tmp, text, { mode: 0o600 });
   renameSync(tmp, file);
 }
 
@@ -47,8 +44,9 @@ const localMcpUrl = () => `http://127.0.0.1:${process.env.GATEKEEPER_PORT || 999
 
 // Claude Code (D10, F9): remove any stale entry, then add with the live token in `user` scope so it works from every project. A bare `claude mcp add` refuses when the entry exists and keeps the old token, so remove-then-add is the only re-runnable shape. claude not on PATH → the message carries the two-line fallback, never a bare error.
 function runClaude(args) {
+  const launch = launchShim('claude', args);
   return new Promise((resolve) => {
-    execFile('claude', args, { timeout: 20_000, windowsHide: true }, (error, stdout, stderr) => {
+    execFile(launch.file, launch.args, { timeout: 20_000, windowsHide: true, ...launch.options }, (error, stdout, stderr) => {
       resolve({ ok: !error, out: `${stdout || ''}${stderr || ''}`.trim(), code: error?.code });
     });
   });
@@ -68,16 +66,24 @@ async function applyClaudeCode() {
   return { ok: true, message: 'Applied — replaced any old aki-mcp entry with the current token in user scope. Restart the session or run /mcp in Claude Code.' };
 }
 
-// Codex (D10, F10): replace the [mcp_servers.aki-mcp] table in place by its boundaries (from its header to the next table header or EOF), other tables untouched, atomic write. "Append it" would add a second table of the same name — invalid TOML. An unparsable file stops with the path named, as agyApply does.
+// Codex (D10, F10): replace the [mcp_servers.aki-mcp] table in place, other tables untouched, atomic write. The table is its header (bare or quoted key, trailing comment allowed) plus every [mcp_servers.aki-mcp.*] subtable: a survivor would sit beside the inline http_headers as a duplicate key. "Append it" would add a second table of the same name — invalid TOML. An unparsable file stops with the path named, as agyApply does.
 const CODEX_TABLE = '[mcp_servers.aki-mcp]';
+const tableName = (line) => /^\s*\[\s*([\w.\-"' ]+?)\s*\]\s*(?:#.*)?$/.exec(line)?.[1].replace(/\s*\.\s*/g, '.').replace(/["']/g, '');
+const isTableHeader = (line) => tableName(line) !== undefined || /^\s*\[\[[\w.\-"' ]+\]\]\s*(?:#.*)?$/.test(line);
 function replaceTomlTable(text, header, block) {
-  const lines = text.split('\n');
-  const start = lines.findIndex((l) => l.trim() === header);
-  if (start < 0) return `${text.replace(/\n*$/, '')}\n\n${block}\n`;
-  let end = start + 1;
-  while (end < lines.length && !/^\s*\[/.test(lines[end])) end++;
-  const before = lines.slice(0, start).join('\n').replace(/\n*$/, '');
-  const after = lines.slice(end).join('\n').replace(/^\n*/, '');
+  const name = header.slice(1, -1);
+  const owned = (line) => { const found = tableName(line); return found === name || Boolean(found?.startsWith(`${name}.`)); };
+  const kept = [];
+  let at = -1;
+  let dropping = false;
+  for (const line of text.split('\n')) {
+    if (isTableHeader(line)) dropping = owned(line);
+    if (!dropping) kept.push(line);
+    else if (at < 0) at = kept.length;
+  }
+  if (at < 0) return `${text.replace(/\n*$/, '')}\n\n${block}\n`;
+  const before = kept.slice(0, at).join('\n').replace(/\n*$/, '');
+  const after = kept.slice(at).join('\n').replace(/^\n*/, '');
   return `${before ? before + '\n\n' : ''}${block}\n${after ? '\n' + after : ''}`;
 }
 function applyCodex() {

@@ -1,7 +1,5 @@
-require('../../../test/setup.js');
+import('../../../test/setup.js').then(async () => {
 const assert = require('node:assert/strict');
-
-(async () => {
 const { browserIdentity, PostmanSession } = require('../postman-session.cjs');
 const { eligibleTargets, deterministicOwnerTargetId, createdTarget, waitForCreatedTarget, openOwnedWindow } = require('../postman-ownership.cjs');
 
@@ -79,4 +77,4 @@ const written = { daemonPid: 7, attached: true, endpoint: { host: '127.0.0.1', p
 assert.deepEqual(normalizeOwnershipStatus(written), written, 'a full status survives the writer/reader round trip unchanged');
 assert.deepEqual(Object.keys(normalizeOwnershipStatus({ extra: 1 })), Object.keys(written), 'unknown fields are dropped, so the file has exactly one shape');
 console.log('postman-ownership.test.cjs: ok');
-})().catch((error) => { console.error(error); process.exitCode = 1; });
+}).catch((error) => { console.error(error); process.exitCode = 1; });
