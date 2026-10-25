@@ -2,10 +2,10 @@
 // Loopback-only, never behind the Funnel: it writes config and runs commands. Token-gated so no other browser page can POST to it.
 import http from 'node:http';
 import { execFile } from 'node:child_process';
-import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, unlinkSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, unlinkSync, realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { renderPanel, AGY_SERVER_KEY } from './config-page.js';
+import { renderPanel, AGY_SERVER_KEY, localMcpUrl, httpBearerEntry, claudeCodeLines, CODEX_TABLE, codexBlock } from './config-page.js';
 import { getOrIssueAccessToken, rotateAccessToken, rotatePassphrase, loadOrCreatePassphrase, listClients, removeClient } from './oauth.js';
 import { logSecurity, readSecurityLog } from './security-log.js';
 import { LOG_DEFAULTS, loadLogSettings, normalizeLogSettings } from './tool-call-log.js';
@@ -31,45 +31,59 @@ const RULES_REPO_URL = 'https://github.com/lacvietanh/akidevrule.git';
 
 const writeJsonAtomic = (file, data) => writeTextAtomic(file, `${JSON.stringify(data, null, 2)}\n`);
 
-// User config files, never looser than 0600: some of them carry the live /mcp bearer token, and the rename replaces the target's own mode.
+// User config files, never looser than 0600: some of them carry the live /mcp bearer token, and the rename replaces the target's own mode. A symlinked file (a dotfile manager's) is written through to its target, so the link stays.
 function writeTextAtomic(file, text) {
   mkdirSync(path.dirname(file), { recursive: true });
-  const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
+  const target = existsSync(file) ? realpathSync(file) : file;
+  const tmp = `${target}.tmp-${process.pid}-${Date.now()}`;
   writeFileSync(tmp, text, { mode: 0o600 });
-  renameSync(tmp, file);
+  renameSync(tmp, target);
 }
 
-// The local /mcp endpoint the three HTTP+Bearer clients connect to; the port follows the running gatekeeper, same value config-page.js renders into the snippets.
-const localMcpUrl = () => `http://127.0.0.1:${process.env.GATEKEEPER_PORT || 9999}/mcp`;
-
-// Claude Code (D10, F9): remove any stale entry, then add with the live token in `user` scope so it works from every project. A bare `claude mcp add` refuses when the entry exists and keeps the old token, so remove-then-add is the only re-runnable shape. claude not on PATH → the message carries the two-line fallback, never a bare error.
-function runClaude(args) {
+// Claude Code (D10, F9): remove any stale entry, then add with the live token in `user` scope so it works from every project. A bare `claude mcp add` refuses when the entry exists and keeps the old token, so remove-then-add is the only re-runnable shape. claude not on PATH, or the add failing after the remove → the message carries the two-line fallback, never a bare error.
+function runClaude(args, cwd) {
   const launch = launchShim('claude', args);
   return new Promise((resolve) => {
-    execFile(launch.file, launch.args, { timeout: 20_000, windowsHide: true, ...launch.options }, (error, stdout, stderr) => {
+    execFile(launch.file, launch.args, { timeout: 20_000, windowsHide: true, cwd, ...launch.options }, (error, stdout, stderr) => {
       resolve({ ok: !error, out: `${stdout || ''}${stderr || ''}`.trim(), code: error?.code });
     });
   });
 }
+// Local scope wins over user scope, and the pre-3.1 snippet had no -s, so its entry would keep the old token in the project it was run in. Claude Code keys local entries by project folder in its own config file.
+function projectsWithLocalEntry() {
+  const file = path.join(process.env.CLAUDE_CONFIG_DIR || os.homedir(), '.claude.json');
+  try {
+    const { projects = {} } = JSON.parse(readFileSync(file, 'utf8'));
+    return Object.keys(projects).filter((dir) => projects[dir]?.mcpServers?.['aki-mcp'] && existsSync(dir));
+  } catch {
+    return [];
+  }
+}
 async function applyClaudeCode() {
   const url = localMcpUrl();
   const token = getOrIssueAccessToken();
-  const header = `Authorization: Bearer ${token}`;
-  const addArgs = ['mcp', 'add', '--transport', 'http', '-s', 'user', 'aki-mcp', url, '--header', header];
+  const byHand = `Run these two lines in a terminal instead:\n${claudeCodeLines(url, token)}`;
   const probe = await runClaude(['--version']);
-  if (!probe.ok && probe.code === 'ENOENT') {
-    return { ok: false, message: `claude is not on PATH. Run these two lines in a terminal instead:\nclaude mcp remove aki-mcp -s user\nclaude mcp add --transport http -s user aki-mcp ${url} --header "${header}"` };
-  }
+  if (!probe.ok && probe.code === 'ENOENT') return { ok: false, message: `claude is not on PATH. ${byHand}` };
   await runClaude(['mcp', 'remove', 'aki-mcp', '-s', 'user']); // an absent entry is not an error
-  const added = await runClaude(addArgs);
-  if (!added.ok) return { ok: false, message: `claude mcp add failed: ${added.out || 'unknown error'}` };
-  return { ok: true, message: 'Applied — replaced any old aki-mcp entry with the current token in user scope. Restart the session or run /mcp in Claude Code.' };
+  const added = await runClaude(['mcp', 'add', '--transport', 'http', '-s', 'user', 'aki-mcp', url, '--header', `Authorization: Bearer ${token}`]);
+  if (!added.ok) return { ok: false, message: `claude mcp add failed: ${added.out || 'unknown error'}\n${byHand}` };
+  const local = projectsWithLocalEntry();
+  const failed = [];
+  for (const dir of local) if (!(await runClaude(['mcp', 'remove', 'aki-mcp', '-s', 'local'], dir)).ok) failed.push(dir);
+  const removed = local.length - failed.length;
+  const localNote = (removed ? ` Also removed the old aki-mcp entry kept inside ${removed} project${removed > 1 ? 's' : ''}.` : '')
+    + (failed.length ? ` Could not remove the old entry inside: ${failed.join(', ')}. Run "claude mcp remove aki-mcp -s local" in each.` : '');
+  return { ok: true, message: `Applied — replaced any old aki-mcp entry with the current token in user scope.${localNote} Restart the session or run /mcp in Claude Code.` };
 }
 
 // Codex (D10, F10): replace the [mcp_servers.aki-mcp] table in place, other tables untouched, atomic write. The table is its header (bare or quoted key, trailing comment allowed) plus every [mcp_servers.aki-mcp.*] subtable: a survivor would sit beside the inline http_headers as a duplicate key. "Append it" would add a second table of the same name — invalid TOML. An unparsable file stops with the path named, as agyApply does.
-const CODEX_TABLE = '[mcp_servers.aki-mcp]';
-const tableName = (line) => /^\s*\[\s*([\w.\-"' ]+?)\s*\]\s*(?:#.*)?$/.exec(line)?.[1].replace(/\s*\.\s*/g, '.').replace(/["']/g, '');
-const isTableHeader = (line) => tableName(line) !== undefined || /^\s*\[\[[\w.\-"' ]+\]\]\s*(?:#.*)?$/.test(line);
+const TOML_HEADER = /^\s*(\[\[?)\s*((?:[\w.\- ]|"[^"]*"|'[^']*')+?)\s*\]\]?\s*(?:#.*)?$/;
+const tableName = (line) => {
+  const header = TOML_HEADER.exec(line);
+  return header?.[1] === '[' ? header[2].replace(/\s*\.\s*/g, '.').replace(/["']/g, '') : undefined;
+};
+const isTableHeader = (line) => TOML_HEADER.test(line);
 function replaceTomlTable(text, header, block) {
   const name = header.slice(1, -1);
   const owned = (line) => { const found = tableName(line); return found === name || Boolean(found?.startsWith(`${name}.`)); };
@@ -88,7 +102,7 @@ function replaceTomlTable(text, header, block) {
 }
 function applyCodex() {
   const file = path.join(os.homedir(), '.codex', 'config.toml');
-  const block = `${CODEX_TABLE}\nurl = "${localMcpUrl()}"\nhttp_headers = { "Authorization" = "Bearer ${getOrIssueAccessToken()}" }`;
+  const block = codexBlock(localMcpUrl(), getOrIssueAccessToken());
   let existing = '';
   if (existsSync(file)) {
     existing = readFileSync(file, 'utf8');
@@ -99,7 +113,7 @@ function applyCodex() {
   return { ok: true, message: `Applied — ${CODEX_TABLE} in ~/.codex/config.toml now carries the current token (other tables untouched). Restart Codex.` };
 }
 
-// Cursor (D10): merge mcpServers.aki-mcp into ~/.cursor/mcp.json, same shape as the rendered snippet; other servers untouched. Unparsable file stops with the path named.
+// Cursor (D10): merge mcpServers.aki-mcp into ~/.cursor/mcp.json; other servers untouched. Unparsable file stops with the path named.
 function applyCursor() {
   const file = path.join(os.homedir(), '.cursor', 'mcp.json');
   let config = {};
@@ -111,7 +125,7 @@ function applyCursor() {
     }
   }
   config.mcpServers = config.mcpServers || {};
-  config.mcpServers['aki-mcp'] = { url: localMcpUrl(), headers: { Authorization: `Bearer ${getOrIssueAccessToken()}` } };
+  config.mcpServers['aki-mcp'] = httpBearerEntry(localMcpUrl(), getOrIssueAccessToken());
   writeJsonAtomic(file, config);
   return { ok: true, message: 'Applied — aki-mcp in ~/.cursor/mcp.json now carries the current token. Reload Cursor.' };
 }

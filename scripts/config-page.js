@@ -138,23 +138,28 @@ function secretSnippet(label, value, secrets, id) {
   return `<div class="snip">${copyEl(value, true, id, secrets)}${eyeButton(label)}</div>`;
 }
 
+// The local client configs, built once here for both the rendered snippets and panel.js's Apply writers, so the two cannot drift.
+// Local clients connect straight to loopback (no WAN, no tunnel); only remote web connectors need the public `url`.
+export const localMcpUrl = () => `http://127.0.0.1:${process.env.GATEKEEPER_PORT || 9999}/mcp`;
+export const httpBearerEntry = (url, token) => ({ url, headers: { Authorization: `Bearer ${token}` } });
+// Two lines: remove then add in `user` scope. A bare `claude mcp add` refuses when aki-mcp already exists and keeps the old token (F9), so re-pasting after Roll token must remove first; `-s user` makes the entry work from every project, not just the directory it was run in.
+export const claudeCodeLines = (url, token) => `claude mcp remove aki-mcp -s user\nclaude mcp add --transport http -s user aki-mcp ${url} --header "Authorization: Bearer ${token}"`;
+export const CODEX_TABLE = '[mcp_servers.aki-mcp]';
+// Codex CLI (~/.codex/config.toml): `http_headers` carries a static bearer so the snippet is copy-paste-ready with no env var to export.
+export const codexBlock = (url, token) => `${CODEX_TABLE}\nurl = "${url}"\nhttp_headers = { "Authorization" = "Bearer ${token}" }`;
+
 export function renderPanel({ origin, ingress = 'funnel', client, passphrase, token, accessToken, repoRoot, rulesDir, userDir, updateInfo = {}, savedIngress = null, isDev = false }) {
   const url = origin ? `${origin}/mcp` : 'not available yet, see section 0';
-  // Local clients connect straight to loopback (no WAN, no tunnel); only remote web connectors need the public `url`.
-  const localUrl = `http://127.0.0.1:${process.env.GATEKEEPER_PORT || 9999}/mcp`;
-  const postmanJson = JSON.stringify({
-    mcpServers: { 'aki-mcp-sv': { url: localUrl, headers: { Authorization: `Bearer ${accessToken}` } } },
-  });
-  const cursorJson = JSON.stringify({ mcpServers: { 'aki-mcp': { url: localUrl, headers: { Authorization: `Bearer ${accessToken}` } } } });
+  const localUrl = localMcpUrl();
+  const postmanJson = JSON.stringify({ mcpServers: { 'aki-mcp-sv': httpBearerEntry(localUrl, accessToken) } });
+  const cursorJson = JSON.stringify({ mcpServers: { 'aki-mcp': httpBearerEntry(localUrl, accessToken) } });
   // stdio, because our /mcp is Bearer-gated and agy's SSE transport has no headers; CLI and IDE read the same file, so one entry serves both — docs/ref/fact-agy-mcp-config.md § CLI-1, CLI-2, IDE-1.
   const stdioPath = path.join(repoRoot, 'scripts', 'stdio.js');
   const agyJson = JSON.stringify({ mcpServers: { [AGY_SERVER_KEY]: { command: 'node', args: [stdioPath] } } });
-  // Two lines: remove then add in `user` scope. A bare `claude mcp add` refuses when aki-mcp already exists and keeps the old token (F9), so re-pasting after Roll token must remove first; `-s user` makes the entry work from every project, not just the directory it was run in.
-  const claudeCodeCmd = `claude mcp remove aki-mcp -s user\nclaude mcp add --transport http -s user aki-mcp ${localUrl} --header "Authorization: Bearer ${accessToken}"`;
+  const claudeCodeCmd = claudeCodeLines(localUrl, accessToken);
   // The Claude app's config file takes only stdio entries (docs/plan/done/connector-setup-ux.md F11), so it spawns the same entry as AGY.
   const claudeAppJson = JSON.stringify({ mcpServers: { 'aki-mcp': { command: 'node', args: [stdioPath] } } });
-  // Codex CLI (~/.codex/config.toml): `http_headers` carries a static bearer so the snippet is copy-paste-ready with no env var to export.
-  const codexToml = `[mcp_servers.aki-mcp]\nurl = "${localUrl}"\nhttp_headers = { "Authorization" = "Bearer ${accessToken}" }`;
+  const codexToml = codexBlock(localUrl, accessToken);
   const ecoHalf = Math.ceil(ECOSYSTEM.length / 2);
   const funnelMode = ingress === 'funnel';
   // Tab 3 (Hosted domain) never becomes the active ingress here — the service it needs is a separate, not-yet-built project.
@@ -418,7 +423,7 @@ ${secretField('Access token', accessToken)}
 <div class="tabpane" id="tab-claudelocal">
   <p class="helptext">Claude Code and the Claude app are set up separately: connecting one does not connect the other. Both run on the computer running AKIMCP, with no ingress: Claude Code connects over <span class="mono">127.0.0.1</span>, and the Claude app starts the tools itself over <span class="mono">stdio</span>. For claude.ai, the mobile app or the Claude app on another computer, use the <strong>Claude</strong> tab under <strong>Web</strong>.</p>
   <h3 class="subh">Claude Code (terminal) — local</h3>
-  <p class="helptext"><strong>Apply</strong> registers aki-mcp in <span class="mono">user</span> scope with the current token, replacing any old entry so it works from every project. After <strong>Roll token</strong>, click Apply again. Or run the two lines below by hand (the <span class="mono">remove</span> first lets a re-paste replace the old token — a bare <span class="mono">add</span> refuses when the entry already exists).</p>
+  <p class="helptext"><strong>Apply</strong> registers aki-mcp in <span class="mono">user</span> scope with the current token, replacing any old entry so it works from every project. It also removes an aki-mcp entry an older setup left inside a single project, which would otherwise keep the old token there. After <strong>Roll token</strong>, click Apply again. Or run the two lines below by hand (the <span class="mono">remove</span> first lets a re-paste replace the old token — a bare <span class="mono">add</span> refuses when the entry already exists); if one project still gets 401, run <span class="mono">claude mcp remove aki-mcp -s local</span> inside that project.</p>
   <div class="acts"><button class="primary" data-act="claudeCodeApply">Apply to Claude Code (user scope)</button><span class="msg" id="msgClaudeCode"></span></div>
   ${secretSnippet('Claude Code commands', claudeCodeCmd, [accessToken], 'claudeCodeCmd')}
   <h3 class="subh">Claude app (desktop) — local</h3>

@@ -189,7 +189,7 @@ Local tools run on the same machine as AKIMCP, so they need no tunnel and no WAN
 }
 ```
 
-**Claude Code CLI** — click **Apply to Claude Code** in the panel's Claude Code & app tab: it registers the server in `user` scope (works from every project) with the current token, replacing any old entry. After Roll token, click Apply again. To do it by hand, run both lines — the `remove` first, because a bare `claude mcp add` refuses when the entry already exists and keeps the old token:
+**Claude Code CLI** — click **Apply to Claude Code** in the panel's Claude Code & app tab: it registers the server in `user` scope (works from every project) with the current token, replacing any old entry, including one an older setup left inside a single project. After Roll token, click Apply again. To do it by hand, run both lines — the `remove` first, because a bare `claude mcp add` refuses when the entry already exists and keeps the old token; if one project still gets 401, also run `claude mcp remove aki-mcp -s local` inside it:
 
 ```bash
 claude mcp remove aki-mcp -s user

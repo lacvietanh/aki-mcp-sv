@@ -46,6 +46,13 @@ async function runTests() {
   assert.equal(literal.match(/^\[mcp_servers\./gm).length, 1, 'the literal-key table is replaced, not duplicated');
   assert.ok(!literal.includes('[3, 4]') && literal.includes('[tail]'), 'the whole old table goes, the next one stays');
 
+  // Codex: a table whose quoted key holds a path (Codex's own per-project trust tables) ends the aki-mcp table and survives.
+  fs.writeFileSync(codexPath, '[mcp_servers.aki-mcp]\nurl = "x"\n\n[projects."/Users/me/repo"]\ntrust_level = "trusted"\n\n[projects.\'C:\\code\']\ntrust_level = "trusted"\n');
+  await ROUTES['POST /api/codex-apply']();
+  const trusted = read('.codex/config.toml');
+  assert.ok(trusted.includes('[projects."/Users/me/repo"]') && trusted.includes("[projects.'C:\\code']"), 'both trust tables survive');
+  assert.equal(trusted.match(/trust_level = "trusted"/g).length, 2, 'their keys survive with them');
+
   // Codex: a corrupt file stops with the path named, never a half-write.
   fs.writeFileSync(codexPath, 'ok = 1\n\u0000');
   await assert.rejects(async () => ROUTES['POST /api/codex-apply'](), /config\.toml/);
@@ -65,16 +72,26 @@ async function runTests() {
   const binDir = path.join(tmp, 'bin');
   fs.mkdirSync(binDir);
   const argsLog = path.join(tmp, 'claude-args.log');
-  fs.writeFileSync(path.join(binDir, 'claude'), `#!/bin/sh\necho "$@" >> "${argsLog}"\nexit 0\n`);
+  fs.writeFileSync(path.join(binDir, 'claude'), `#!/bin/sh\necho "$(pwd -P) $@" >> "${argsLog}"\nexit 0\n`);
   fs.chmodSync(path.join(binDir, 'claude'), 0o755);
+  // A local-scope entry (what the pre-3.1 snippet made, no -s) wins over user scope, so Apply removes it inside its own project; a project folder that is gone is skipped.
+  const project = path.join(tmp, 'project');
+  fs.mkdirSync(project);
+  process.env.CLAUDE_CONFIG_DIR = path.join(tmp, 'claude-config');
+  fs.mkdirSync(process.env.CLAUDE_CONFIG_DIR);
+  fs.writeFileSync(path.join(process.env.CLAUDE_CONFIG_DIR, '.claude.json'), JSON.stringify({ projects: { [project]: { mcpServers: { 'aki-mcp': { type: 'http' } } }, [path.join(tmp, 'gone')]: { mcpServers: { 'aki-mcp': {} } }, [tmp]: { mcpServers: { other: {} } } } }));
   const savedPath = process.env.PATH;
   process.env.PATH = `${binDir}${path.delimiter}${savedPath}`;
   const applied = await ROUTES['POST /api/claude-code-apply']();
   process.env.PATH = savedPath;
+  delete process.env.CLAUDE_CONFIG_DIR;
   assert.equal(applied.ok, true);
   const log = fs.readFileSync(argsLog, 'utf8');
   assert.match(log, /mcp remove aki-mcp -s user/, 'removes the old entry first');
   assert.match(log, /mcp add --transport http -s user aki-mcp .* --header Authorization: Bearer /, 'adds in user scope with the token');
+  assert.equal(log.match(/-s local/g)?.length, 1, 'one local entry removed, the gone folder and the other server left alone');
+  assert.ok(log.includes(`${project} mcp remove aki-mcp -s local`), 'the local entry is removed from inside its project');
+  assert.match(applied.message, /1 project/, 'the message says a project-only entry was removed');
 
   // Claude Code with no `claude` on PATH: a usable two-line fallback, never a bare error.
   process.env.PATH = path.join(tmp, 'empty');
