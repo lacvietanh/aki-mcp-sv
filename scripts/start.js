@@ -42,7 +42,7 @@ if (existingLock && existingLock.pid !== process.pid && isPidAlive(existingLock.
     const url = `http://127.0.0.1:${existingLock.panelPort}/?t=${existingLock.token}`;
     const since = existingLock.startedAt ? ` since ${new Date(existingLock.startedAt).toLocaleString()}` : '';
     console.log(existingLock.version === version
-      ? `[start] akimcp v${version} is already running${since} (pid ${existingLock.pid}) — opening its panel. This copy did not start: code changed after that time is not loaded. To load it, stop the running one (Ctrl+C in its terminal, or Stop on AIObox's AkiMCP page), then start again`
+      ? `[start] akimcp v${version} is already running${since} (pid ${existingLock.pid}) — opening its panel. This copy did not start: code changed after that time is not loaded. To load it, stop the running one (Ctrl+C in its terminal, or quit the app that started it), then start again`
       : `[start] a newer akimcp v${existingLock.version} is already running${since} (pid ${existingLock.pid}) — opening its panel; to run v${version}, stop that one first`);
     if (process.argv.includes('--no-browser')) {
       console.log(`[start] panel: ${url}`);
