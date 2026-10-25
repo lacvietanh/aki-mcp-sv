@@ -106,6 +106,8 @@ if (tunnelCred) {
   let tailscale = await funnelStatus(gatePort);
   if (!tailscale.installed) {
     console.warn('[start] `tailscale` CLI not found — configure ingress in the web panel below');
+  } else if (isDev) {
+    if (!tailscale.funnel) console.warn('[start] dev mode leaves Tailscale Funnel to the main instance (it serves another port or none); for a public dev URL use --tunnel <cred.json> --origin <url> or PUBLIC_ORIGIN');
   } else {
     if (!tailscale.running) {
       const { ok, out } = await bringUp();
@@ -117,7 +119,7 @@ if (tunnelCred) {
       console[ok ? 'log' : 'error'](`[start] enabling funnel ${gatePort}: ${ok ? 'done' : out.trim()}`);
     }
   }
-  origin = tailscale.host ? `https://${tailscale.host}` : null;
+  origin = tailscale.host && (!isDev || tailscale.funnel) ? `https://${tailscale.host}` : null;
   if (!origin) console.warn('[start] Tailscale Funnel host not available — configure ingress in the web panel below');
 }
 
