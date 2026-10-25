@@ -81,6 +81,25 @@ for (const t of registered) {
   assert.ok((t.description || '').length <= 700, `${t.name} description is ${t.description.length} chars, over 700`);
 }
 
+// D7(a): no description or parameter text names a model id. The agy drift (docs/plan/audit-tool-drift-oct25.md F1-F2) was a hardcoded model list going stale; the interface now reads ids from the CLI (list="models") and names none. The one allowed exception is kiro_read's single pinned id (D8, hard-locked and re-verified each release) — a pinned id is not a rotting list.
+const MODEL_ID_SHAPE = /gemini-\d|claude-(sonnet|opus|haiku)-\d|gpt-oss/i;
+for (const t of registered) {
+  const text = `${t.description || ''} ${Object.values(t.inputSchema?.properties || {}).map((p) => p.description || '').join(' ')}`;
+  const hit = text.match(MODEL_ID_SHAPE);
+  if (t.name === 'aki__kiro_read') {
+    assert.ok(hit, 'kiro_read still names its one pinned, verified model id');
+    continue;
+  }
+  assert.equal(hit, null, `${t.name} names a model id (${hit?.[0]}); read ids from the CLI (list="models"), never hardcode them`);
+}
+
+// D7(b): the README tool count must equal the number of tools all providers register (the machine-independent total, not what this machine serves). A drift here means the README was hand-edited and the count was not.
+const registeredCount = providers.flatMap((p) => p.tools).length;
+const readme = fs.readFileSync(new URL('../README.md', import.meta.url), 'utf8');
+const readmeCounts = [...readme.matchAll(/(\d+)\s+tools/g)].map((m) => Number(m[1]));
+assert.ok(readmeCounts.length >= 1, 'README states a tool count');
+for (const n of readmeCounts) assert.equal(n, registeredCount, `README says ${n} tools but providers register ${registeredCount}`);
+
 // Every aki__<name> a description (or the server instructions) points at must be a registered tool, so a rename never leaves a dead reference.
 const names = new Set(registered.map((t) => t.name));
 const texts = [['instructions', client.getInstructions() || ''], ...registered.map((t) => [t.name, t.description || ''])];

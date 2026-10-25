@@ -35,6 +35,81 @@ function writeJsonAtomic(file, data) {
   renameSync(tmp, file);
 }
 
+function writeTextAtomic(file, text) {
+  mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
+  writeFileSync(tmp, text);
+  renameSync(tmp, file);
+}
+
+// The local /mcp endpoint the three HTTP+Bearer clients connect to; the port follows the running gatekeeper, same value config-page.js renders into the snippets.
+const localMcpUrl = () => `http://127.0.0.1:${process.env.GATEKEEPER_PORT || 9999}/mcp`;
+
+// Claude Code (D10, F9): remove any stale entry, then add with the live token in `user` scope so it works from every project. A bare `claude mcp add` refuses when the entry exists and keeps the old token, so remove-then-add is the only re-runnable shape. claude not on PATH → the message carries the two-line fallback, never a bare error.
+function runClaude(args) {
+  return new Promise((resolve) => {
+    execFile('claude', args, { timeout: 20_000, windowsHide: true }, (error, stdout, stderr) => {
+      resolve({ ok: !error, out: `${stdout || ''}${stderr || ''}`.trim(), code: error?.code });
+    });
+  });
+}
+async function applyClaudeCode() {
+  const url = localMcpUrl();
+  const token = getOrIssueAccessToken();
+  const header = `Authorization: Bearer ${token}`;
+  const addArgs = ['mcp', 'add', '--transport', 'http', '-s', 'user', 'aki-mcp', url, '--header', header];
+  const probe = await runClaude(['--version']);
+  if (!probe.ok && probe.code === 'ENOENT') {
+    return { ok: false, message: `claude is not on PATH. Run these two lines in a terminal instead:\nclaude mcp remove aki-mcp -s user\nclaude mcp add --transport http -s user aki-mcp ${url} --header "${header}"` };
+  }
+  await runClaude(['mcp', 'remove', 'aki-mcp', '-s', 'user']); // an absent entry is not an error
+  const added = await runClaude(addArgs);
+  if (!added.ok) return { ok: false, message: `claude mcp add failed: ${added.out || 'unknown error'}` };
+  return { ok: true, message: 'Applied — replaced any old aki-mcp entry with the current token in user scope. Restart the session or run /mcp in Claude Code.' };
+}
+
+// Codex (D10, F10): replace the [mcp_servers.aki-mcp] table in place by its boundaries (from its header to the next table header or EOF), other tables untouched, atomic write. "Append it" would add a second table of the same name — invalid TOML. An unparsable file stops with the path named, as agyApply does.
+const CODEX_TABLE = '[mcp_servers.aki-mcp]';
+function replaceTomlTable(text, header, block) {
+  const lines = text.split('\n');
+  const start = lines.findIndex((l) => l.trim() === header);
+  if (start < 0) return `${text.replace(/\n*$/, '')}\n\n${block}\n`;
+  let end = start + 1;
+  while (end < lines.length && !/^\s*\[/.test(lines[end])) end++;
+  const before = lines.slice(0, start).join('\n').replace(/\n*$/, '');
+  const after = lines.slice(end).join('\n').replace(/^\n*/, '');
+  return `${before ? before + '\n\n' : ''}${block}\n${after ? '\n' + after : ''}`;
+}
+function applyCodex() {
+  const file = path.join(os.homedir(), '.codex', 'config.toml');
+  const block = `${CODEX_TABLE}\nurl = "${localMcpUrl()}"\nhttp_headers = { "Authorization" = "Bearer ${getOrIssueAccessToken()}" }`;
+  let existing = '';
+  if (existsSync(file)) {
+    existing = readFileSync(file, 'utf8');
+    // A null byte or an unterminated multi-line is the sign of a file we should not hand-edit; bail, naming the path.
+    if (existing.includes('\u0000')) throw new Error(`${file} looks corrupt (null byte) — fix or remove it, then retry`);
+  }
+  writeTextAtomic(file, replaceTomlTable(existing, CODEX_TABLE, block));
+  return { ok: true, message: `Applied — ${CODEX_TABLE} in ~/.codex/config.toml now carries the current token (other tables untouched). Restart Codex.` };
+}
+
+// Cursor (D10): merge mcpServers.aki-mcp into ~/.cursor/mcp.json, same shape as the rendered snippet; other servers untouched. Unparsable file stops with the path named.
+function applyCursor() {
+  const file = path.join(os.homedir(), '.cursor', 'mcp.json');
+  let config = {};
+  if (existsSync(file)) {
+    try {
+      config = JSON.parse(readFileSync(file, 'utf8')) || {};
+    } catch {
+      throw new Error(`${file} is not valid JSON — fix or remove it, then retry`);
+    }
+  }
+  config.mcpServers = config.mcpServers || {};
+  config.mcpServers['aki-mcp'] = { url: localMcpUrl(), headers: { Authorization: `Bearer ${getOrIssueAccessToken()}` } };
+  writeJsonAtomic(file, config);
+  return { ok: true, message: 'Applied — aki-mcp in ~/.cursor/mcp.json now carries the current token. Reload Cursor.' };
+}
+
 // Every setting.json write goes through writeSettings (atomic): a partial file reads back as empty, which means defaults, i.e. a wider folder list or allowlist than the owner saved.
 function setFolders(paths) {
   const settings = readSettings();
@@ -252,6 +327,10 @@ export const ROUTES = {
 
     return { ok: true, message: 'Applied — akimcp (stdio) → ~/.gemini/config/mcp_config.json + pre-allow → antigravity-cli/settings.json. Restart agy to pick it up.' };
   },
+  // The three HTTP+Bearer clients (Claude Code, Codex, Cursor) each get a one-click Apply writing the live token, so Roll token is a re-click, never a silent stale entry (docs/plan/audit-tool-drift-oct25.md D10, F9, F10). Each is idempotent: a second Apply replaces the one entry, never adds a duplicate.
+  'POST /api/claude-code-apply': async () => applyClaudeCode(),
+  'POST /api/codex-apply': async () => applyCodex(),
+  'POST /api/cursor-apply': async () => applyCursor(),
   // No hub restart: setFolders writes setting.json, and roots.js reads it fresh per call — a save takes effect on the next shell/find_path/search_content call, same as the allowlist.
   'POST /api/paths': async (body) => {
     setFolders(validatePaths(body.paths));
@@ -305,7 +384,9 @@ export const ROUTES = {
   // The page reloads after this so every server-rendered snippet carries the new token; the token itself is never returned.
   'POST /api/roll-token': async (body) => {
     rotateAccessToken({ revokeRefresh: body.hard === true });
-    return { ok: true, message: body.hard === true ? 'rolled — every client must re-authorize' : 'rolled — re-paste the token into local snippets' };
+    // D10: the Applied HTTP+Bearer clients now hold a stale token; name them so the owner clicks Apply again (the panel does not track which were used, so it names all three — the lighter choice over a state file).
+    const reapply = 're-click Apply on the Claude Code, Codex and Cursor tabs (or re-paste their snippets)';
+    return { ok: true, message: body.hard === true ? `rolled — every client must re-authorize; ${reapply}` : `rolled — ${reapply}` };
   },
   'POST /api/roll-passphrase': async () => {
     rotatePassphrase();

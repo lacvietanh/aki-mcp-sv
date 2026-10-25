@@ -553,6 +553,9 @@ const ACTIONS = {
     });
   },
   agyApply: (btn) => act(btn, 'msgAgy', async () => (await api('POST', '/api/agy-apply-mcp')).message),
+  claudeCodeApply: (btn) => act(btn, 'msgClaudeCode', async () => (await api('POST', '/api/claude-code-apply')).message),
+  codexApply: (btn) => act(btn, 'msgCodex', async () => (await api('POST', '/api/codex-apply')).message),
+  cursorApply: (btn) => act(btn, 'msgCursor', async () => (await api('POST', '/api/cursor-apply')).message),
   pullUpdate: (btn) => act(btn, 'msgUpd', async () => (await api('POST', '/api/pull-update')).message),
   saveTunnel: (btn) => act(btn, 'msgTunnel', async () => {
     const fileInput = document.getElementById('tunnelCredFile');

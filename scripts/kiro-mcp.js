@@ -21,7 +21,10 @@ function run(trustTools, { prompt, effort, cwd }) {
   return new Promise((resolve) => {
     execFile('kiro-cli', args, { cwd: dir, timeout: 120_000, maxBuffer: 4 * 1024 * 1024 }, (error, stdout, stderr) => {
       if (error) {
-        return resolve(err(stdout || stderr || error.message));
+        const message = stdout || stderr || error.message;
+        // D8: the model is hard-locked, so a model complaint means the pinned id was retired; point at the one command that lists what kiro-cli accepts now, rather than leaving a bare error.
+        if (/model/i.test(message)) return resolve(err(`${message}\n\nnext: run \`kiro-cli chat --list-models\` to see the ids this kiro-cli accepts (the tool is locked to ${MODEL}).`));
+        return resolve(err(message));
       }
       if (!stdout || !stdout.trim()) {
         return resolve(err('kiro-cli returned no output — the call may have been silently denied rather than a clean empty result. Re-check the prompt/scope.'));

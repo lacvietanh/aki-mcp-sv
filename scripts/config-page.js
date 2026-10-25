@@ -149,7 +149,8 @@ export function renderPanel({ origin, ingress = 'funnel', client, passphrase, to
   // stdio, because our /mcp is Bearer-gated and agy's SSE transport has no headers; CLI and IDE read the same file, so one entry serves both — docs/ref/fact-agy-mcp-config.md § CLI-1, CLI-2, IDE-1.
   const stdioPath = path.join(repoRoot, 'scripts', 'stdio.js');
   const agyJson = JSON.stringify({ mcpServers: { [AGY_SERVER_KEY]: { command: 'node', args: [stdioPath] } } });
-  const claudeCodeCmd = `claude mcp add --transport http aki-mcp ${localUrl} --header "Authorization: Bearer ${accessToken}"`;
+  // Two lines: remove then add in `user` scope. A bare `claude mcp add` refuses when aki-mcp already exists and keeps the old token (F9), so re-pasting after Roll token must remove first; `-s user` makes the entry work from every project, not just the directory it was run in.
+  const claudeCodeCmd = `claude mcp remove aki-mcp -s user\nclaude mcp add --transport http -s user aki-mcp ${localUrl} --header "Authorization: Bearer ${accessToken}"`;
   // The Claude app's config file takes only stdio entries (docs/plan/done/connector-setup-ux.md F11), so it spawns the same entry as AGY.
   const claudeAppJson = JSON.stringify({ mcpServers: { 'aki-mcp': { command: 'node', args: [stdioPath] } } });
   // Codex CLI (~/.codex/config.toml): `http_headers` carries a static bearer so the snippet is copy-paste-ready with no env var to export.
@@ -275,7 +276,7 @@ ${field('Re-sync command', 'tailscale funnel --https=443 off && tailscale serve 
 </section>
 
 <section id="s1"><h2>1 · Connectors: local IDEs + web AIs</h2>
-<p class="helptext">One AKIMCP endpoint, two paths. <strong>Local tools</strong> run on this computer with no tunnel and work offline: each connects over <span class="mono">127.0.0.1</span> or starts the tools itself over <span class="mono">stdio</span>, and its tab below says which and carries a ready-to-paste local config. <strong>Web AIs</strong> (Claude, Grok, ChatGPT, Gemini, Notion, Buda, ClickUp) use the MCP URL below and ${origin ? 'are reachable now.' : 'need a public ingress — set it up in <a href="#s0">Section 0</a> first (the MCP URL fills in once ingress is active).'}</p>
+<p class="helptext">One AKIMCP endpoint, two paths. <strong>Local tools</strong> run on this computer with no tunnel and work offline: each connects over <span class="mono">127.0.0.1</span> or starts the tools itself over <span class="mono">stdio</span>, and its tab below says which and carries a ready-to-paste local config. <strong>Web AIs</strong> use the MCP URL below (each has its own tab) and ${origin ? 'are reachable now.' : 'need a public ingress — set it up in <a href="#s0">Section 0</a> first (the MCP URL fills in once ingress is active).'}</p>
 ${field('MCP Name', MCP_NAME)}
 ${field('MCP URL', url, true)}
 ${secretField('Passphrase', passphrase)}
@@ -404,15 +405,17 @@ ${secretField('Access token', accessToken)}
 
 <div class="tabpane" id="tab-cursor">
   <h3 class="subh">Connect Cursor — local, 0ms</h3>
-  <p class="helptext">Paste into <span class="mono">~/.cursor/mcp.json</span> (or Cursor → Settings → MCP Servers), then reload. Connects over <span class="mono">127.0.0.1</span> — no tunnel, works offline.</p>
+  <p class="helptext"><strong>Apply</strong> merges aki-mcp into <span class="mono">~/.cursor/mcp.json</span> with the current token (other servers untouched), then reload Cursor. After <strong>Roll token</strong>, click Apply again. Or paste the JSON by hand (Cursor → Settings → MCP Servers). Connects over <span class="mono">127.0.0.1</span> — no tunnel, works offline.</p>
+  <div class="acts"><button class="primary" data-act="cursorApply">Apply to Cursor (mcp.json)</button><span class="msg" id="msgCursor"></span></div>
   ${secretSnippet('Cursor JSON', cursorJson, [accessToken], 'cursorJson')}
 </div>
 
 <div class="tabpane" id="tab-claudelocal">
   <p class="helptext">Claude Code and the Claude app are set up separately: connecting one does not connect the other. Both run on the computer running AKIMCP, with no ingress: Claude Code connects over <span class="mono">127.0.0.1</span>, and the Claude app starts the tools itself over <span class="mono">stdio</span>. For claude.ai, the mobile app or the Claude app on another computer, use the <strong>Claude</strong> tab in the Web group.</p>
   <h3 class="subh">Claude Code (terminal) — local, 0ms</h3>
-  <p class="helptext">Run this in a terminal. It carries the access token, so after <strong>Roll token</strong> run the new line again.</p>
-  ${secretSnippet('Claude Code command', claudeCodeCmd, [accessToken], 'claudeCodeCmd')}
+  <p class="helptext"><strong>Apply</strong> registers aki-mcp in <span class="mono">user</span> scope with the current token, replacing any old entry so it works from every project. After <strong>Roll token</strong>, click Apply again. Or run the two lines below by hand (the <span class="mono">remove</span> first lets a re-paste replace the old token — a bare <span class="mono">add</span> refuses when the entry already exists).</p>
+  <div class="acts"><button class="primary" data-act="claudeCodeApply">Apply to Claude Code (user scope)</button><span class="msg" id="msgClaudeCode"></span></div>
+  ${secretSnippet('Claude Code commands', claudeCodeCmd, [accessToken], 'claudeCodeCmd')}
   <h3 class="subh">Claude app (desktop) — local, 0ms</h3>
   <ol class="steps">
     <li>In the Claude app, open <strong>Settings</strong> → <strong>Developer</strong> → <strong>Edit Config</strong>. It opens <span class="mono">claude_desktop_config.json</span>.</li>
@@ -435,7 +438,8 @@ ${secretField('Access token', accessToken)}
 
 <div class="tabpane" id="tab-codex">
   <h3 class="subh">Connect Codex CLI — local, 0ms</h3>
-  <p class="helptext">Add this block to <span class="mono">~/.codex/config.toml</span> (append it — don't overwrite the file). Codex reaches the local engine over <span class="mono">127.0.0.1</span> via streamable HTTP; the bearer token is inlined so there's no shell env var to export first. Works offline, no tunnel. Restart Codex after saving.</p>
+  <p class="helptext"><strong>Apply</strong> writes the <span class="mono">[mcp_servers.aki-mcp]</span> table into <span class="mono">~/.codex/config.toml</span> with the current token, replacing it in place (other tables untouched), then restart Codex. After <strong>Roll token</strong>, click Apply again. Codex reaches the local engine over <span class="mono">127.0.0.1</span> via streamable HTTP; the bearer token is inlined, no env var to export. Works offline, no tunnel. To paste by hand, replace any existing <span class="mono">[mcp_servers.aki-mcp]</span> table — do not add a second one.</p>
+  <div class="acts"><button class="primary" data-act="codexApply">Apply to Codex (config.toml)</button><span class="msg" id="msgCodex"></span></div>
   ${secretSnippet('Codex config', codexToml, [accessToken], 'codexToml')}
 </div>
 </section>

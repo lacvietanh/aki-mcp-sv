@@ -144,7 +144,7 @@ export function register(server) {
       title: 'Localhost & Intranet HTTP Fetcher',
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description:
-        'Make HTTP/HTTPS requests to localhost, local dev servers, or internal LAN services with SSRF protection (blocks cloud metadata/link-local addresses; enforces 500KB cap and max 15s timeout).',
+        `Make HTTP/HTTPS requests to localhost, local dev servers, or internal LAN services with SSRF protection (blocks cloud metadata/link-local addresses; enforces ${MAX_RESPONSE_BYTES / 1024}KB cap and max 15s timeout).`,
       inputSchema: {
         url: z.string().describe('full HTTP/HTTPS URL (e.g. "http://localhost:3000/api/health")'),
         method: z.enum(['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD']).optional().describe('HTTP method (default GET)'),
