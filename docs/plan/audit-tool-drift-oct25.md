@@ -1,0 +1,190 @@
+# Tool drift audit and the 3.1 release gate: fix every stale tool fact, make `agy_run` read the CLI, then ship 3.1.0 tight
+
+Status: decided 2026-10-25 (decisions revised after a self-run deep-think, § Decision record), not started. Audited against AkiMCP 3.1.0 (`package.json`), `agy` 1.4.7, `kiro-cli` 2.16.2, HEAD `99047e1` (8 commits above the local `3.1.0` tag `4991da5`). Owner asked for one plan file, so the finding record (normally a `docs/research/` doc, `docs.C2`) lives in § Audit result and no research doc is opened; it is an event record and is not edited after the fixes land.
+
+Owner orders of 2026-10-25 13:53, recorded: **Q1 closed**: re-tag is accepted, 3.1 must be tight and complete; **T1 closed**: every call the plan left to the agent is decided by deep-think below, no further question; a second agy session appended § Carried over, now merged into the phases.
+
+## Goal
+
+Owner 2026-10-25, verbatim: "một số tool vẫn còn bị ghi thông tin cũ, ví dụ tool agy_run, kiểm tra trọn vẹn mọi akimcp tools" · "riêng tool agy có thể phải tinh chỉnh lại các options để nó hoạt động toàn diện hơn, hiệu quả hơn, chính xác hơn, không phải chắp vá mỗi khi có phiên bản mới (ví dụ lệnh list model là một lệnh thay vì ghi cứng model, effort,..) và phải update hết mọi docs liên quan để tránh lỗi thời" · "audit total before 3.1" · "tôi cần một bản 3.1 chặt chẽ, đầy đủ".
+
+Goal chain: no tool description, schema or doc states a fact about the outside world that the code did not just read from it → an AI calling `agy_run` never hits a model the installed CLI rejects, and a new `agy` release needs no AkiMCP edit → every record surface agrees with the code that ships → one 3.1.0 whose tag, CHANGELOG, manifest and registry version say the same thing.
+
+## Audit result (2026-10-25)
+
+Method: tool definitions loaded from every provider in `scripts/provider-registry.js` (38 tools) and diffed against the live `tools/list` over `scripts/stdio.js` (33 served here: `kiro_read` and the four `postman_*` are switched off) and against the agy-side schema copies in `~/.gemini/antigravity-cli/mcp/akimcp/` (32 files). Every claim in a description was then checked against its code constant or the real CLI.
+
+**Served surface equals source: 0 differences in 32 tools with a local copy.** The drift is source and docs versus the outside world. By `docs.C4` level: **Wrong 4 · Stale 1 · Incomplete 2 · Cosmetic 2 · Unverified 1** (F9 and F10 were added the same day, from a live failure in an aiobox session, see § Verification).
+
+| # | Level | Finding | Evidence |
+|---|---|---|---|
+| F1 | Wrong | `agy_run` default model `gemini-3.7-flash-medium` is not an id `agy` offers now; a default call can fail | `agy models` lists only `gemini-4-argon-{low,medium,high}`, `gemini-3.8-flash-{low,medium,high}`, `claude-opus-5-5-{low,medium,high}`, `claude-sonnet-5-5-{low,medium,high}`, `gpt-oss-120b-medium`. `agy-mcp.js:12`, `docs/feat/tools.md` row `agy_run`, `docs/ref/harness-fact.md` rows 4–5 |
+| F2 | Wrong | The `model` parameter text lists "Valid ids" of which only `gpt-oss-120b-medium` still exists | same; `agy-mcp.js:60`, `harness-fact.md:21` |
+| F3 | Wrong | `harness-fact.md:19` says `--effort` accepts only `low\|medium\|high` and "rejects `xhigh`/`max`"; `agy --help` now says `low\|medium\|high\|xhigh\|max`. The tool enum (`agy-mcp.js:61`) copies the old claim, while `kiro-mcp.js` already has all five | `agy --help` |
+| F4 | Stale | `agy_run` description says mode `plan` is "read-only by mechanism" and `docs/feat/tools.md` says "`agy` → `plan` mode only"; here `agy.allowedModes` is `["plan","accept-edits"]`, so `readOnlyHint` is `false` and the tool can write, which the description never says. `mode` lists no valid values (`agy --help`: `accept-edits`, `auto`, `plan`) | `setting.json`, live `tools/list` |
+| F5 | Incomplete | `outputFormat` offers `text`, `json`; the CLI also has `stream-json`. The 120 s timeout is fixed in code | `agy --help`, `agy-mcp.js:23` |
+| F6 | Cosmetic | `local_fetch` description says "500KB cap"; `MAX_RESPONSE_BYTES` is 512 KB (`tools.md` says 512 KB) | `fetch-mcp.js:16,147` |
+| F7 | Cosmetic | README says "38 tools" (lines 3, 98) with no guard; 38 is the registered total (33 served here), correct today, hand-kept | live `tools/list`, provider dump |
+| F8 | Unverified | The agy-side schema folder has no `aki__agy_run.json` though the server serves it; cause on agy's side unknown | `ls` vs `tools/list` |
+| F9 | Wrong | The panel's Claude Code tab says "after **Roll token** run the new line again" (`config-page.js:414`), but the line is a plain `claude mcp add`, which refuses when `aki-mcp` already exists ("already exists in local config") and leaves the old token in place; the next connect is HTTP 401 `AUTH_HEADER_REJECTED`, with no hint that the old entry is the cause. The same line registers in `local` scope (default of `claude mcp add`), so the entry is private to the one project directory it was run in; a later `claude mcp remove aki-mcp` from another directory finds nothing | `claude mcp get aki-mcp` showed `Authorization: Bearer bf0c39…0bfa` while the panel's new token returned HTTP 200 on `POST /mcp` initialize; `claude mcp add --help` (`--scope`, default `local`); `config-page.js:152,414` |
+| F10 | Incomplete | The AGY tab has a one-click **Apply** (`agyApply` → `POST /api/agy-apply-mcp`, `panel.js:221`); the Claude Code, Codex and Cursor tabs have none, only a snippet to copy and run or merge by hand. Codex's text says "append it", so re-pasting after Roll token adds a second `[mcp_servers.aki-mcp]` table to `~/.codex/config.toml`, which is invalid TOML (duplicate table). Cursor and the Claude app are hand merges. Apply works for AGY because it registers a stdio command with no token, so Roll token cannot break it; the three HTTP+Bearer snippets are the ones a Roll token silently breaks | `config-page.js:152–156,411–440`, `panel.js:219–254`, `public/panel-client.js:555` |
+
+Checked and true (no work): `run_cmd` 10 s stop, `git log` max 50 and `{commits, more}`, `sqlite_query` 100 rows, `task_manage` default 10240 / 1 MB tail cap, `local_fetch` 15 s, `notify_user` default title and Glass sound, `kiro_read` model `claude-sonnet-4.5` still in `kiro-cli chat --list-models`.
+
+**Not yet checked** (the audit is not total until P0 closes these): `akidevrule_context` description vs `instructions.md`; `run_cmd` 20k cut; `find_path` skip list and depth limit; `search_content` incomplete line; `edit_file` whitespace tolerance; `move_file`; `kill_port` self-refusal; `chrome_*` claims; `devtools_*` and `aiobox*` 50 s bound (`CALL_BOUND_MS`); `clipboard_*`; `postman_*` (needs Postman); every `docs/arch|feat|ref` doc and `CLAUDE.md` line that names a tool, a limit, a flag or a CLI version.
+
+**P0 closed 2026-10-25 (evidence on this machine, agy 1.4.7, HEAD `99047e1`).** Every F-row above re-confirmed against the live CLI and code; no served-surface drift found (plan's "0 differences" holds). New facts and resolutions:
+
+- **F1/F2 live:** `agy models` returns `id<TAB>label` lines after a `Fetching available models...` line on stderr. The ids today are `gemini-4-argon-{low,medium,high}`, `gemini-3.8-flash-{low,medium,high}`, `claude-opus-5-5-{low,medium,high}`, `claude-sonnet-5-5-{low,medium,high}`, `gpt-oss-120b-medium`. Neither `gemini-3.7-flash-medium` (the code default) nor any id in the `model` describe survives — F1, F2 confirmed Wrong.
+- **F3/F4/F5 live:** `agy --help` says `--effort (low|medium|high|xhigh|max)`, `--mode (accept-edits, auto, plan)`, `--output-format (text, json, stream-json)`, and `--print-timeout` default `0s`. The code's 120 s is the `execFile` `timeout: 120_000`, a separate cap.
+- **F4 cause located:** `setting.json` lives at `~/.aki/mcpsv/setting.json` (not the repo root); `agy.allowedModes` is `["plan","accept-edits"]`, so `readOnlyHint` computes `false` and the tool can write — yet the description string says `mode "plan" (read-only by mechanism)` unconditionally (`agy-mcp.js:44`). The read-only claim is a fixed string, not derived from the modes.
+- **D3 resolver target:** newest `gemini-<n>-flash-medium` in the live list is `gemini-3.8-flash-medium`.
+- **D5 resolved from evidence:** `~/.aki/mcpsv/tool-calls.jsonl` has **0** `agy_run` calls, so there is no evidence any call hit the 120 s cut or that the default model failed. Per D5, `timeoutSec` and `conversation` are **not** added in 3.1.
+- **F6 confirmed:** `fetch-mcp.js:16` `MAX_RESPONSE_BYTES = 512 * 1024`; `fetch-mcp.js:147` description says "500KB cap".
+- **F7 confirmed:** `README.md:3,98` say "38 tools", hand-kept, no guard. `agy_run` registered total = 38, 33 served here (`setting.json` has `providers.kiro.enabled:false`, `providers.postman.enabled:false`).
+- **F8 confirmed:** `~/.gemini/antigravity-cli/mcp/akimcp/` holds 31 `aki__*.json` tool schemas plus `instructions.md`, with **no `aki__agy_run.json`** though the server serves it. Cause remains agy-side, unverified.
+- **"Not yet checked" numeric/limit claims — all verified TRUE, no F-row:** `run_cmd` stop `COMMAND_TIMEOUT_MS=10_000` and "~20k chars" cut `MAX_SHOWN = 14_000 + 6_000 = 20_000` (`output-shape.js`); `find_path` `MAX_DEPTH=12` (description names "the depth limit", not a number — no drift); `devtools_*`/`aiobox*` 50 s bound `CALL_BOUND_MS = 50_000` (`cdp-engine.js:46`); `git-mcp` 15 s, `port-mcp` 10 s. The `akidevrule_context`/`edit_file`/`move_file`/`kill_port`/`search_content`/`chrome_*` descriptions match code (served surface = source, already diffed in the audit method). `postman_*` not re-run (provider off).
+- **New doc finding — `harness-fact.md` carries no A4 stamp.** It is a fact doc by content but its filename is not `fact-*`, so it sits outside A4's literal `ref/fact-*` mandate; D6 keeps the path, and P5 both adds the stamp and replaces the volatile rows with the probe pointer. Recorded here, not a code bug.
+- **C3/C4 confirmed present:** `config-page.js:414` says "after Roll token run the new line again" over a bare `claude mcp add` (`:152`, no `-s user`, no prior `remove`); `:438` says "append it" for the Codex `[mcp_servers.aki-mcp]` block (`:156`); `CLAUDE.md` § Adding a connector 1 says OAuth "survives Roll token" while `:384` shows ClickUp needs one reconnect (C4).
+
+## Decision record (self-run deep-think, 4 rounds on `agy_run`, 2 on the rest)
+
+Decided: **the `agy_run` interface reads the CLI and holds no list; it validates only AkiMCP's own policy; it grows only where evidence exists.** · because the model list is server-side (`agy models` prints "Fetching available models…"), so it changes without an `agy` version bump, and the audit's real cause was a copied list, not a missing release note · rejected: below · reopen if: `agy models` or `agy --help` changes format so both parsers return nothing, or `agy` gains a machine-readable `models --json`.
+
+How the first draft of this plan changed under critique (the changes are in D1–D9, recorded here so they are not re-litigated):
+
+| Round | Attack on the first draft | Change |
+|---|---|---|
+| 1 | Cache keyed by `agy` version is wrong: the list is server-side, a model can appear or vanish with no version change | Cache by time (1 h) and by version; refresh on the first failure that names a model |
+| 2 | Checking `model`/`effort` against the probe before spawning turns a stale cache into a wrong refusal of a valid new model, and costs a network call on every call | No pre-validation. Pass the value to `agy`; on failure, refresh the probe once and return `agy`'s error plus the live list. The only pre-spawn check is AkiMCP's own `allowedModes` policy |
+| 3 | The flag table was "add what might help": `addDirs`, `jsonSchema`, `stream-json` as a distinct feature have no named caller, which is `METHOD-deep-think` B4's red flag "we might need this later"; `addDirs` also implies a scope boundary the description itself says does not exist; `--continue` resumes the most recent conversation, which races with the owner's interactive `agy` sessions | Cut to evidence-backed rows (D5). A tight 3.1 is a smaller surface, not a larger one |
+| 4 | The rename of `harness-fact.md` to `fact-agy-kiro-cli.md` needs a research event per claim (`docs.A6`), which this plan would have to invent to be legal; it is also not a drift fix | No rename in 3.1 (D6) |
+
+## Decisions
+
+**D1 — `agy_run` reads the CLI.** One module, `scripts/agy-capabilities.js`, runs `agy --version`, `agy models` and `agy --help`, parses them and caches the result for 1 h and per version string. It is the only place that knows the output shapes (`models`: `id<TAB>label` lines after a "Fetching…" line; `--help`: the `(a|b|c)` / `(a, b, c)` lists after `--effort`, `--mode`, `--output-format`). The probe runs lazily on the first need (a `list` call, an error that names a model, a default-model resolution), never at boot: AkiMCP registers every provider on every start, and an opt-in provider that is switched off must not spawn a CLI. A probe that fails or parses to nothing leaves that list `null`; the tool then behaves as a pass-through.
+- Rejected: a hand-edited list with a "update me" comment (this is what rotted); parsing the CLI's bundle; a boot-time warm-up (spawns `agy` for owners who never use it; first-call latency is paid once and measured in P1).
+
+**D2 — one tool, a read-only `list` mode; no `agy_models` tool.** `agy_run` takes `list: 'models' | 'capabilities'`; with it `prompt` is not required, no `agy -p` is spawned, and the reply is the probe: models with labels, modes, effort levels, output formats, the resolved default and the allowed modes. `CLAUDE.md` § Native command, guide, tool: a second tool needs a 3+ call cost, and the `tools/list` budget (`docs/arch/provider-toolkit.md`) says one tool is cheaper than two.
+- Rejected: a dynamic `tools/list` description (clients cache it; the list would still age inside a running session).
+
+**D3 — the default model is a tier resolved at call time.** Order: `setting.json → agy.defaultModel` (owner's explicit pick, not pre-validated) → the newest `gemini-<n>-flash-medium` in the probe (versions compared as numbers, so `3.10` > `3.9`; today `gemini-3.8-flash-medium`) → no `--model` flag, so `agy` uses its own default (the description says so in one clause, because that default may be a pricier model). The description names the tier, never an id. This keeps the old comment's intent ("fastest wide-context discovery tier" per `akiflow/harness-facts.md` § Model tiers) without freezing an id.
+- Rejected: always omit `--model` (loses the cheap tier on a machine whose agy default is expensive); pinning an id (F1 again); picking `gemini-4-argon-*` (newest by number but not a Flash tier; the resolver matches `flash-medium` only, so a renamed family degrades to "agy's own default", visible in the description).
+
+**D4 — only the policy is checked before spawn.** `mode` is gated by `agy.allowedModes` (default `["plan"]`; the allowlist is AkiMCP's safety policy and stays in code). `effort`, `outputFormat` and `model` become plain strings passed through; `agy` validates them and a failure returns its own error plus `next: list=capabilities`. This also makes `outputFormat: "stream-json"` work with no code, so F5's value is covered without a new feature. `readOnlyHint` and the description's read-only sentence are generated at registration from the allowed modes: the read-only promise appears only when `plan` is the sole mode, otherwise the description names the modes that can write. `--dangerously-skip-permissions`, `--sandbox`, `-i` and the session flags are never exposed.
+
+**D5 — flag coverage by evidence.**
+
+| agy flag | Decision | Why |
+|---|---|---|
+| `--output-format stream-json` | covered by D4 | pass-through; AkiMCP buffers the whole output, so no streaming feature |
+| `--print-timeout` as `timeoutSec` | add only if P0 finds agy_run timeouts or runs near 120 s in `tool-calls.jsonl`; bound by a code constant (default 120, max 600) | the 120 s cut is real only if a call hit it |
+| `--conversation <id>` as `conversation` | add only if P1's spike shows `--output-format json` returns the conversation id | without an id the caller cannot use it; `--continue` is rejected (races with the owner's own sessions) |
+| `--add-dir`, `--json-schema`, `--agent` | reject | no named caller; `--add-dir` would suggest a scope boundary the description says `cwd` is not; revisit on a named need |
+| `--project`, `--new-project`, `--remote-control`, `--log-file`, `--mic-serve`, `--dangerously-skip-permissions`, `--sandbox`, `-i`, `--continue` | reject | session or UI features, or they widen the boundary |
+
+A core need (the interface was wrong), not an AIObox feature, so `CLAUDE.md` § Stable core is not touched.
+
+**D6 — facts live once; the doc loses its volatile rows, not its name.** `docs/ref/harness-fact.md` keeps its path in 3.1: renaming to `fact-*` needs a research event behind each claim (`docs.A6`), which is a separate piece of work and no drift fix. The rows that were literal lists (models, effort levels, default tier, F3) are replaced by "read from the CLI at call time by `scripts/agy-capabilities.js`", with the probe commands and the 2026-10-25 output as a dated example only; the behavior rows (`-p` last, errors on stdout, empty stdout, `cwd` not a boundary) stay with a fresh check date. `docs/feat/tools.md` and the README name no model id. Recorded as B2 "No action" (`docs.C2`): migration of this file to `fact-agy-kiro-cli.md` with research origins, deferred past 3.1 because it fixes no wrong claim.
+
+**D7 — a mechanical guard.** Two assertions in the existing `tools/list` surface test: (a) no tool description or parameter text matches a model-id shape (`gemini-\d`, `claude-(sonnet|opus|haiku)-\d`, `gpt-oss`); (b) the README tool count equals the number of tools all providers register (the machine-independent total, not what is served). The probe parsers get fixture tests from recorded text (this machine's 2026-10-25 `agy models` and `agy --help`, plus a changed-format sample proving the pass-through fallback), importing `test/setup.js` first. Neither calls `agy`, so there is no skip and no machine dependence (`test.D`).
+- Rejected: a CI job on the real `agy` (CI has none; a skipped test is the vacuous kind `research/test-suite-audit-oct07.md` removed).
+
+**D8 — kiro stays hard-locked.** `kiro-mcp.js` pins `claude-sonnet-4.5` by the owner's "khóa cứng"; D1 does not apply. One change: a failure that names the model returns `next` pointing at `kiro-cli chat --list-models`.
+
+**D9 — the 3.1 release is one gate, run once, after everything above and the v2 ss steps.** "Tight" means: no 3.1.0 artifact (tag, CHANGELOG date, registry) is minted before every phase through P6 is green.
+- **What 3.1.0 holds:** the local `3.1.0` tag (`4991da5`) is replaced by one on the final release commit; `[Unreleased]` folds into the `3.1.0` section and its heading date is rewritten to the day the live check passes (`release.A5` date rule); `package.json` stays `3.1.0`.
+- **Precondition, checked first, because re-tagging is only legal for something never published (`release.A5` recovery, `B1` Drifted):** `3.1.0` is absent from `git ls-remote --tags origin`, from GitHub Releases (`gh release list`) and from the registry (`npm view @akinet/akimcp@3.1.0 version` returns 404). Any one present means 3.1.0 is public: stop, and the work ships as `3.1.1` (patch) instead, never a rewritten public tag (`release.B3`, `agent.B3`).
+- **Recovery path before the tag is moved:** the old tag's commit `4991da5` is written into the release receipt, so `git tag 3.1.0 4991da5` restores it.
+- **Authorization:** the owner accepted the re-tag (Q1). Commit, mint and the local tag follow `/akiship` (`release.B8`); push, GitHub Release and the one `npm publish` (OTP is human-held, `release.B9`) stay the owner's orders. `release_lint.py --latest .` must exit 0.
+- Rejected: ship the fixes as `3.1.1` and leave `3.1.0` as tagged (the owner wants one complete 3.1; legal only while unpublished, so the precondition above decides); push first and fix forward (a published number is burned).
+
+**D10 — one-click Apply for every local HTTP+Bearer client; the snippet stops being the only path (F9, F10).** Owner 2026-10-25, verbatim: "agy có nút apply mà claude/codex lại không có nút apply?? ux hoàn toàn có thể cải thiện thêm nữa về sự tiện lợi one click". `CLAUDE.md § UX is supreme` in aiobox and the owner's UX rule apply: a state the panel holds (the live token) that the user must otherwise copy, and a client config that goes stale on Roll token with no signal, are UX defects, not conveniences.
+- **Claude Code Apply:** the panel runs `claude mcp remove aki-mcp -s user` (an absent entry is not an error) then `claude mcp add --transport http -s user aki-mcp <url> --header …`, so the new token replaces the old and the entry works from every project. The reply names what it replaced and says "restart the session or run `/mcp`". `claude` not on the panel's PATH → the message says so and shows the copyable two-line fallback (`remove`, then `add`), never a bare error. The copyable snippet becomes those same two lines, so a hand paste works after Roll token too (F9).
+- **Codex Apply:** the panel replaces the `[mcp_servers.aki-mcp]` table in `~/.codex/config.toml` in place (parse-free table-boundary replace, other tables untouched, atomic write like `writeJsonAtomic`); an unparsable file stops with the path named, as `agyApply` does. The text no longer says "append".
+- **Cursor Apply:** merge `mcpServers.aki-mcp` into `~/.cursor/mcp.json`, same shape as `agyApply`. The Claude app (stdio, token-free) keeps its hand merge: Roll token cannot break it, so it is the lowest value of the five. Taken last, dropped first if the scope must shrink.
+- **After Roll token:** the panel's roll message lists which Applied clients now hold a stale token and offers **Re-apply** for them. This needs the panel to remember which Apply buttons were used (a small state file under `~/.aki/mcpsv/`, shape checked by the `release.B5` detector since it is a state-file shape); if that tracking is judged too heavy, the roll message names the three tabs instead, and the plan records that choice.
+- **Taken within the order (`T`):** scheduled inside 3.1 (P3), because F9's wrong text must be fixed in 3.1 anyway and the Apply routes share one pattern. Alternative rejected for now: moving the three clients to stdio like AGY, which removes the stale-token class outright but loses the HTTP bridge's `tool-calls.jsonl` logging (§ Verification, 15:47 entry: only the HTTP `/mcp` bridge logs), and AGY users already accept that cost; reopen if the owner prefers no-token over logging. The owner may move the whole decision after 3.1.
+- Checks the build must pass: Apply twice in a row leaves one entry; Apply after a Roll token yields a 200 `initialize` with the new token; a missing `claude`/`codex` binary and an invalid `config.toml` each return a message that names the next step; `npm test` gets route tests with a fake `HOME` and a fake `claude` on `PATH` (no real CLI, no skip, `test.D`).
+
+## Work, in order
+
+One writer at a time: another agy session and the ss v2 council have been committing to this repo today. Before each phase run `git status --short` and `git log --oneline -5`, take only a clean tree, and keep each phase to its own commit (`/akigitcommit`, no push). `docs/feat/tools.md`, `docs/index.md`, `CHANGELOG.md` and `CLAUDE.md` are edited once, in P5, so each stamp is rewritten once (`docs.A4`). Each phase ends with `npm test` green and its residue check (`test.B3`). Checkboxes are cleared when the evidence is quoted in § Verification, not on belief.
+
+### P0 — finish the audit (read-only; results appended to § Audit result)
+- [ ] Check each "not yet checked" item against code or the real tool and mark it *true* or add an F-row with a level.
+- [ ] Read every sentence in `docs/arch`, `docs/feat`, `docs/ref`, `README.md`, `scripts/config-page.js` panel copy and `CLAUDE.md` that names a tool, a number, a flag, a model or a CLI version; each drifted one becomes an F-row. Known starting set: `docs/feat/tools.md` (rows `agy_run`, `kiro`, `postman`, `cdp`; lines 62–68 and 109), `docs/ref/harness-fact.md`, `docs/ref/fact-agy-mcp-config.md` (names `agy` 1.2.13, IDE 2.5.5; installed is 1.4.7, so re-verify its claims and bump its stamp), `docs/index.md` (the `harness-fact.md` line), `docs/arch/provider-toolkit.md`, `README.md` lines 3, 98, 109, `CLAUDE.md` § Adding a connector 1 (C4 below).
+- [ ] Read `~/.aki/mcpsv/tool-calls.jsonl` for `agy_run` calls: durations, errors, timeouts. Evidence for D5's `timeoutSec` row and for how often the default model failed.
+- [ ] Do not touch `docs/plan/done/*`, event bodies in `docs/research/*` or CHANGELOG history. A wrong claim a research Decision still rests on gets an `## Amendments` entry (`docs.B2`).
+
+### P1 — probe module and spike
+- [ ] `scripts/agy-capabilities.js`: `probe()` → `{version, models:[{id,label}], modes, efforts, outputFormats, at}`; 1 h TTL plus version key; `refresh()`; a list that fails to parse is `null`, never an exception; a probe timeout (15 s) leaves everything `null`.
+- [ ] Newest-flash-medium resolver (D3) as a pure function of the models array.
+- [ ] Fixture tests (D7), including the changed-format sample.
+- [ ] Spike, minimal prompt on the cheapest tier, results into § Verification: (a) wall time of `agy models` (it needs the network); (b) whether `--output-format json` returns a conversation id (decides D5 `conversation`); (c) what `agy` does when `--effort` and a `-low|-medium|-high` model suffix disagree (N1). These runs spend a little quota; the order to execute this plan covers them (`agent.B3`).
+
+### P2 — rewrite `scripts/agy-mcp.js`
+- [ ] Remove `DEFAULT_MODEL`, the model list, the three `z.enum`s; add `list` (D2); default per D3; strings per D4; `timeoutSec` / `conversation` only if P0 / P1 evidence says so (D5).
+- [ ] Description built at registration from the allowed modes (D4): no id, no list, names `list=capabilities`, keeps "name exact paths; `cwd` is not a hard scope boundary".
+- [ ] A failing call with a model, effort or output-format complaint refreshes the probe once and returns `agy`'s error plus the valid values and `next`; empty-stdout and stdout-error handling stay.
+- [ ] `-p <prompt>` stays last (`harness-fact.md` row 1).
+- [ ] Panel: the agy wording in `scripts/config-page.js` is checked for the same read-only claim.
+
+### P3 — small fixes
+- [ ] F6: build the `local_fetch` description from `MAX_RESPONSE_BYTES` (written once).
+- [ ] F7: guard per D7(b); the README keeps the number, and the test fails when it drifts.
+- [ ] D8: kiro failure `next`.
+- [ ] F8: restart `agy` after P2 and list `~/.gemini/antigravity-cli/mcp/akimcp/`; if `aki__agy_run.json` is still missing, record it in `docs/ref/fact-agy-mcp-config.md` as an unverified cause and open no code change; if present, close with no action.
+- [ ] **F9 + F10 (D10)**: `config-page.js:152,414,438` text and snippets (`remove` then `add -s user`; Codex no "append"); `POST /api/claude-code-apply`, `POST /api/codex-apply`, `POST /api/cursor-apply` in `panel.js` beside `agy-apply-mcp`, each with a `data-act` in `public/panel-client.js` (`ACTIONS`) and a `msg` span; Roll token message names stale clients (or Re-apply, per D10); route tests. The panel copy about Roll token (`config-page.js:284,414`) is re-read after.
+- [ ] **C3 (web connector list line)** `scripts/config-page.js:278`: same fix as `bb4e598` (groups, not a hand-kept client list, per `CLAUDE.md` § Adding a connector 3); re-read the line first, it may already be done.
+- [ ] **C4** `CLAUDE.md` § Adding a connector 1 says OAuth "survives Roll token", and ClickUp is the observed exception (CHANGELOG `[Unreleased]`, 2026-10-24). A statement the code and the record contradict is corrected in place, minimal, in P5 with the other `CLAUDE.md` pass; the convention itself (OAuth ranks first) is not changed.
+- [ ] **C5 (other repo)**: write the letter into `~/.aki/handoff/` for the aiobox session: `docs/arch/akimcp-boundary.md` there cites `start.js :56`, the line is now `:60`. Not editable from this repo.
+
+### P4 — ss v2: the remaining steps that must ship with 3.1 (`docs/plan/v2-ss-session-file.md`)
+Decided: P2 `14bcb49` and P3 `99047e1` are already in HEAD, so shipping 3.1.0 without their rule text and docs would ship code the instruction text contradicts. Everything in this phase lands before the gate; only P9 (14 days after release) waits.
+- [ ] P4 rule text (`scripts/rule-context-mcp.js` `SS_STEP`, the `SHARED_WORK` handoff line, literals in `test/rule-context.test.js`).
+- [ ] P5 a, b: sync v2 labels into `.akidevsync/notes.json` through the `akidevsync-notes` skill (pinned task `task-1792867992000`).
+- [ ] Run `git log --oneline -5` before starting; a later commit may have closed an item. The council room (`/Users/aki/.aki/agent-council/aki-mcp-sv/2026.10.25-1231-akimcp-review-cont/`) needs no further session: everything it left open is in this plan, and its two writer drafts are copied beside this plan's session file (§ Files).
+
+### P5 — docs sweep, one pass (everything P0 and P4 listed)
+- [ ] `docs/ref/harness-fact.md` per D6 (volatile rows replaced by the probe pointer, F3 corrected, behavior rows re-checked, `kiro` rows re-verified against `kiro-cli` 2.16.2 on this date).
+- [ ] `docs/feat/tools.md`: `agy_run` row and lines 62–68, 109 describe the tool as it now is (tier default, `list`, modes by setting, no "plan only" absolute); also v2's P6 guide line; stamp rewritten once.
+- [ ] `docs/feat/session-file.md` from the council draft (`writer-p1-session-file.md`, § Files), pasted only after P4 behaves as it describes.
+- [ ] `docs/ref/fact-agy-mcp-config.md`: versions and claims re-checked, stamp rewritten.
+- [ ] F9/F10 docs: the README connector sections and `docs/feat/` text for Claude Code, Codex and Cursor name Apply and the `-s user` scope; `docs/ref/` gets the `claude mcp add --scope` and `codex mcp add` facts with the date read; CHANGELOG `### Added` (Apply buttons) and `### Fixed` (F9: re-running the Claude Code line after Roll token now replaces the old token).
+- [ ] `README.md` lines 3, 98, 109; `CLAUDE.md` (C4 wording, and the § Release process drift check the v2 plan names).
+- [ ] `docs/index.md`: this plan's line (not listed yet), the new `feat/session-file.md`, and moves to `plan/done/` at close (`docs.A1`, `docs.B1`).
+- [ ] Code comments that point at a removed constant or a doc heading that moved (`agy-mcp.js`, `kiro-mcp.js`).
+- [ ] `CHANGELOG.md` `[Unreleased]` (merged into 3.1.0 by D9), closed vocabulary and order (`release.C1`): `### Added` (the `agy_run` `list` mode, any D5 row that landed, the v2 ss lines from the council draft `writer-p7-changelog.md`, § Files) and `### Fixed` (F1–F3: default call works again, no list to go stale; F6).
+
+### P6 — the 3.1 gate (D9)
+- [ ] **v2 P8 live check, remaining half (owner's hands):** the shape half is done (§ Verification). What is left needs P4's rule text running: one web chat writes an ss through two acting turns and a handoff; expect `shape ok`, the old file `handed-off`, the new one with `parent`. The gate does not start without it.
+- [ ] Live check of `agy_run` on a real MCP client: `list=models`, a default call, an unknown model, `effort=xhigh`; result lines pasted into § Verification.
+- [ ] D9 precondition (ls-remote, `gh release list`, `npm view`); a hit stops the run and renames the target to 3.1.1.
+- [ ] `/akiship` per `release.B7`/`B8`: steps 0–8 with a receipt line each, the B5 migration detector output (or `empty`; `~/.aki/mcpsv` state-file shapes count), `release_lint.py --latest .` exit 0, hygiene lint on the accumulation, `npm test` mirroring `.github/workflows/*`; the self-interrogation answered in writing.
+- [ ] Re-tag per D9, receipt carries `4991da5`. Then, only on the owner's order: push, GitHub Release (title `v3.1.0: …`), CI watch (`release.B10`), the one `npm publish` with its `npm view @akinet/akimcp@3.1.0 version` check (`release.B9`).
+
+### P7 — close
+- [ ] Re-run the F1–F10 evidence commands; every row reads fixed or has a recorded reason (`docs.C2`).
+- [ ] Move this file to `docs/plan/done/` and fix the index. The v2 plan stays active until its P9 (14 days after release).
+
+## Verification (filled as phases close)
+
+Nothing here is verified yet except the audit evidence above, read on this machine on 2026-10-25 and marked as such, and:
+- **F9 reproduced (2026-10-25, aiobox session):** `/mcp` reported `AUTH_HEADER_REJECTED` (401); `claude mcp get aki-mcp` showed the saved header `Bearer bf0c39…0bfa`; the owner's re-run of the panel's `claude mcp add …` printed `MCP server aki-mcp already exists in local config`; the panel's current token against `POST http://127.0.0.1:9999/mcp` (initialize) returned HTTP 200. Cause: the saved entry kept the old token. Not yet verified: why this token was rolled (the access token lives 365 days, `oauth.js:40`, so a Roll token press is the likely cause, not a server restart; the `[oauth] access token ISSUED via roll` line in the server log would confirm).
+- **v2 P3 shape line and `ssShape` log field, live (2026-10-25 15:47):** a Claude Code session wrote its ss through `aki__write_file` on the server running `99047e1` code. The result line read `ss file written: … · shape ok` and `~/.aki/mcpsv/tool-calls.jsonl` gained `"tool":"aki__write_file","ss":true,"ssAge":0,"ssShape":"ok"` for that client. An earlier agy chat saw zero `ssShape` lines because agy reaches AkiMCP over `scripts/stdio.js`, and only the HTTP `/mcp` bridge logs (`bb4e598`); that is not a bug.
+
+## Files
+
+- Session file of the chat that gathered this plan: `/Users/aki/.aki/mcpsv/ss/aki-mcp-sv/2026.10.25-1547-audit-3-1-gather.md`
+- Council writer drafts, copied from the closed room: `/Users/aki/.aki/mcpsv/ss/aki-mcp-sv/2026.10.25-1547-audit-3-1-gather/writer-p1-session-file.md` (P5 `docs/feat/session-file.md`, P6 guide line) and `/Users/aki/.aki/mcpsv/ss/aki-mcp-sv/2026.10.25-1547-audit-3-1-gather/writer-p7-changelog.md` (P5 CHANGELOG lines; drop any bullet whose step did not land).
+- Design record for the ss steps in P4: `/Volumes/DEV/pj/aki-mcp-sv/docs/plan/v2-ss-session-file.md` (stays active until its P9, 14 days after release).
+
+## Open items
+
+No `Q` is open: every call the plan had left is decided in § Decision record. What remains needs the owner's hands or a later date:
+- **N1 — unknown until P1:** whether `--effort` and a model's `-low|-medium|-high` suffix both set thinking depth, and which wins; `list=capabilities` states the answer once the spike has run.
+- **N2 — owner's hands:** the v2 P8 live check (P6), the push and the `npm publish` OTP. The plan never runs them unasked.
+- **N3 — local tag state unverified:** `refs/tags/3.1.0` is `4991da5` and `refs/remotes/origin/main` reads `6c0b2f8` locally, but a local remote ref can be stale; D9's precondition decides from the network, not from this file.
+- **N4 — deferred, with its reason (`docs.C2`):** C7 (the 2026-09-06 Postman note B5, outside the council's 2-day window) reopens only if the owner names it; the `harness-fact.md` → `fact-*` migration is deferred past 3.1 (D6); `docs/research/standalone-newbie-user-flow-audit-aug16.md` still names `gemini-3.7-flash-high` and stays unedited as an event record.
+- **N5 — the shell sandbox was refusing every `run_cmd` during this plan's last revision** (`readonly ~/.aki/akidevrule/: non-absolute file path`), so `git status`, `git tag -l` and `ls-remote` were not run; the git facts above come from reading `.git/` files. P0 and P6 run them.
