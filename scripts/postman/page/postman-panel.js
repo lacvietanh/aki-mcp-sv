@@ -552,7 +552,7 @@
     // Mount inside the footer's center-content, not the footer itself — appending to the footer pushed the bar past .ai-chat-container's overflow:hidden clip edge, making it invisible.
     if (host.lastElementChild !== bar) host.appendChild(bar);
     const summarizeAt = config.autoSummarize ? config.autoSummarizePct || 90 : null;
-    bar.title = `Chat context — ${chars.toLocaleString()} characters (${kb})\nHow long this conversation has grown. Longer chats can make the assistant's answers drift, so this is your cue to reset.\nGreen: healthy · Amber ≥ ${Math.round(amber / 1000)}K · Red ≥ ${Math.round(red / 1000)}K → start a new chat.${summarizeAt ? `\nAuto-summarize at the tick: ${summarizeAt}% (${Math.round(autoSummarizeMark() / 1000)}K).` : ''}`;
+    bar.title = `Chat context — ${chars.toLocaleString()} characters (${kb})\nHow long this conversation has grown. Longer chats can make the assistant's answers drift, so this is your cue to reset.\nGreen: healthy · Amber ≥ ${Math.round(amber / 1000)}K · Red ≥ ${Math.round(red / 1000)}K → start a new chat.${summarizeAt ? `\nSummarize to a new chat at the tick: ${summarizeAt}% (${Math.round(autoSummarizeMark() / 1000)}K).` : ''}`;
     const tick = summarizeAt ? `<div style="position:absolute;top:0;bottom:0;left:${summarizeAt}%;width:2px;margin-left:-1px;background:var(--content-color-primary,#fff);opacity:.7"></div>` : '';
     bar.innerHTML = `<span style="color:var(--content-color-secondary,#8b8b8b);white-space:nowrap">Context</span><div style="position:relative;flex:1;height:4px;border-radius:2px;background:var(--background-color-tertiary,rgba(128,128,128,.25));overflow:hidden"><div style="width:${pct}%;height:100%;background:${color};transition:width .3s"></div>${tick}</div><span style="color:${color};font-variant-numeric:tabular-nums;white-space:nowrap">${kb}</span>`;
   }
@@ -1318,13 +1318,13 @@
           </div>
           <textarea id="aki-instruction-textarea" class="aki-textarea" readonly title="Read-only: served natively from the app; cannot be edited here.">${escapeHtml(config.instruction)}</textarea>
           <div class="aki-row">
-            <span class="aki-section-label">SUMMARIZE FOR HANDOFF<span class="aki-help" title="Sends a summarize prompt into this chat so the model writes a handoff summary you can paste into a new chat, keeping the context when this one gets long.">?</span></span>
-            <button type="button" id="aki-btn-summarize-chat" class="aki-btn">SUMMARIZE THIS CHAT</button>
+            <span class="aki-section-label">SUMMARIZE FOR HANDOFF<span class="aki-help" title="Waits until the assistant has finished, asks it for a handoff summary, copies it, opens a new chat and pastes it there unsent, keeping the context when this one gets long.">?</span></span>
+            <button type="button" id="aki-btn-summarize-chat" class="aki-btn" title="Waits until the assistant has finished, asks it for a handoff summary, copies the reply, opens a new chat and pastes the summary there unsent, so you read it before you send it.">SUMMARIZE TO A NEW CHAT</button>
           </div>
           <div class="aki-row">
-            <label class="aki-label" title="Presses Summarize this chat for you once, when a chat you are working in fills the Context bar to this percent and the assistant has finished replying. 100% is the bar's red mark. A chat that is already past it when you open it is left alone.">
+            <label class="aki-label" title="Runs Summarize to a new chat for you once, when a chat you are working in fills the Context bar to this percent and the assistant has finished replying. 100% is the bar's red mark. A chat that is already past it when you open it is left alone.">
               <input type="checkbox" id="aki-opt-auto-summarize" ${config.autoSummarize ? 'checked' : ''}>
-              <span>Auto-summarize when the Context bar reaches</span>
+              <span>Auto-summarize to a new chat when the Context bar reaches</span>
             </label>
             <input type="number" id="aki-opt-auto-summarize-pct" class="aki-number" min="50" max="100" step="5" value="${config.autoSummarizePct}" title="Percent of the Context bar, 50 to 100. Default 90."><span>%</span>
           </div>
@@ -1677,7 +1677,7 @@
     sendAiPrompt(config.instruction);
   }
 
-  // Presses Summarize once per chat crossing the mark by less than the amber-to-red span (a bigger jump is a chat switch), only while idle; docs/plan/done/postman-auto-summarize.md decisions 1-2.
+  // Runs Summarize to a new chat once per chat crossing the mark by less than the amber-to-red span (a bigger jump is a chat switch), only while agentIdle(); docs/plan/postman-summarize-handoff.md decision 3.
   let ctxPrev = null;
   let summarizePending = false;
   function autoSummarizeMark() {
