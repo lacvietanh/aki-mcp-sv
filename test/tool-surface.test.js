@@ -34,6 +34,7 @@ const RAISES = [
   { date: '2026-10-03', why: 'aiobox_write op=send (akipanel send v1) and its wait argument', chars: 157 },
   { date: '2026-10-04', why: 'rule receipt gate: every tool that acts takes receipt (docs/plan/done/rule-receipt-gate.md), and akidevrule_context says so', chars: 2285 },
   { date: '2026-10-24', why: 'ss session file: optional ss beside receipt on the 20 acting tools, ss and label on akidevrule_context, SS_STEP replacing the working-file step (docs/plan/ss-session-file.md D5, D7, D10); 35374 before, 36428 after', chars: 1054 },
+  { date: '2026-10-25', why: 'ss v2: SS_STEP points at the docs/feat/session-file.md shape (frontmatter + headings) and the one-writer handoff with parent/successor (docs/plan/v2-ss-session-file.md D3, D9); 36717 before, 37110 after', chars: 393 },
 ];
 const BUDGET_CHARS = Math.round(BASELINE_CHARS * 1.1) + RAISES.reduce((sum, r) => sum + r.chars, 0);
 // Measured 2026-10-24 on the full surface (38 tools): 36428 chars, 977 under the budget.
