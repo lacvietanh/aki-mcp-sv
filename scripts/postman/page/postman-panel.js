@@ -207,10 +207,13 @@
     return !list.textContent || !list.textContent.trim();
   }
 
+  const SEND_BUTTON = '.ai-chat-input-send-button';
+  const CANCEL_BUTTON = '.ai-chat-input-cancel-button';
+
   // The send button is only present/enabled (React onClick attached) while the input has text and nothing is streaming (confirmed live on 12.26.5); returns whether it actually got pressed so the caller can retry a tick-too-early miss.
   function submitChatInput(inputEl) {
     const chat = inputEl.closest('[data-testid="ai-chat-container"]');
-    const sendBtn = chat && chat.querySelector('.ai-chat-input-send-button');
+    const sendBtn = chat && chat.querySelector(SEND_BUTTON);
     if (!sendBtn || sendBtn.disabled || sendBtn.getAttribute('aria-disabled') === 'true') return false;
     press(sendBtn);
     return true;
@@ -1524,7 +1527,7 @@
   };
 
   // Lexical editor (contenteditable): a synthetic 'beforeinput' event is ignored (no getTargetRanges()), so this drives it via the native execCommand pipeline instead, then double-rAF-waits for Lexical's DOM reconciliation (not synchronous with this tick) before the button reads the typed state.
-  async function typeAndSubmitChat(input, text) {
+  async function typeChatText(input, text) {
     if (input && input.__lexicalEditor) {
       const ed = input.__lexicalEditor;
       input.focus();
@@ -1545,36 +1548,120 @@
       document.execCommand('insertText', false, text);
     }
     await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-    // The send button attaches its handler a render after the text lands, so retry across a few rAF frames instead of depending on one fixed delay being long enough.
-    for (let attempt = 0; attempt < 5; attempt++) {
-      if (submitChatInput(input)) return;
-      await new Promise((r) => requestAnimationFrame(r));
+  }
+
+  const HANDOFF_POLL_MS = 250;
+  const HANDOFF_TIMEOUT_MS = 5 * 60 * 1000;
+  const NEW_CHAT_BUTTON = '[data-testid="ai-chat-new-conversation-button"]';
+  const AGENT_REPLY = '.ai-chat-message-group--last .ai-chat-agent-message';
+  const AGENT_REPLY_NOISE = '[class*="thinking"], .ai-chat-agent-debug-message';
+
+  // Stop showing or an approval card up means the agent is known busy and restarts the bound, so it runs out only on a step that stays unfinished while the agent is not busy, a sign the selectors no longer match Postman.
+  function agentWorking() {
+    return !!document.querySelector(CANCEL_BUTTON) || !!document.querySelector(PERMISSION_CARD_ROOT);
+  }
+
+  async function waitUntil(step, ready) {
+    let deadline = Date.now() + HANDOFF_TIMEOUT_MS;
+    while (!ready()) {
+      if (agentWorking()) deadline = Date.now() + HANDOFF_TIMEOUT_MS;
+      else if (Date.now() > deadline) throw new Error(`timed out waiting for ${step}`);
+      await new Promise((r) => setTimeout(r, HANDOFF_POLL_MS));
     }
   }
 
-  async function sendChatPrompt(text, btnId) {
-    if (window.__pmSendInFlight || !text || !text.trim()) return false;
+  // Send and Stop are one switch in Postman, but Send also shows while the agent waits on a tool approval, where a submit would answer the card instead of sending.
+  function agentIdle() {
+    return !!document.querySelector(SEND_BUTTON) && !document.querySelector(PERMISSION_CARD_ROOT);
+  }
+
+  async function typeAndSubmitChat(input, text) {
+    await typeChatText(input, text);
+    await waitUntil('the agent to be idle and Send ready', () => agentIdle() && submitChatInput(input));
+  }
+
+  async function awaitReply() {
+    await waitUntil('the agent to start replying', () => !agentIdle());
+    await waitUntil('the agent to finish replying', agentIdle);
+  }
+
+  function lastAgentReplyText() {
+    const replies = document.querySelectorAll(AGENT_REPLY);
+    const reply = replies[replies.length - 1];
+    if (!reply) return '';
+    let text = reply.innerText || '';
+    for (const noise of reply.querySelectorAll(AGENT_REPLY_NOISE)) text = text.replace(noise.innerText || '', '');
+    return text.trim();
+  }
+
+  async function copyToClipboard(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch (e) {
+      console.log('[⚡ AutoRun] Summarize handoff: clipboard copy failed: ' + e.message);
+    }
+  }
+
+  // Owns the composer from the summarize prompt to the unsent paste; the caller holds __pmSendInFlight, so every loop step and button stands down until PASTE.
+  async function summarizeHandoff(input, prompt, setLabel) {
+    setLabel('WAITING FOR AGENT…');
+    await typeAndSubmitChat(input, prompt);
+    setLabel('SUMMARIZING…');
+    await awaitReply();
+    const summary = lastAgentReplyText();
+    if (!summary) throw new Error('the summary reply was empty');
+    await copyToClipboard(summary);
+    setLabel('NEW CHAT…');
+    const newChatBtn = document.querySelector(NEW_CHAT_BUTTON);
+    if (!newChatBtn) throw new Error('the new-chat button is missing');
+    press(newChatBtn);
+    await waitUntil('the new chat', () => {
+      const chat = document.querySelector(CHAT_ROOT);
+      return !!chat && isChatEmpty(chat) && !!findChatInput();
+    });
+    if (config.autoInjectInstruction) {
+      armedForNewChat = false;
+      setLabel('SENDING INSTRUCTION…');
+      await typeAndSubmitChat(findChatInput(), instructionPrefix() + '\n\n' + config.instruction);
+      await awaitReply();
+    }
+    await typeChatText(findChatInput(), summary);
+  }
+
+  async function withChatLock(btnId, task) {
+    if (window.__pmSendInFlight) return false;
     const input = findChatInput();
     if (!input) return false;
     window.__pmSendInFlight = true;
-    const btn = btnId && document.getElementById(btnId);
+    const btn = document.getElementById(btnId);
     const oldLabel = btn ? btn.textContent : null;
-    if (btn) { btn.disabled = true; btn.textContent = 'SENDING…'; }
+    const setLabel = (label) => { if (btn) btn.textContent = label; };
+    if (btn) btn.disabled = true;
+    setLabel('SENDING…');
     try {
-      await typeAndSubmitChat(input, text);
+      await task(input, setLabel);
       return true;
+    } catch (e) {
+      console.log('[⚡ AutoRun] Chat send stopped: ' + e.message);
+      return false;
     } finally {
       window.__pmSendInFlight = false;
       if (btn) { btn.disabled = false; btn.textContent = oldLabel; }
     }
   }
 
+  async function sendChatPrompt(text, btnId) {
+    if (!text || !text.trim()) return false;
+    return withChatLock(btnId, (input) => typeAndSubmitChat(input, text));
+  }
+
   function sendAiPrompt(text) {
     return sendChatPrompt(instructionPrefix() + '\n\n' + text, 'aki-btn-send-instruction');
   }
 
-  function sendSummarizePrompt(text) {
-    return sendChatPrompt(text, 'aki-btn-summarize-chat');
+  async function sendSummarizePrompt(text) {
+    if (!text || !text.trim()) return false;
+    return withChatLock('aki-btn-summarize-chat', (input, setLabel) => summarizeHandoff(input, text, setLabel));
   }
 
   window.__pmDeliverSummarizePrompt = function (text) { sendSummarizePrompt(text); };
@@ -1591,9 +1678,7 @@
   }
 
   // Presses Summarize once per chat crossing the mark by less than the amber-to-red span (a bigger jump is a chat switch), only while idle; docs/plan/done/postman-auto-summarize.md decisions 1-2.
-  const IDLE_MS = 5000;
   let ctxPrev = null;
-  let ctxChangedAt = 0;
   let summarizePending = false;
   function autoSummarizeMark() {
     return Math.round((config.ctxCharRed || 150000) * (config.autoSummarizePct || 90) / 100);
@@ -1602,12 +1687,11 @@
     const chars = readConversationChars();
     const prev = ctxPrev;
     ctxPrev = chars;
-    if (chars !== prev) ctxChangedAt = Date.now();
     const mark = autoSummarizeMark();
     if (!config.autoSummarize || chars < mark) { summarizePending = false; return; }
     const span = (config.ctxCharRed || 150000) - (config.ctxCharAmber || 80000);
     if (prev !== null && prev < mark && chars - prev < span) summarizePending = true;
-    if (!summarizePending || window.__pmSendInFlight || Date.now() - ctxChangedAt < IDLE_MS) return;
+    if (!summarizePending || window.__pmSendInFlight || !agentIdle()) return;
     const input = findChatInput();
     if (!input || (input.textContent || '').trim()) return;
     summarizePending = false;
