@@ -47,7 +47,7 @@ const PASSPHRASE_DISPLAY_PATH = PASSPHRASE_FILE.replace(os.homedir(), '~');
 const authCodes = new Map();
 const accessTokens = new Map();
 const refreshTokens = new Map();
-// sha256 of access tokens this server issued and then rolled or let expire, oldest first (docs/feat/security.md § Connection limits). Its own file: tokens.json's shape is pinned by the AIObox contract.
+// Its own file, not tokens.json: that shape is pinned by the AIObox contract (docs/feat/security.md § Connection limits).
 const RETIRED_TOKEN_LIMIT = 16;
 const tokenHash = (token) => createHash('sha256').update(token).digest('hex');
 const retiredTokens = loadRetiredTokens();

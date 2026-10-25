@@ -19,16 +19,11 @@ function refuse(res, retryAfterSeconds) {
   res.end('too many failed attempts, try again later');
 }
 
-// origin: the public https origin (Tailscale MagicDNS / Cloudflare) or null. Local-First: the /mcp engine binds
-// 127.0.0.1 and serves local clients with or without a public ingress; OAuth discovery metadata only exists once
-// an ingress is attached. onFatal: called if the listen socket errors, so the orchestrator tears the whole stack
-// down instead of leaking an orphaned hub.
+// origin: the public https origin, or null on loopback only. onFatal: a listen-socket error tears the whole stack down, so no orphaned hub is left.
 export function startGatekeeper(origin = null, onFatal) {
   const port = Number(process.env.GATEKEEPER_PORT || 9999);
   loadOrCreatePassphrase();
-  // Public OAuth discovery metadata only exists when an ingress is attached; on pure loopback it stays null and the
-  // .well-known / authorize / register / token routes answer 503. A runtime attach-after-boot path (updating this)
-  // is intentionally not built yet — ingress is resolved at boot in start.js, so a newly-saved ingress applies on restart.
+  // No ingress, no OAuth metadata: the OAuth routes answer 503, and a newly saved ingress applies on restart (resolved at boot in start.js, by decision).
   const meta = origin ? metadataHandlers(origin) : null;
   const recordFailure = (key) => {
     if (failures.record(key)) logSecurity(`caller ${key} blocked after repeated failed attempts`);
