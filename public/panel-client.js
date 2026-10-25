@@ -294,7 +294,12 @@ async function loadPostmanDaemon() {
   say('msgPmDaemon', postmanStatusMessage(s), s.attached);
 }
 
-// Snippets and the token field are server-rendered, so a reload is what refreshes them all at once.
+// Snippets and the token field are server-rendered, so a reload is what refreshes them all at once; the open tab and the roll reply cross it in a one-shot key that only a roll writes.
+const RESTORE_KEY = 'akiRestore';
+function reloadKeepingTab(message) {
+  sessionStorage.setItem(RESTORE_KEY, JSON.stringify({ tab: document.querySelector('#s1 .tab.active').dataset.tab, message }));
+  setTimeout(() => location.reload(), 800);
+}
 function rollToken(btn, hard) {
   const warning = hard
     ? 'Roll the access token AND sign out every connected AI? Each must reconnect with the passphrase.'
@@ -302,7 +307,7 @@ function rollToken(btn, hard) {
   if (!confirm(warning)) return;
   return act(btn, 'msgRoll', async () => {
     const { message } = await api('POST', '/api/roll-token', { hard });
-    setTimeout(() => location.reload(), 800);
+    reloadKeepingTab(message);
     return message + ' — reloading';
   });
 }
@@ -548,7 +553,7 @@ const ACTIONS = {
     if (!confirm('Roll the passphrase? The old one stops working for new connections; connected AIs are not signed out.')) return;
     return act(btn, 'msgRoll', async () => {
       const { message } = await api('POST', '/api/roll-passphrase');
-      setTimeout(() => location.reload(), 800);
+      reloadKeepingTab(message);
       return message + ' — reloading';
     });
   },
@@ -594,14 +599,42 @@ const ACTIONS = {
 
 document.querySelectorAll('[data-act]').forEach((btn) => (btn.onclick = () => ACTIONS[btn.dataset.act](btn)));
 
-// Scoped per section: 2 independent .tabs groups now share the page, so a global toggle would deactivate one group whenever the other's tab was clicked.
+// Scoped per section: independent tab groups share the page, so a global toggle would deactivate one group whenever the other's tab was clicked; lastTab makes Local -> Web -> Local land where the user left.
 document.querySelectorAll('.tabs').forEach((nav) => {
   const scope = nav.closest('section');
   nav.querySelectorAll('.tab').forEach((tab) => (tab.onclick = () => {
-    scope.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t === tab));
+    nav.dataset.lastTab = tab.dataset.tab;
+    scope.querySelectorAll('.tab').forEach((t) => {
+      t.classList.toggle('active', t === tab);
+      t.ariaCurrent = t === tab ? 'true' : null;
+    });
     scope.querySelectorAll('.tabpane').forEach((p) => p.classList.toggle('active', p.id === 'tab-' + tab.dataset.tab));
   }));
 });
+document.querySelectorAll('.tab.active').forEach((tab) => (tab.ariaCurrent = 'true'));
+
+// One bar shows at a time, so the active tab always sits on the bar that touches its pane.
+document.querySelectorAll('.tier-switch').forEach((bar) => {
+  const scope = bar.closest('section');
+  bar.querySelectorAll('.tier-btn').forEach((btn) => (btn.onclick = () => {
+    bar.querySelectorAll('.tier-btn').forEach((b) => {
+      b.classList.toggle('active', b === btn);
+      b.setAttribute('aria-pressed', String(b === btn));
+    });
+    const target = scope.querySelector('.tabs[data-tier-tabs="' + btn.dataset.tier + '"]');
+    scope.querySelectorAll('.tabs[data-tier-tabs]').forEach((n) => n.classList.toggle('active', n === target));
+    (target.querySelector('.tab[data-tab="' + target.dataset.lastTab + '"]') || target.querySelector('.tab')).click();
+  }));
+});
+
+const restore = JSON.parse(sessionStorage.getItem(RESTORE_KEY) || 'null');
+sessionStorage.removeItem(RESTORE_KEY);
+if (restore) {
+  const bar = document.querySelector('#s1 .tab[data-tab="' + restore.tab + '"]').closest('.tabs');
+  bar.dataset.lastTab = restore.tab;
+  document.querySelector('.tier-btn[data-tier="' + bar.dataset.tierTabs + '"]').click();
+  say('msgRoll', restore.message, true);
+}
 
 function updateDomainPrice() {
   const opt = document.getElementById('tldSelect').selectedOptions[0];

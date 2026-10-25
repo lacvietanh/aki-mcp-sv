@@ -70,9 +70,16 @@ textarea { min-height: 90px; resize: vertical; line-height: 1.5; }
 .tab.active { color: var(--accent); border-color: var(--accent); background: var(--card); font-weight: 600; margin-bottom: -1px; padding-bottom: 8px; }
 .tabpane { display: none; padding-top: 14px; }
 .tabpane.active { display: block; }
-.tab-group-label { flex-basis: 100%; margin: 8px 0 -1px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
-.tab-group-label:first-child { margin-top: 0; }
-.tab-group-sep { flex-basis: 100%; }
+.tier-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 18px 0 0; padding: 4px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; }
+.tier-btn { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px 12px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--muted); text-align: left; cursor: pointer; }
+.tier-btn:hover { color: var(--fg); border-color: var(--line); }
+.tier-btn.active { background: var(--card); color: var(--fg); border-color: var(--accent); }
+.tier-title { font-size: 12.5px; font-weight: 700; }
+.tier-btn.active .tier-title { color: var(--accent); }
+.tier-sub { font-size: 11px; font-weight: 400; color: var(--muted); }
+.tabs[data-tier-tabs] { display: none; margin-top: 10px; }
+.tabs[data-tier-tabs].active { display: flex; }
+@media (max-width: 560px) { .tier-switch { grid-template-columns: 1fr; } }
 .stepper h2 { margin-bottom: 10px; }
 .steps-nav { list-style: none; display: flex; flex-wrap: nowrap; gap: 6px; margin: 0; padding: 0; }
 .steps-nav li { flex: 1 1 0; min-width: 0; }

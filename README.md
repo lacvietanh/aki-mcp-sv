@@ -19,7 +19,7 @@ The Claude Desktop app already does local file access, but ties usage to a devic
 **aki-mcp-sv** routes around both problems: run an MCP server on your machine, expose it over HTTPS through Tailscale Funnel, and connect it to claude.ai as a custom connector.
 
 **The payoff:**
-- **Local-first by default:** local tools on the same computer need no tunnel and work fully offline: each one connects straight to `127.0.0.1:9999` or starts the tools itself over stdio (`scripts/stdio.js`), and its setup below says which. A public ingress is only needed for remote/web AI.
+- **Local-first by default:** local tools on the same computer need no tunnel: each one connects straight to `127.0.0.1:9999` or starts the tools itself over stdio (`scripts/stdio.js`), and its setup below says which. A public ingress is only needed for remote/web AI.
 - **Use your web quota** for local file and shell access, straight from the browser.
 - **True multi-account flexibility:** switch browser profiles to instantly pick up a different account, all pointed at the same machine.
 - **Safe by default:** a strict command whitelist, not a leaky blocklist — see [Security](#security).
@@ -166,7 +166,7 @@ After **Roll token**, paste the new header value into Buda again.
 
 Postman's AI Agent (Flows / Connected Accounts) has no OAuth redirect for third-party MCP servers and no persistent system-prompt field.
 
-1. In the panel's Postman tab, click the filled JSON to copy. It targets the local loopback endpoint (`http://127.0.0.1:9999/mcp`) and carries a real minted access token — not the passphrase. Postman runs on this machine, so it connects with zero latency and needs no tunnel.
+1. In the panel's Postman tab, click the filled JSON to copy. It targets the local loopback endpoint (`http://127.0.0.1:9999/mcp`) and carries a real minted access token — not the passphrase. Postman runs on this machine, so it connects over loopback and needs no tunnel.
 2. In Postman, add a new MCP server (Settings → Connected Accounts) and paste the JSON.
 3. Send the instruction into each new chat, since Postman doesn't persist one across sessions: after **Launch**, the **Aki MCP for Postman** overlay's *Prompt instruction* box has **Send now**, or tick *Auto-inject into each new chat* (off by default). It is a separate, Postman-specific text (`scripts/postman/prompts/postman.md`), worded as a polite request because Postman's safety check flags directive-style instructions. When a chat grows long, *Summarize this chat* asks the model for a handoff summary to paste into a new chat; tick *Auto-summarize when the Context bar reaches [90] %* (off by default; the percent is set beside it, 100% being the red mark) to have it pressed once for you when the chat you are working in crosses that mark and the reply has finished.
 
@@ -174,7 +174,7 @@ The Postman tab also has a **Launch** button that attaches control to the Postma
 
 ## Connecting local IDEs (Cursor, Claude Code, Claude app, AGY, Codex)
 
-Local tools run on the same machine as AKIMCP, so they connect **straight to the loopback engine** at `http://127.0.0.1:9999/mcp` — no tunnel, no internet, zero WAN round-trip, and they keep working fully offline. The Gatekeeper binds `127.0.0.1:9999` from the moment you run `akimcp`, whether or not a public ingress is configured. Bearer-token auth is still enforced (see [Security](#security)); grab the token from the panel at `http://127.0.0.1:9998` (the Postman tab shows the filled JSON; one access token serves every client, and panel section 1 can roll it if it leaks), or copy a config below and replace `YOUR_LOCAL_ACCESS_TOKEN`. (Ports are defaults; `--dev` mode uses `9997`/`9996` — the panel always shows the live values.)
+Local tools run on the same machine as AKIMCP, so they need no tunnel and no WAN round-trip: Cursor, Claude Code and Codex connect **straight to the loopback engine** at `http://127.0.0.1:9999/mcp`, and the Claude app and AGY start the tools themselves over stdio (`scripts/stdio.js`), with no token. The Gatekeeper binds `127.0.0.1:9999` from the moment you run `akimcp`, whether or not a public ingress is configured. Bearer-token auth is still enforced on loopback (see [Security](#security)); grab the token from the panel at `http://127.0.0.1:9998` (the Postman tab shows the filled JSON; one access token serves every client, and panel section 1 can roll it if it leaks), or copy a config below and replace `YOUR_LOCAL_ACCESS_TOKEN`. (Ports are defaults; `--dev` mode uses `9997`/`9996` — the panel always shows the live values.)
 
 **Cursor** — click **Apply to Cursor** in the panel's Cursor tab to write `~/.cursor/mcp.json` with the current token (other servers untouched), or paste this by hand (Settings → MCP Servers). After Roll token, click Apply again:
 

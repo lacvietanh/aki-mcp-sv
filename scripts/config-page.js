@@ -276,7 +276,7 @@ ${field('Re-sync command', 'tailscale funnel --https=443 off && tailscale serve 
 </section>
 
 <section id="s1"><h2>1 · Connectors: local IDEs + web AIs</h2>
-<p class="helptext">One AKIMCP endpoint, two paths. <strong>Local tools</strong> run on this computer with no tunnel and work offline: each connects over <span class="mono">127.0.0.1</span> or starts the tools itself over <span class="mono">stdio</span>, and its tab below says which and carries a ready-to-paste local config. <strong>Web AIs</strong> use the MCP URL below (each has its own tab) and ${origin ? 'are reachable now.' : 'need a public ingress — set it up in <a href="#s0">Section 0</a> first (the MCP URL fills in once ingress is active).'}</p>
+<p class="helptext">One AKIMCP endpoint, two paths: pick one with the switch below. Each <strong>Local</strong> tab says how that tool connects and carries a ready-to-paste config. <strong>Web AIs</strong> use the MCP URL below and ${origin ? 'are reachable now.' : 'need a public ingress — set it up in <a href="#s0">Section 0</a> first (the MCP URL fills in once ingress is active).'}</p>
 ${field('MCP Name', MCP_NAME)}
 ${field('MCP URL', url, true)}
 ${secretField('Passphrase', passphrase)}
@@ -284,15 +284,20 @@ ${secretField('Access token', accessToken)}
 <div class="acts"><button data-act="rollToken">Roll token</button><button data-act="rollTokenHard">Roll &amp; sign out all clients</button><button data-act="rollPassphrase">Roll passphrase</button><span class="msg" id="msgRoll"></span></div>
 <p class="helptext">One access token serves every client. <strong>Roll token</strong> replaces it: AIs connected with the passphrase refresh on their own (ClickUp may need one reconnect), but a token pasted as a fixed bearer (a local snippet below) stops working until it is pasted again. Connect Notion with the passphrase like the other web AIs, never with a pasted token. <strong>Roll &amp; sign out all clients</strong> also revokes refresh, so every AI must reconnect with the passphrase; use it if the token may have leaked. <strong>Roll passphrase</strong> issues a new one: the old passphrase stops authorizing new connections, while already-connected AIs keep working; use it if the passphrase may have leaked.</p>
 
-<nav class="tabs" role="tablist">
-  <span class="tab-group-label">Local · direct 0ms</span>
+<div class="tier-switch" role="group" aria-label="Connector tier">
+  <button type="button" class="tier-btn active" data-tier="local" aria-pressed="true" aria-controls="tabs-local"><span class="tier-title">Local · direct</span><span class="tier-sub">On this computer · 127.0.0.1 or stdio · no tunnel</span></button>
+  <button type="button" class="tier-btn" data-tier="web" aria-pressed="false" aria-controls="tabs-web"><span class="tier-title">Web · needs ingress</span><span class="tier-sub">Cloud &amp; browser AIs · reaches the MCP URL via Section 0</span></button>
+</div>
+
+<nav class="tabs active" id="tabs-local" data-tier-tabs="local" aria-label="Local connectors">
   <button class="tab active" data-tab="postman"><img src="/img/providers/postman.png" class="provider-icon" alt="">Postman</button>
   <button class="tab" data-tab="cursor">Cursor</button>
   <button class="tab" data-tab="claudelocal"><img src="/img/providers/claude.png" class="provider-icon" alt="">Claude Code &amp; app</button>
   <button class="tab" data-tab="agy">AGY</button>
   <button class="tab" data-tab="codex">Codex</button>
-  <span class="tab-group-sep" aria-hidden="true"></span>
-  <span class="tab-group-label">Web · needs ingress</span>
+</nav>
+
+<nav class="tabs" id="tabs-web" data-tier-tabs="web" aria-label="Web connectors">
   <button class="tab" data-tab="claude"><img src="/img/providers/claude.png" class="provider-icon" alt="">Claude</button>
   <button class="tab" data-tab="grok"><img src="/img/providers/grok.png" class="provider-icon" alt="">Grok</button>
   <button class="tab" data-tab="chatgpt"><img src="/img/providers/gpt.png" class="provider-icon" alt="">ChatGPT</button>
@@ -310,7 +315,7 @@ ${secretField('Access token', accessToken)}
     <li>Enter the <strong>Passphrase</strong> when AKIMCP opens the confirmation page.</li>
   </ol>
   <p class="helptext">Claude now discovers OAuth automatically. No Client ID or Client Secret is needed.</p>
-  <p class="helptext">A connector added here belongs to your Claude account: claude.ai, the Claude app and the mobile app all reach it from Anthropic's cloud, so it needs the ingress even on this computer. On the computer running AKIMCP, the <strong>Claude Code &amp; app</strong> tab in the Local group connects without one.</p>
+  <p class="helptext">A connector added here belongs to your Claude account: claude.ai, the Claude app and the mobile app all reach it from Anthropic's cloud, so it needs the ingress even on this computer. On the computer running AKIMCP, the <strong>Claude Code &amp; app</strong> tab under <strong>Local</strong> connects without one.</p>
 </div>
 
 <div class="tabpane" id="tab-grok">
@@ -396,7 +401,7 @@ ${secretField('Access token', accessToken)}
   </div>
 
   <h3 class="subh" style="margin-top:16px">Connect Postman to this MCP</h3>
-  <p class="helptext">Postman runs on this machine, so it connects straight to the local engine on <span class="mono">127.0.0.1</span> — zero latency, and it keeps working with no internet and no tunnel. Click the JSON to copy, then paste it in Postman Connected Accounts.</p>
+  <p class="helptext">Postman runs on this machine, so it connects straight to the local engine on <span class="mono">127.0.0.1</span>, with no tunnel. Click the JSON to copy, then paste it in Postman Connected Accounts.</p>
   <p class="lnk"><a href="${esc(POSTMAN_SETTINGS_URL)}" target="_blank" rel="noopener">↗ Open Connected Accounts</a></p>
   ${secretSnippet('Postman JSON', postmanJson, [accessToken], 'postmanJson')}
   <p class="helptext" style="margin-top:12px">Setup screenshot:</p>
@@ -404,19 +409,19 @@ ${secretField('Access token', accessToken)}
 </div>
 
 <div class="tabpane" id="tab-cursor">
-  <h3 class="subh">Connect Cursor — local, 0ms</h3>
-  <p class="helptext"><strong>Apply</strong> merges aki-mcp into <span class="mono">~/.cursor/mcp.json</span> with the current token (other servers untouched), then reload Cursor. After <strong>Roll token</strong>, click Apply again. Or paste the JSON by hand (Cursor → Settings → MCP Servers). Connects over <span class="mono">127.0.0.1</span> — no tunnel, works offline.</p>
+  <h3 class="subh">Connect Cursor — local</h3>
+  <p class="helptext"><strong>Apply</strong> merges aki-mcp into <span class="mono">~/.cursor/mcp.json</span> with the current token (other servers untouched), then reload Cursor. After <strong>Roll token</strong>, click Apply again. Or paste the JSON by hand (Cursor → Settings → MCP Servers). Connects over <span class="mono">127.0.0.1</span>, with no tunnel.</p>
   <div class="acts"><button class="primary" data-act="cursorApply">Apply to Cursor (mcp.json)</button><span class="msg" id="msgCursor"></span></div>
   ${secretSnippet('Cursor JSON', cursorJson, [accessToken], 'cursorJson')}
 </div>
 
 <div class="tabpane" id="tab-claudelocal">
-  <p class="helptext">Claude Code and the Claude app are set up separately: connecting one does not connect the other. Both run on the computer running AKIMCP, with no ingress: Claude Code connects over <span class="mono">127.0.0.1</span>, and the Claude app starts the tools itself over <span class="mono">stdio</span>. For claude.ai, the mobile app or the Claude app on another computer, use the <strong>Claude</strong> tab in the Web group.</p>
-  <h3 class="subh">Claude Code (terminal) — local, 0ms</h3>
+  <p class="helptext">Claude Code and the Claude app are set up separately: connecting one does not connect the other. Both run on the computer running AKIMCP, with no ingress: Claude Code connects over <span class="mono">127.0.0.1</span>, and the Claude app starts the tools itself over <span class="mono">stdio</span>. For claude.ai, the mobile app or the Claude app on another computer, use the <strong>Claude</strong> tab under <strong>Web</strong>.</p>
+  <h3 class="subh">Claude Code (terminal) — local</h3>
   <p class="helptext"><strong>Apply</strong> registers aki-mcp in <span class="mono">user</span> scope with the current token, replacing any old entry so it works from every project. After <strong>Roll token</strong>, click Apply again. Or run the two lines below by hand (the <span class="mono">remove</span> first lets a re-paste replace the old token — a bare <span class="mono">add</span> refuses when the entry already exists).</p>
   <div class="acts"><button class="primary" data-act="claudeCodeApply">Apply to Claude Code (user scope)</button><span class="msg" id="msgClaudeCode"></span></div>
   ${secretSnippet('Claude Code commands', claudeCodeCmd, [accessToken], 'claudeCodeCmd')}
-  <h3 class="subh">Claude app (desktop) — local, 0ms</h3>
+  <h3 class="subh">Claude app (desktop) — local</h3>
   <ol class="steps">
     <li>In the Claude app, open <strong>Settings</strong> → <strong>Developer</strong> → <strong>Edit Config</strong>. It opens <span class="mono">claude_desktop_config.json</span>.</li>
     <li>Merge the entry below under <span class="mono">mcpServers</span>, keeping any entries already there, and save.</li>
@@ -427,7 +432,7 @@ ${secretField('Access token', accessToken)}
 </div>
 
 <div class="tabpane" id="tab-agy">
-  <h3 class="subh">Connect Antigravity (AGY) — local, 0ms</h3>
+  <h3 class="subh">Connect Antigravity (AGY) — local</h3>
   <p class="helptext"><strong>CLI (<span class="mono">agy</span>) and IDE:</strong> both read this file: merge the entry below under the existing <span class="mono">mcpServers</span> key in <span class="mono">~/.gemini/config/mcp_config.json</span>, but don't overwrite the file. It registers a <span class="mono">stdio</span> command that spawns <span class="mono">scripts/stdio.js</span> (the local <span class="mono">/mcp</span> is Bearer-gated, so stdio is the transport that works without a token). The pre-allow below writes <span class="mono">antigravity-cli/settings.json</span> and covers the CLI only; the IDE asks for its own approval on the first tool call.</p>
   ${copyEl(agyJson, true, 'agyJson')}
   <div class="acts">
@@ -437,8 +442,8 @@ ${secretField('Access token', accessToken)}
 </div>
 
 <div class="tabpane" id="tab-codex">
-  <h3 class="subh">Connect Codex CLI — local, 0ms</h3>
-  <p class="helptext"><strong>Apply</strong> writes the <span class="mono">[mcp_servers.aki-mcp]</span> table into <span class="mono">~/.codex/config.toml</span> with the current token, replacing it in place (other tables untouched), then restart Codex. After <strong>Roll token</strong>, click Apply again. Codex reaches the local engine over <span class="mono">127.0.0.1</span> via streamable HTTP; the bearer token is inlined, no env var to export. Works offline, no tunnel. To paste by hand, replace any existing <span class="mono">[mcp_servers.aki-mcp]</span> table — do not add a second one.</p>
+  <h3 class="subh">Connect Codex CLI — local</h3>
+  <p class="helptext"><strong>Apply</strong> writes the <span class="mono">[mcp_servers.aki-mcp]</span> table into <span class="mono">~/.codex/config.toml</span> with the current token, replacing it in place (other tables untouched), then restart Codex. After <strong>Roll token</strong>, click Apply again. Codex reaches the local engine over <span class="mono">127.0.0.1</span> via streamable HTTP; the bearer token is inlined, no env var to export. No tunnel needed. To paste by hand, replace any existing <span class="mono">[mcp_servers.aki-mcp]</span> table — do not add a second one.</p>
   <div class="acts"><button class="primary" data-act="codexApply">Apply to Codex (config.toml)</button><span class="msg" id="msgCodex"></span></div>
   ${secretSnippet('Codex config', codexToml, [accessToken], 'codexToml')}
 </div>
