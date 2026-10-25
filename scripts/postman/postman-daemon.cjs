@@ -466,18 +466,34 @@ function writeOwnershipStatus() {
   } catch {}
 }
 
+// Drops every attachment so the status file stops reporting a Postman that is gone. No await in here:
+// close() never rejects and a sync throw is caught per client, so the status write after it always runs.
+function detachAll() {
+  for (const client of clients.values()) try { client.close(); } catch {}
+  clients.clear();
+  attachedTargetIds.clear();
+  ownerTargetId = null;
+}
+
 async function discover() {
   await consumePendingNewWindow();
   if (!controlSession) return;
+  let targets;
   try {
-    let targets;
+    targets = await CDP.List({ port: controlSession.port });
+  } catch {
+    // Postman may have quit and reopened on a new DevTools port; re-resolve the port and retry once.
+    controlSession.port = PostmanSession.getDevToolsPort(controlSession.port);
     try {
       targets = await CDP.List({ port: controlSession.port });
     } catch {
-      // Postman may have quit and reopened on a new DevTools port; re-resolve the port and retry once.
-      controlSession.port = PostmanSession.getDevToolsPort(controlSession.port);
-      targets = await CDP.List({ port: controlSession.port });
+      // Neither port lists targets: Postman is gone. Write that (attached: false) instead of freezing the last good tick.
+      detachAll();
+      writeOwnershipStatus();
+      return;
     }
+  }
+  try {
     const currentIds = new Set(targets.map((target) => target.id));
     for (const targetId of [...attachedTargetIds]) {
       if (currentIds.has(targetId)) continue;
