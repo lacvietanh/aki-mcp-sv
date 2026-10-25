@@ -6,6 +6,10 @@ const DIALOG_ROOT = '[role="dialog"], [role="alertdialog"]';
 const CHAT_ROOT = '[data-testid="ai-chat-container"]';
 const PANEL_ROOT = '#aki-control-panel';
 
+// A card counts only while on screen and outside our own panel: a hidden one left in the DOM is not waiting on anyone.
+const isLiveCard = (el) => isVisible(el) && !el.closest(PANEL_ROOT);
+const approvalCardShowing = () => [...document.querySelectorAll(PERMISSION_CARD_ROOT)].some(isLiveCard);
+
 // Cancel slot of the same pending surface — only when copy is this folder dialog.
 const AUTO_REJECT_PICK_FOLDER = {
   configKey: 'autoRejectPickFolder',
@@ -190,7 +194,7 @@ class PermissionCardClicker {
       if (!card || found.has(card)) continue;
       if (isAction || cardCopy(card).toLowerCase().includes(this.rejectFolder.bodyNeedle)) found.add(card);
     }
-    return [...found].filter((el) => isVisible(el) && !el.closest(PANEL_ROOT));
+    return [...found].filter(isLiveCard);
   }
 
   _creditArmed() {

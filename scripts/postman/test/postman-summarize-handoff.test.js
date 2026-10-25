@@ -55,14 +55,15 @@ function loadPage(config = {}) {
   };
   const conversation = { get innerText() { return state.conversation; }, get textContent() { return state.conversation; } };
   const input = { focus() {}, get textContent() { return state.input; }, closest: () => chat };
+  const element = (hidden = false) => ({ hidden, closest: () => null, getBoundingClientRect: () => ({ width: 10, height: 10 }) });
   const nodes = {
     [CHAT]: () => chat,
     [`${CHAT} ${CONVERSATION}`]: () => conversation,
     [CONVERSATION]: () => conversation,
     '[data-testid="ai-chat-input-editor"] [contenteditable="true"]': () => (state.noInput ? null : input),
     '.ai-chat-input-send-button': () => (state.busy || state.noButtons ? null : sendButton),
-    '.ai-chat-input-cancel-button': () => (state.busy ? {} : null),
-    [APPROVAL_CARD]: () => (state.approval ? {} : null),
+    '.ai-chat-input-cancel-button': () => (state.busy ? element() : null),
+    [APPROVAL_CARD]: () => (state.approval ? element(state.approval === 'hidden') : null),
     '[data-testid="ai-chat-new-conversation-button"]': () => newChatButton,
   };
   const query = (selector) => (nodes[selector] ? nodes[selector]() : null);
@@ -73,7 +74,10 @@ function loadPage(config = {}) {
   const sandbox = {
     document: {
       querySelector: query,
-      querySelectorAll: (selector) => (selector === '.ai-chat-message-group--last .ai-chat-agent-message' && state.reply ? [replyNode] : []),
+      querySelectorAll: (selector) => {
+        if (selector === APPROVAL_CARD) return state.approval ? [query(selector)] : [];
+        return selector === '.ai-chat-message-group--last .ai-chat-agent-message' && state.reply ? [replyNode] : [];
+      },
       getElementById: (id) => (id === 'aki-chat-status' ? statusNode : null),
       addEventListener() {},
       createRange: () => ({ selectNodeContents() {} }),
@@ -92,6 +96,7 @@ function loadPage(config = {}) {
     __pmInitialInstruction: 'INSTR',
   };
   sandbox.window = sandbox;
+  sandbox.getComputedStyle = (el) => ({ display: el.hidden ? 'none' : 'block', visibility: 'visible', opacity: '1' });
   sandbox.getSelection = () => ({ removeAllRanges() {}, addRange() {} });
   vm.runInContext(pageScript, vm.createContext(sandbox));
 
@@ -161,6 +166,16 @@ test('does not send while a tool approval card is up even though Send is showing
   assert.deepEqual(page.state.sent, []);
 
   page.state.approval = false;
+  await page.advance(1_000);
+  assert.deepEqual(page.state.sent, ['SUMMARIZE']);
+});
+
+test('a hidden approval card left in the page does not hold the prompt back', async () => {
+  const page = loadPage();
+  page.state.approval = 'hidden';
+  page.state.conversation = 'earlier work';
+  page.summarize();
+
   await page.advance(1_000);
   assert.deepEqual(page.state.sent, ['SUMMARIZE']);
 });

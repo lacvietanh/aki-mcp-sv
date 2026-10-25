@@ -1559,7 +1559,7 @@
 
   // Stop showing or an approval card up means the agent is known busy and restarts the bound, so it runs out only on a step that stays unfinished while the agent is not busy, a sign the selectors no longer match Postman.
   function agentWorking() {
-    return !!document.querySelector(CANCEL_BUTTON) || !!document.querySelector(PERMISSION_CARD_ROOT);
+    return isVisible(document.querySelector(CANCEL_BUTTON)) || approvalCardShowing();
   }
 
   async function waitUntil(step, ready) {
@@ -1573,7 +1573,7 @@
 
   // Send and Stop are one switch in Postman, but Send also shows while the agent waits on a tool approval, where a submit would answer the card instead of sending.
   function agentIdle() {
-    return !!document.querySelector(SEND_BUTTON) && !document.querySelector(PERMISSION_CARD_ROOT);
+    return !!document.querySelector(SEND_BUTTON) && !approvalCardShowing();
   }
 
   async function typeAndSubmitChat(input, text) {
