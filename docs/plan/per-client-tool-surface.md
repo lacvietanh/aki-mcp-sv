@@ -1,6 +1,6 @@
 # Per-client tool surface — fewer duplicate tools, no rule handshake for clients that already run akirule
 
-Status: wishlist 2026-10-22, kept, not scheduled (owner: "không bỏ, để làm sau"). Starts at P0 when the owner names it. Why it waits: coding clients on the AkiMCP host made 0 calls (§ Why), and Claude Code, the one measured live, pays ~0.7k tokens per session because it defers tool schemas, so today the gain is one handshake round trip; the numbers are in the Amendments of `research/tool-surface-provider-toolkit.md`. It moves up if `tool-calls.jsonl` shows a coding client on the AkiMCP host calling regularly.
+Status: wishlist 2026-10-22, kept, not scheduled (owner: "không bỏ, để làm sau"). Starts at P0 when the owner names it. Why it waits: coding clients made 0 calls in the 2026-10-05..14 logs (§ Why), and Claude Code, the one measured live, pays ~0.7k tokens per session because it defers tool schemas, so today the gain is one handshake round trip; the numbers are in the Amendments of `research/tool-surface-provider-toolkit.md`. It moves up if `tool-calls.jsonl` shows a coding client on the AkiMCP host calling regularly. Log lines by agent (`grep -c`, 2026-10-26): `claude-code/` 282, 44, 20, 57 on 10-19 to 10-22, 0 on 10-23 and 10-24, 28 in the undated current file; `Cursor/` 10 (10-19), 29 (10-22), 1 (10-23), 64 (10-24), 1 (undated). The log has no peer address, so whether those clients ran on the AkiMCP host is unproven and the wait condition stands.
 
 ## Why — measured 2026-10-18 on v3.0.1, this machine
 
