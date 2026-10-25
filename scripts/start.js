@@ -120,7 +120,7 @@ if (tunnelCred) {
     }
   }
   origin = tailscale.host && (!isDev || tailscale.funnel) ? `https://${tailscale.host}` : null;
-  if (!origin) console.warn('[start] Tailscale Funnel host not available — configure ingress in the web panel below');
+  if (!origin && !isDev) console.warn('[start] Tailscale Funnel host not available — configure ingress in the web panel below');
 }
 
 if (origin) {
