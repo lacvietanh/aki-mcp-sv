@@ -91,7 +91,7 @@ const output = await handler({ workingPath: '/tmp/project', label: 'P1·W2' });
 assert.equal(output.structuredContent.status, 'ok');
 const minted = output.structuredContent.ss;
 assert.equal(minted.state, 'new');
-assert.match(minted.path, /[\\/]ss[\\/]_[\\/]\d{4}\.\d{2}\.\d{2}-\d{4}-p1w2\.md$/, 'no git folder: project _, the label in the name');
+assert.match(minted.path, /[\\/]ss[\\/]-?[A-Za-z0-9._-]*tmp-project[\\/]\d{4}\.\d{2}\.\d{2}-\d{4}-p1w2\.md$/, 'no git folder: the working folder is the project, the label in the name');
 assert.ok(output.content[0].text.startsWith(`NO YAPPING AT ALL\n${MANDATORY_BLOCK}\n\ncontext loaded: practical-effective · sha256:`), 'the mandatory block comes first, then the receipt');
 assert.ok(output.content[0].text.endsWith(` · 1 sources\nEvery tool that acts needs receipt=sha256:${'a'.repeat(64)}\nss: ${minted.path} · new · folder missing\n\n${SHARED_WORK}\n\nrules`), 'the receipt to pass on every acting tool, the minted ss, then the shared-work convention, then the corpus');
 const again = await handler({ workingPath: '/tmp/project', ss: minted.path });

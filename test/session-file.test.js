@@ -10,9 +10,10 @@ import { SS_DIR, projectKey, sanitizeLabel, mintSessionPath, acceptSessionPath, 
 
 const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ss-')));
 const at = new Date(2026, 9, 24, 18, 12);
+const cwdKey = (p) => p.replace(/[^A-Za-z0-9._-]/g, '-');
 const minutesAgo = (file, n) => { const t = new Date(Date.now() - n * 60_000); fs.utimesSync(file, t, t); };
 
-test('projectKey is the basename of the nearest git folder at or under the root, else _', () => {
+test('projectKey is the basename of the nearest git folder at or under the root, else the working folder as Claude Code keys it, and _ only without a path', () => {
   const root = path.join(tmp, 'roots');
   const repo = path.join(root, 'my repo');
   fs.mkdirSync(path.join(repo, '.git'), { recursive: true });
@@ -24,17 +25,20 @@ test('projectKey is the basename of the nearest git folder at or under the root,
   fs.writeFileSync(path.join(worktree, '.git'), 'gitdir: elsewhere\n');
   assert.equal(projectKey(worktree, root), 'wt', '.git as a file (worktree, submodule) counts');
   fs.mkdirSync(path.join(root, 'plain'));
-  assert.equal(projectKey(path.join(root, 'plain'), root), '_');
+  assert.equal(projectKey(path.join(root, 'plain'), root), cwdKey(path.join(root, 'plain')), 'no .git on the walk: the working folder path, every other character -');
   const outer = path.join(tmp, 'outer');
   fs.mkdirSync(path.join(outer, '.git'), { recursive: true });
   fs.mkdirSync(path.join(outer, 'inner'));
-  assert.equal(projectKey(path.join(outer, 'inner'), path.join(outer, 'inner')), '_', 'a .git above the root is not this project');
+  assert.equal(projectKey(path.join(outer, 'inner'), path.join(outer, 'inner')), cwdKey(path.join(outer, 'inner')), 'a .git above the root is not this project');
   assert.equal(projectKey(undefined, root), '_');
 });
 
-test('sanitizeLabel folds to lowercase ASCII, joins words with -, cuts at 16', () => {
+test('sanitizeLabel folds to lowercase ASCII, joins words with -, cuts at 24 on a whole word', () => {
   assert.equal(sanitizeLabel('P37·W8'), 'p37w8');
-  assert.equal(sanitizeLabel('Sửa lỗi đăng nhập'), 'sua-loi-dang-nha');
+  assert.equal(sanitizeLabel('Sửa lỗi đăng nhập'), 'sua-loi-dang-nhap');
+  assert.equal(sanitizeLabel('council secretary tachnhac'), 'council-secretary', 'a word that would be cut mid-way is dropped');
+  assert.equal(sanitizeLabel(`${'a'.repeat(24)} bbb`), 'a'.repeat(24), 'a word ending exactly at 24 stays');
+  assert.equal(sanitizeLabel('a'.repeat(30)), 'a'.repeat(24), 'one long word is cut at 24');
   assert.equal(sanitizeLabel('  --  '), '');
   assert.equal(sanitizeLabel(undefined), '');
 });
@@ -49,6 +53,9 @@ test('mintSessionPath names the file by local time and label, and never reuses a
   const second = mintSessionPath({ project: 'aki-mcp-sv', label: 'P37·W8', now: at, dir });
   assert.match(path.basename(second), /^2026\.10\.24-1812-p37w8-[a-z0-9]{2}\.md$/);
   assert.equal(acceptSessionPath(second, { dir }), second, 'the collision name is still an ss name');
+  const longest = mintSessionPath({ project: 'aki-mcp-sv', label: 'a'.repeat(30), now: at, dir });
+  assert.equal(path.basename(longest), `2026.10.24-1812-${'a'.repeat(24)}.md`);
+  assert.equal(acceptSessionPath(longest, { dir }), longest, 'a 24-character label is accepted back, so a kept ss stays kept');
 });
 
 test('acceptSessionPath takes only an ss name directly under <ss dir>/<project>/', () => {

@@ -10,33 +10,42 @@ export const SS_DIR = path.resolve(USER_DIR, 'ss');
 export const SS_STALE_MS = 15 * 60_000;
 // D12: the file sessions kept before ss, still matched while old threads write it.
 export const LEGACY_WORKING_FILE = /[\\/]\.aki[\\/]mcpsv[\\/]task[\\/][^\\/]+[\\/]working\.md$/;
-// D2, D4: <YYYY.MM.DD-HHMM>-<label of at most 16>, plus a 3-character collision suffix.
-const SS_NAME = /^\d{4}\.\d{2}\.\d{2}-\d{4}-[a-z0-9-]{1,19}\.md$/;
+// D2, D4, v2 D7: <YYYY.MM.DD-HHMM>-<label of at most LABEL_MAX>, plus a 3-character collision suffix.
+const LABEL_MAX = 24;
+const SS_NAME = new RegExp(`^\\d{4}\\.\\d{2}\\.\\d{2}-\\d{4}-[a-z0-9-]{1,${LABEL_MAX + 3}}\\.md$`);
 const PROJECT_NAME = /^[A-Za-z0-9._-]+$/;
 
 const random2 = () => randomInt(36 * 36).toString(36).padStart(2, '0');
 const two = (n) => String(n).padStart(2, '0');
 const sanitizeProject = (name) => (/^\.*$/.test(name) ? '_' : name.replace(/[^A-Za-z0-9._-]/g, '-'));
 
-// D3: basename of the nearest folder holding `.git` (a folder, or the file a worktree or submodule has), walking up from workingPath and stopping at workingRoot; none, or no workingPath, is `_`.
+// D3, v2 B3: basename of the nearest folder holding `.git` (a folder, or the file a worktree or submodule has), walking up from workingPath and stopping at workingRoot; none found is the working folder's own path as Claude Code keys it (`/Volumes/DEV/labs` → `-Volumes-DEV-labs`); no workingPath is `_`.
 export function projectKey(workingPath, workingRoot) {
-  if (!workingPath || !workingRoot) return '_';
+  if (!workingPath) return '_';
   const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
-  const stop = real(workingRoot);
-  for (let dir = real(workingPath); ; dir = path.dirname(dir)) {
+  const here = real(workingPath);
+  const stop = workingRoot ? real(workingRoot) : null;
+  for (let dir = here; stop; dir = path.dirname(dir)) {
     const rel = path.relative(stop, dir);
-    if (rel.startsWith('..') || path.isAbsolute(rel)) return '_';
+    if (rel.startsWith('..') || path.isAbsolute(rel)) break;
     if (fs.existsSync(path.join(dir, '.git'))) return sanitizeProject(path.basename(dir));
-    if (rel === '') return '_';
+    if (rel === '') break;
   }
+  return sanitizeProject(here);
 }
 
-// D4: folded to ASCII and lowercased; spaces and underscores become `-`, other symbols drop (`P37·W8` → `p37w8`), at most 16 characters.
+// D4, v2 D7: folded to ASCII and lowercased; spaces and underscores become `-`, other symbols drop (`P37·W8` → `p37w8`), at most LABEL_MAX characters, cut at the last whole word.
 export function sanitizeLabel(label) {
   if (typeof label !== 'string') return '';
-  return label.normalize('NFKD').replace(/\p{M}/gu, '').replace(/[đĐ]/g, 'd').toLowerCase()
-    .replace(/[\s_]+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, '')
-    .slice(0, 16).replace(/-$/, '');
+  return cutAtWord(label.normalize('NFKD').replace(/\p{M}/gu, '').replace(/[đĐ]/g, 'd').toLowerCase()
+    .replace(/[\s_]+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-+/g, '-').replace(/^-|-$/g, ''));
+}
+
+function cutAtWord(label) {
+  const head = label.slice(0, LABEL_MAX);
+  if (label.length === head.length || label[LABEL_MAX] === '-') return head;
+  const wordEnd = head.lastIndexOf('-');
+  return wordEnd > 0 ? head.slice(0, wordEnd) : head;
 }
 
 // D2, D4: the local clock the owner reads; a name already taken gets 2 random base36 characters more.
