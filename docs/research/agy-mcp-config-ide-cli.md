@@ -1,5 +1,7 @@
 # How Antigravity CLI (`agy`) and Antigravity IDE load MCP servers
 
+Status: amended 2026-10-25 (see ## Amendments) — the Decision still stands.
+
 ## Start time
 2026-09-29, ~10:50–13:00 local, macOS (Darwin 25.6.0), against aki-mcp-sv 2.1.0 + uncommitted panel changes.
 
@@ -58,3 +60,6 @@ The IDE does not read the CLI's `permissions.allow` (evidence: the prompt appear
 **Action:** the IDE-specific `serverUrl` + Bearer block was removed from the panel; one stdio entry serves CLI and IDE (`scripts/config-page.js`, `scripts/panel.js`, `scripts/stdio.js`). Distilled facts: [`ref/fact-agy-mcp-config.md`](../ref/fact-agy-mcp-config.md). Plan: [`plan/done/agy-panel-ux-preallow.md`](../plan/done/agy-panel-ux-preallow.md).
 **Cross-references:** `ref/harness-fact.md` (agy headless-run facts, a separate subject).
 **Reopen if:** the IDE stops reading `~/.gemini/config/mcp_config.json`, or a sign-in test shows the IDE cannot run the stdio entry.
+
+## Amendments
+- 2026-10-25 · R5: `agy --version` now reports 1.4.7 (was 1.2.13 at the original run). `ls ~/.gemini/antigravity-cli/mcp/akimcp/` held 31 `aki__*.json` tool files plus `instructions.md` (the original run recorded 40 files), and **no `aki__agy_run.json`** though the server serves `aki__agy_run` (`docs/plan/audit-tool-drift-oct25.md` F8). Cause unknown on agy's side; the server surface is correct (the schema mirror is written by agy/IDE on connect, not by AkiMCP). CLI-1…CLI-4 and the IDE/CDP rows were not re-run against 1.4.7; they keep their 2026-09-29 read date. The Decision (one stdio entry serves CLI and IDE) is unaffected.

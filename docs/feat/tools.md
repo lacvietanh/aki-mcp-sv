@@ -12,7 +12,7 @@ The product's single purpose: give a remote web AI (claude.ai / ChatGPT / Grok /
 | `search` | `find_path`, `search_content` | Fast index-backed path + content lookup (no per-call `find`/`grep` spawn) | The remote model, directly |
 > The third-party `@modelcontextprotocol/server-filesystem` package this replaced also exposed `list_directory`/`directory_tree`/`search_files`/`read_multiple_files`/`read_media_file` — dropped outright rather than prompt-banned, since `find_path`/`search_content` already supersede the listing/search family in practice and the rest had no evidence of real use (`docs/plan/done/2.0.0-improve.md` §7). Cheap to re-add if a real need shows up.
 | `shell` | `run_cmd` | Run an allowlisted command as the user; inspection-first by default (reads plus a few dev/media helpers; destructive commands and git write forms refused), write commands opt-in (`docs/plan/done/shell-allowlist.md`) | The remote model, directly |
-| `agy_run` | `agy_run` | Delegate a whole task to a **local Antigravity CLI agent** — default mode `plan` (read-only by mechanism), default model `gemini-3.7-flash-medium` (fast, wide-context discovery tier) | The remote model delegates; a local agent reasons |
+| `agy_run` | `agy_run` | Delegate a whole task to a **local Antigravity CLI agent** — mode `plan` by default (read-only by mechanism; other modes opt in via `setting.json → agy.allowedModes`), model defaults to the newest Gemini Flash (medium) discovery tier the installed CLI reports (no pinned id; `list="models"`/`"capabilities"` reads the live options). The ids, modes, effort levels and formats are read from the CLI, not hardcoded (`scripts/agy-capabilities.js`, `docs/ref/harness-fact.md`) | The remote model delegates; a local agent reasons |
 | `kiro` | `kiro_read` | Delegate a whole read-only task to a **local Kiro CLI agent**, hard-locked to `claude-sonnet-4.5`, `--trust-tools=fs_read` | The remote model delegates; a local agent reasons |
 | `postman` (`scripts/postman/postman-mcp.js`) | `postman_status` | Reports whether the `scripts/postman/` daemon is running (own child or an externally-started pid at `$AKI_DATA_DIR/daemon.pid`) and its `data.json`. This tree is a frozen copy, not kept in sync with its origin (except `package.json`, a `{"type":"commonjs"}` shim). Launch is a panel action (`POST /api/postman-launch`), not this tool and not boot. | The remote model, directly — read-only, no CDP in the tool |
 | `postman` CDP tools (same module) | `postman_eval`, `postman_rename_conversation`, `postman_panel_fullwidth` | Evaluate JS in Postman's main renderer, finding its debugging endpoint and target itself; rename the open Agent Mode conversation through Postman's own inline edit, so the name persists in app state; widen the right context panel by an injected style tag (`enable=false` restores). Why: Postman is a client of this server (connector and daemon, 1.12–1.14); rename and full width came with the panel Auto controls (2.0.0, `40008bef`). They share no file, code or data with AIObox, which leaves Electron apps out of its CDP profiles, so they are core AkiMCP, not an AIObox duplicate (audit 2026-10-05, D6). Served only when Postman is installed, so they cost no schema elsewhere | The remote model, directly |
@@ -64,8 +64,8 @@ Everything that exists for Postman alone sits under `scripts/postman/` and every
 An audit that only pattern-matches capabilities will call `kiro_read` "redundant — the model already has `find_path`/`search_content`/`run_cmd`." **That is a misclassification and the arms must not be removed on that basis.** An arm is not a file-reader; it is agent delegation, and it buys three things a direct primitive cannot:
 
 - **Offload multi-step local work** — a local model runs the investigate/read/synthesize loop against local files and returns a conclusion, instead of the remote model paying round-trips and context for every intermediate read.
-- **Local trust scoping by mechanism** — the arm runs under its own locked tool set (`kiro` → `fs_read` only; `agy` → `plan` mode only), a boundary the remote model cannot widen from a prompt.
-- **Model/tier choice per task** — `agy` reaches a wide-context discovery tier; `kiro` is pinned to a specific Sonnet id for cost/behavior determinism.
+- **Local trust scoping by mechanism** — the arm runs under its own locked tool set (`kiro` → `fs_read` only; `agy` → the modes in `agy.allowedModes`, `plan` alone by default, a mode outside it refused before spawn), a boundary the remote model cannot widen from a prompt.
+- **Model/tier choice per task** — `agy` reaches a wide-context discovery tier chosen at call time from what the CLI reports (never a pinned id); `kiro` is hard-locked to a specific Sonnet id for cost/behavior determinism.
 
 ## When a tool earns its place beside `run_cmd`
 
@@ -103,6 +103,8 @@ The cost of a tool is the tokens its output puts in the remote model's context, 
 5. **Progressive narrow** — if a step returns too much, tighten `path`/`glob` and re-call; return the conclusion, not full bodies.
 6. **Verify closure** — before a conclusion that will be *acted on* (not a quick lookup), run one more search confirming no other reference remains and say so. Severity-gated; skip for simple lookups.
 7. **Batch independent lookups** in one turn.
+
+**Open sessions:** `search_content` with query `^status: (active|waiting)` and path set to the `ss` folder of the data dir (`~/.aki/mcpsv/ss` by default) lists every chat whose work is still open, one hit per session file. A file still `active` whose last write is more than 24 hours old is stale: report it, never edit it; only its chat or the owner changes it. Shape and keys: [`session-file.md`](session-file.md).
 
 ## Anchor — load-bearing, do not remove
 

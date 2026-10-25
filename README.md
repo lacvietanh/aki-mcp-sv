@@ -176,7 +176,7 @@ The Postman tab also has a **Launch** button that attaches control to the Postma
 
 Local tools run on the same machine as AKIMCP, so they connect **straight to the loopback engine** at `http://127.0.0.1:9999/mcp` — no tunnel, no internet, zero WAN round-trip, and they keep working fully offline. The Gatekeeper binds `127.0.0.1:9999` from the moment you run `akimcp`, whether or not a public ingress is configured. Bearer-token auth is still enforced (see [Security](#security)); grab the token from the panel at `http://127.0.0.1:9998` (the Postman tab shows the filled JSON; one access token serves every client, and panel section 1 can roll it if it leaks), or copy a config below and replace `YOUR_LOCAL_ACCESS_TOKEN`. (Ports are defaults; `--dev` mode uses `9997`/`9996` — the panel always shows the live values.)
 
-**Cursor** — `~/.cursor/mcp.json` (or Settings → MCP Servers):
+**Cursor** — click **Apply to Cursor** in the panel's Cursor tab to write `~/.cursor/mcp.json` with the current token (other servers untouched), or paste this by hand (Settings → MCP Servers). After Roll token, click Apply again:
 
 ```json
 {
@@ -189,10 +189,11 @@ Local tools run on the same machine as AKIMCP, so they connect **straight to the
 }
 ```
 
-**Claude Code CLI** — one line; after Roll token, run it again with the new token:
+**Claude Code CLI** — click **Apply to Claude Code** in the panel's Claude Code & app tab: it registers the server in `user` scope (works from every project) with the current token, replacing any old entry. After Roll token, click Apply again. To do it by hand, run both lines — the `remove` first, because a bare `claude mcp add` refuses when the entry already exists and keeps the old token:
 
 ```bash
-claude mcp add --transport http aki-mcp http://127.0.0.1:9999/mcp --header "Authorization: Bearer YOUR_LOCAL_ACCESS_TOKEN"
+claude mcp remove aki-mcp -s user
+claude mcp add --transport http -s user aki-mcp http://127.0.0.1:9999/mcp --header "Authorization: Bearer YOUR_LOCAL_ACCESS_TOKEN"
 ```
 
 **Claude app (desktop)** — set up separately from Claude Code; one does not connect the other. Open **Settings → Developer → Edit Config** in the app, merge this under `mcpServers` in the `claude_desktop_config.json` it opens, then quit the app completely and reopen it. The app spawns `scripts/stdio.js` (the same tools, over stdio) with no token, so Roll token changes nothing; the panel's **Claude Code & app** tab shows the entry with your path filled in. If the server fails to start, replace `node` with the full path from `which node` (Windows: `where node`).
@@ -225,7 +226,7 @@ The button also pre-allows the server for the CLI; the IDE asks for its own appr
 
 Any other client that spawns MCP servers over stdio can run the package the same way, with no gateway, tunnel or token: `npx -y @akinet/akimcp --stdio`.
 
-**Codex CLI** — append to `~/.codex/config.toml` (don't overwrite; Codex reaches the local engine over streamable HTTP, token inlined so there's no env var to export):
+**Codex CLI** — click **Apply to Codex** in the panel's Codex tab: it writes the `[mcp_servers.aki-mcp]` table into `~/.codex/config.toml` with the current token, replacing it in place (other tables untouched). After Roll token, click Apply again. To edit by hand, replace any existing `[mcp_servers.aki-mcp]` table — do not add a second one (duplicate tables are invalid TOML). Codex reaches the local engine over streamable HTTP, token inlined so there's no env var to export:
 
 ```toml
 [mcp_servers.aki-mcp]
