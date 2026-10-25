@@ -209,7 +209,7 @@ test('says the chat panel did not open and frees the composer when no chat input
   assert.match(page.status(), /^Stopped: the AI chat panel did not open\./);
 });
 
-test('pastes the summary and says copying was skipped when the clipboard write fails', async () => {
+test('pastes the summary and says copying failed when the clipboard write fails', async () => {
   const page = loadPage();
   page.state.clipboardFails = true;
   page.state.conversation = 'earlier work';
@@ -220,5 +220,5 @@ test('pastes the summary and says copying was skipped when the clipboard write f
 
   assert.equal(page.state.input, 'Summary: X');
   assert.equal(page.state.clipboard, null);
-  assert.match(page.status(), /Copying it was skipped/);
+  assert.match(page.status(), /copying it failed, so your clipboard still holds older text/);
 });

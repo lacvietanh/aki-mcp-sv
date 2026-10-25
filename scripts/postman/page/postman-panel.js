@@ -1263,7 +1263,7 @@
             <label class="aki-label" title="GPT-5.6 Luna">
               <input type="radio" name="aki-model" value="56lu"> <span>5.6 Luna</span>
             </label>
-            <label class="aki-label" title="Opus 4.8: deepest reasoning, best for complex coding and long agent runs. Slower and costlier, keep it for hard tasks.">
+            <label class="aki-label" title="Opus 4.8: deepest reasoning, best for complex coding and long agent runs. Slower and costlier, so keep it for hard tasks.">
               <input type="radio" name="aki-model" value="48op"> <span>Opus 4.8</span>
             </label>
             <label class="aki-label" title="Auto: Postman picks the model for each step">
@@ -1641,7 +1641,7 @@
       await awaitReply();
     }
     await typeChatText(findChatInput(), summary);
-    if (!copied) showChatStatus('The summary is in the new chat box. Copying it was skipped (Postman window not focused), so your clipboard still holds older text.');
+    if (!copied) showChatStatus('The summary is in the new chat box, but copying it failed, so your clipboard still holds older text.');
   }
 
   async function withChatLock(btnId, task) {
