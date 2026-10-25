@@ -1,19 +1,28 @@
 // Dedicated MCP tool for the `agy` CLI: passes prompt/model/mode as separate execFile args so no shell-tokenizing step can mis-split a multi-word -p prompt (the reason it is not routed through the generic shell tool). Modes are allowlisted via allowlist.js.
+// The interface holds NO model list and no effort/mode/output-format enum: the valid values are server-side and change without an agy release, so they are read live by scripts/agy-capabilities.js and the values are passed straight to agy, which validates them (docs/plan/audit-tool-drift-oct25.md D1-D5). The only pre-spawn check is AkiMCP's own mode allowlist.
 import { execFile } from 'node:child_process';
 import { z } from 'zod';
 import { readSettings } from './allowlist.js';
 import { findOnPath } from './find-on-path.js';
 import { resolveOrFail } from './roots.js';
 import { ok, err, fail } from './mcp-tool.js';
+import { capabilities, refresh, newestFlashMedium } from './agy-capabilities.js';
 
 // 'plan' is agy's non-mutating mode — the only one enabled out of the box. Anything else must be explicitly opted into via setting.json -> { "agy": { "allowedModes": [...] } }.
 const DEFAULT_MODES = ['plan'];
-// Discovery-tier default per akiflow/harness-facts.md: fastest wide-context tier, generous quota.
-const DEFAULT_MODEL = 'gemini-3.7-flash-medium';
 
 function loadAllowedModes() {
   const configured = readSettings().agy?.allowedModes;
   return Array.isArray(configured) && configured.length ? configured : DEFAULT_MODES;
+}
+
+// D3: the model to pass, resolved at call time. The owner's explicit setting.json pick wins (not pre-validated); else the newest gemini-<n>-flash-medium the probe found; else null, so --model is omitted and agy uses its own default.
+async function resolveModel(explicit, cwd) {
+  if (explicit) return explicit;
+  const configured = readSettings().agy?.defaultModel;
+  if (typeof configured === 'string' && configured) return configured;
+  const caps = await capabilities({ cwd });
+  return newestFlashMedium(caps.models);
 }
 
 function run(args, cwd) {
@@ -32,6 +41,34 @@ function run(args, cwd) {
   });
 }
 
+// agy rejects an unknown model/effort/output-format naming the field (spike 2026-10-25: "invalid model selection … conflicts with --effort"). On such a failure, refresh the probe once (the list may have moved server-side) and return agy's own error plus the live valid values, so the caller sees what agy accepts now without a second tool.
+const VALUE_COMPLAINT = /invalid|unknown|not a valid|unsupported|conflicts|model|effort|output-format/i;
+async function runWithValueHelp(args, cwd) {
+  const result = await run(args, cwd);
+  if (!result.isError) return result;
+  const message = result.content[0].text;
+  if (!VALUE_COMPLAINT.test(message)) return result;
+  const caps = await refresh({ cwd });
+  const models = caps.models ? caps.models.map((m) => m.id).join(', ') : 'unavailable (agy models did not parse)';
+  const line = (label, values) => `${label}: ${values ? values.join(', ') : 'unavailable'}`;
+  return err(`${message}\n\nagy rejected a value. Valid now (agy ${caps.version ?? '?'}):\n${line('models', caps.models ? caps.models.map((m) => m.id) : null)}\n${line('modes', caps.modes)}\n${line('effort', caps.efforts)}\n${line('output-format', caps.outputFormats)}\nnext: call agy_run with list="capabilities" for the full table.`);
+}
+
+function listReply(kind, caps, defaultModel, allowedModes) {
+  const body = {
+    agyVersion: caps.version,
+    models: caps.models,
+    modes: caps.modes,
+    effort: caps.efforts,
+    outputFormats: caps.outputFormats,
+    resolvedDefaultModel: defaultModel,
+    allowedModes,
+    probedAt: new Date(caps.at).toISOString(),
+  };
+  if (kind === 'models') return ok(JSON.stringify({ models: caps.models, resolvedDefaultModel: defaultModel, agyVersion: caps.version }, null, 2));
+  return ok(JSON.stringify(body, null, 2));
+}
+
 export const provider = {
   id: 'agy',
   title: 'Antigravity CLI (agy)',
@@ -40,44 +77,65 @@ export const provider = {
   register,
 };
 
+// D4: the read-only promise is true only while 'plan' is the sole allowed mode; otherwise name the modes that can write. Built at registration from the allowlist; widening the modes takes a restart to redraw it.
+function describe(modes) {
+  const readOnly = modes.length === 1 && modes[0] === 'plan';
+  const modeClause = readOnly
+    ? 'Mode defaults to "plan" (read-only by mechanism). '
+    : `Modes allowed: ${modes.join(', ')} — only "plan" is read-only; it is the default. `;
+  return 'Delegate a task to the local agy CLI (read-only retrieval, never judgment). ' +
+    modeClause +
+    'Model defaults to the newest Gemini Flash (medium) discovery tier the installed CLI reports, not a pinned id (override: agy.defaultModel in setting.json). ' +
+    'list="models"/"capabilities" (no prompt) reads the ids, modes, effort levels and formats the installed agy accepts now. ' +
+    'model/effort/outputFormat pass straight to agy, which validates them; a rejected value returns agy\'s error and the live list. ' +
+    "Name exact paths in the prompt — agy resolves files outside cwd, so cwd is not a hard boundary. prompt is one verbatim arg, no shell quoting.";
+}
+
 export function register(server) {
-  // Read once at registration: read-only by mechanism only while 'plan' is the sole allowed mode; widening the modes takes a restart to drop the hint.
   const modes = loadAllowedModes();
   server.registerTool(
     'agy_run',
     {
       title: 'Antigravity CLI',
       annotations: { readOnlyHint: modes.length === 1 && modes[0] === 'plan', destructiveHint: false, openWorldHint: false },
-      description:
-        'Run the agy CLI for read-only retrieval, never judgment (akiflow/harness-facts.md § Model tiers). ' +
-        `Defaults to mode "plan" (read-only by mechanism) and model "${DEFAULT_MODEL}" (fast, wide-context discovery tier). ` +
-        'Other modes must be allowlisted in setting.json under agy.allowedModes before use. Name exact paths and the exact ' +
-        "output shape in the prompt — agy's workspace index can resolve files outside cwd, so cwd is not a hard scope boundary. " +
-        'prompt is passed straight to agy as one argument — no shell quoting, spaces/punctuation are safe as-is.',
+      description: describe(modes),
       inputSchema: {
-        prompt: z.string(),
-        mode: z.string().optional().describe('agy --mode, defaults to "plan"'),
-        model: z.string().optional().describe(`agy --model, defaults to "${DEFAULT_MODEL}". Valid ids: gemini-3.7-flash-{low,medium,high}, gemini-3.6-flash-{low,medium,high}, gemini-3.5-flash-{low,medium,high}, gemini-3.1-pro-{low,high}, claude-sonnet-4-6, claude-opus-4-6-thinking, gpt-oss-120b-medium`),
-        effort: z.enum(['low', 'medium', 'high']).optional().describe('agy --effort, thinking budget'),
-        outputFormat: z.enum(['text', 'json']).optional().describe('agy --output-format, use "json" when a program parses the result'),
+        prompt: z.string().optional().describe('the task for agy; required unless list is set'),
+        list: z.enum(['models', 'capabilities']).optional().describe('read-only: return what the installed agy offers (no prompt spawned)'),
+        mode: z.string().optional().describe('agy --mode (agy validates; "plan" is read-only and the default). Modes beyond the allowlist in setting.json are refused here'),
+        model: z.string().optional().describe('agy --model (agy validates). Omitted → the discovery-tier default; use list="models" to see the ids'),
+        effort: z.string().optional().describe('agy --effort thinking budget (agy validates; use list="capabilities" for the levels)'),
+        outputFormat: z.string().optional().describe('agy --output-format (agy validates; use list="capabilities" for the formats). Use "json" when a program parses the result'),
         cwd: z.string().optional().describe('run inside this project dir; must be under an allowed root'),
       },
     },
-    async ({ prompt, mode, model, effort, outputFormat, cwd }) => {
-      const useMode = mode ?? 'plan';
-      const allowed = loadAllowedModes();
-      if (!allowed.includes(useMode)) {
-        return err(`rejected: mode "${useMode}" is not allowlisted (allowed: ${allowed.join(', ')})`);
-      }
+    async ({ prompt, list, mode, model, effort, outputFormat, cwd }) => {
       const r = resolveOrFail(cwd);
       if (!r.ok) return fail(r.error);
       const dir = r.dir;
-      // -p takes the prompt as its value and must come last — anything after it is silently swallowed as part of the prompt, not parsed as a flag (harness-facts.md § Cross-CLI worker, the flag-order trap).
-      const args = ['--mode', useMode, '--model', model ?? DEFAULT_MODEL];
+      const allowed = loadAllowedModes();
+
+      if (list) {
+        const caps = await capabilities({ cwd: dir });
+        return listReply(list, caps, await resolveModel(undefined, dir), allowed);
+      }
+      if (!prompt || !String(prompt).trim()) {
+        return err('rejected: prompt is required unless list="models" or list="capabilities" is set.');
+      }
+
+      const useMode = mode ?? 'plan';
+      if (!allowed.includes(useMode)) {
+        return err(`rejected: mode "${useMode}" is not allowlisted (allowed: ${allowed.join(', ')}). Set agy.allowedModes in setting.json to widen it.`);
+      }
+
+      const resolvedModel = await resolveModel(model, dir);
+      const args = ['--mode', useMode];
+      if (resolvedModel) args.push('--model', resolvedModel);
       if (effort) args.push('--effort', effort);
       if (outputFormat) args.push('--output-format', outputFormat);
+      // -p takes the prompt as its value and must come last — anything after it is silently swallowed as part of the prompt, not parsed as a flag (harness-facts.md § Cross-CLI worker, the flag-order trap).
       args.push('-p', prompt);
-      return run(args, dir);
+      return runWithValueHelp(args, dir);
     },
   );
 }

@@ -25,9 +25,9 @@ export function parseModels(text) {
   return rows.length ? rows : null;
 }
 
-// `agy --help` lists each enum after its flag as `(a|b|c)` or `(a, b, c)`, e.g. `--effort  Reasoning effort … (low|medium|high|xhigh|max)`. Returns the values for one flag, or null when the line or list is absent.
+// `agy --help` lists each enum after its flag as `(a|b|c)` or `(a, b, c)`, e.g. `--effort  Reasoning effort … (low|medium|high|xhigh|max)`. Returns the values for one flag, or null when the line or list is absent. The flag must start the line (after leading whitespace): another flag's prose can mention `--output-format` mid-sentence (the `--input-format` row does), and matching that row picks up the wrong parenthesized list.
 export function parseHelpEnum(text, flag) {
-  const line = String(text).split('\n').find((l) => new RegExp(`(^|\\s)--${flag}(\\s|$)`).test(l));
+  const line = String(text).split('\n').find((l) => new RegExp(`^\\s*--${flag}(\\s|$)`).test(l));
   if (!line) return null;
   const m = line.match(/\(([^()]*)\)/);
   if (!m) return null;

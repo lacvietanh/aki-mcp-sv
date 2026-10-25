@@ -25,6 +25,8 @@ const MODELS_WITH_PROGRESS = 'Fetching available models...\n' + MODELS_2026_10_2
 
 const HELP_2026_10_25 = [
   '  --effort                        Reasoning effort for the current CLI session (low|medium|high|xhigh|max)',
+  // The input-format row mentions "--output-format stream-json" mid-prose with its own (text, stream-json) list: a loose match would read output-format off this row and drop json.
+  '  --input-format                  Input format for print mode (text, stream-json). stream-json reads one NDJSON message per line from stdin; it requires --output-format stream-json (default text)',
   '  --mode                          Set the agent execution mode for this session (accept-edits, auto, plan)',
   '  --output-format                 Output format for print mode (text, json, stream-json) (default text)',
   '  -p                              Short alias for --print',
