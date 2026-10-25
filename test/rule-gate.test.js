@@ -219,13 +219,13 @@ assert.ok(!newReceipt(await write(path.join(r4, 'README.md'), newReceipt(docsFir
 fs.rmSync(path.join(ruleDir, 'route-map.json'));
 
 // An acting call that names its chat's ss ends with one line when that file is missing or behind, and with nothing while it is current (D10).
-const { SS_DIR } = await import('../scripts/session-file.js');
+const { SS_DIR, shapeOf } = await import('../scripts/session-file.js');
 const ssFile = path.join(SS_DIR, 'demo', '2026.10.24-1812-ab.md');
 const ssReceipt = (await client.callTool({ name: 'aki__akidevrule_context', arguments: { workingPath: tmp } })).structuredContent.receipt;
 const ssCall = (ss, p = path.join(tmp, 'ss-target.txt')) => client.callTool({ name: 'aki__write_file', arguments: { path: p, content: 's', receipt: ssReceipt, ss } });
 assert.equal((await ssCall(ssFile)).content.at(-1).text, `ss: ${ssFile} · not created yet`);
 fs.mkdirSync(path.dirname(ssFile), { recursive: true });
-assert.equal(text(await ssCall(ssFile, ssFile)), `wrote ${ssFile}\nss file written: ${ssFile}`, 'the call that writes the ss gets the fact line and no stale line');
+assert.equal(text(await ssCall(ssFile, ssFile)), `wrote ${ssFile}\nss file written: ${ssFile} · shape: missing ${shapeOf('s').join(', ')}`, 'the call that writes the ss gets the fact line and no stale line');
 assert.equal((await ssCall(ssFile)).content.length, 1, 'a current ss adds nothing');
 const twentyMinutesAgo = new Date(Date.now() - 20 * 60_000);
 fs.utimesSync(ssFile, twentyMinutesAgo, twentyMinutesAgo);

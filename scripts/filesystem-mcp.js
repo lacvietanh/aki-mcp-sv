@@ -16,7 +16,7 @@ import { createTwoFilesPatch } from 'diff';
 import { z } from 'zod';
 import { getRoots, resolveRealUnderRoot, resolveRealWritable, resolveRealWritableDir } from './roots.js';
 import { ok, fail } from './mcp-tool.js';
-import { isSessionFile } from './session-file.js';
+import { isSessionFile, acceptSessionPath, shapeNote } from './session-file.js';
 
 const normalizeLineEndings = (text) => text.replace(/\r\n/g, '\n');
 
@@ -146,11 +146,11 @@ async function applyFileEdits(filePath, edits, dryRun) {
   const formatted = `${'`'.repeat(fence)}diff\n${diff}${'`'.repeat(fence)}\n`;
 
   if (!dryRun) await writeFileAtomic(filePath, content);
-  return formatted;
+  return { diff: formatted, content };
 }
 
-// D9 (docs/plan/ss-session-file.md): an ss write is named as a fact, never an order; host firewalls stop on orders in tool output.
-const withSessionLine = (real, text) => (isSessionFile(real) ? `${text}\nss file written: ${real}` : text);
+// D9 (docs/plan/ss-session-file.md): an ss write is named as a fact, never an order; host firewalls stop on orders in tool output. v2 D6: an ss (not a legacy working.md) also says whether it has the shape, from the content just written.
+const withSessionLine = (real, text, content) => (isSessionFile(real) ? `${text}\nss file written: ${real}${acceptSessionPath(real) ? ` · ${shapeNote(content)}` : ''}` : text);
 
 export const provider = { id: 'filesystem', title: 'Filesystem', required: true, register };
 
@@ -192,7 +192,7 @@ export function register(server) {
       try {
         const real = await resolveRealWritable(p);
         await writeFileAtomic(real, content);
-        return ok(withSessionLine(real, `wrote ${real}`));
+        return ok(withSessionLine(real, `wrote ${real}`, content));
       } catch (e) {
         return fail(e);
       }
@@ -214,8 +214,8 @@ export function register(server) {
     async ({ path: p, edits, dryRun }) => {
       try {
         const real = await resolveRealWritable(p);
-        const diff = await applyFileEdits(real, edits, dryRun);
-        return ok(dryRun ? diff : withSessionLine(real, diff));
+        const { diff, content } = await applyFileEdits(real, edits, dryRun);
+        return ok(dryRun ? diff : withSessionLine(real, diff, content));
       } catch (e) {
         return fail(e);
       }

@@ -16,7 +16,7 @@ process.env.HOME = home;
 process.env.USERPROFILE = home;
 process.env.AKI_MCP_DATA_DIR = path.join(home, '.aki', 'mcpsv');
 const { register } = await import('../scripts/filesystem-mcp.js');
-const { SS_DIR } = await import('../scripts/session-file.js');
+const { SS_DIR, shapeOf } = await import('../scripts/session-file.js');
 
 const server = new McpServer({ name: 'fs-test', version: '0' });
 register(server);
@@ -34,8 +34,12 @@ const call = async (name, args) => {
 const ssFile = path.join(SS_DIR, 'demo', '2026.10.24-1812-ab.md');
 const legacy = path.join(home, '.aki', 'mcpsv', 'task', 'old-thread', 'working.md');
 for (const f of [ssFile, legacy]) fs.mkdirSync(path.dirname(f), { recursive: true });
-assert.equal(await call('write_file', { path: ssFile, content: '# goal\n' }), `wrote ${ssFile}\nss file written: ${ssFile}`);
-assert.match(await call('edit_file', { path: ssFile, edits: [{ oldText: 'goal', newText: 'state' }] }), new RegExp(`\\nss file written: ${ssFile.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`));
+// v2 D6: a write of an ss (not a legacy working.md) also says whether it has the frontmatter keys and headings, as a fact.
+assert.equal(await call('write_file', { path: ssFile, content: '# goal\n' }), `wrote ${ssFile}\nss file written: ${ssFile} · shape: missing ${shapeOf('# goal\n').join(', ')}`);
+assert.match(await call('edit_file', { path: ssFile, edits: [{ oldText: 'goal', newText: 'state' }] }), new RegExp(`\\nss file written: ${ssFile.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · shape: missing status, repo, .*## Log$`));
+const shaped = ['---', ...['status', 'repo', 'chat', 'started', 'parent', 'successor', 'room', 'plan', 'transcript'].map((k) => `${k}: none`), '---', '# t', ...['Now', 'Asked', 'Next', 'Decisions', 'Open', 'Files', 'Log'].map((h) => `## ${h}`), ''].join('\n');
+assert.equal(await call('write_file', { path: ssFile, content: shaped }), `wrote ${ssFile}\nss file written: ${ssFile} · shape ok`);
+assert.match(await call('edit_file', { path: ssFile, edits: [{ oldText: '## Log', newText: '## Log\n- 12:00 x' }] }), new RegExp(`\\nss file written: ${ssFile.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · shape ok$`), 'an edit is checked on the content it leaves');
 assert.equal(await call('write_file', { path: legacy, content: 'x\n' }), `wrote ${legacy}\nss file written: ${legacy}`);
 assert.equal(await call('write_file', { path: path.join(home, 'work', 'plain.md'), content: 'x\n' }), `wrote ${path.join(home, 'work', 'plain.md')}`);
 

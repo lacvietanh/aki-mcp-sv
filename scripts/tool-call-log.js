@@ -1,13 +1,13 @@
 // One JSON line per tool call, for every tool, so misuse is measured instead of guessed: which client, which op, ok or not, how long. Written at the bridge, the only layer that sees the external session id and user agent. Never the arguments' text: no prompt, expression or compose text reaches this file.
 // The shape follows the owner's call-log decision (docs/plan/done/akimcp-tool-refactor.md § D9): every tool is logged, the default line is lean (basic), a detail level adds the full error text plus the from chat and the eval hash, and keep-by-age cleanup (default 40 days) replaces the old 1 MB size rotation.
-// ss, ssAge and ssState measure whether chats carry their session file and how far behind it runs (docs/plan/ss-session-file.md D11); the ss path itself is never logged.
+// ss, ssAge and ssState measure whether chats carry their session file and how far behind it runs (docs/plan/ss-session-file.md D11); ssShape says whether a written ss had the v2 shape, read from the write's result line (docs/plan/v2-ss-session-file.md D6); the ss path itself is never logged.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { readSettings } from './allowlist.js';
 import { USER_DIR } from './userdata.js';
 import { VERSION } from './version.js';
-import { acceptSessionPath, ssAgeMinutes } from './session-file.js';
+import { acceptSessionPath, ssAgeMinutes, shapeFromResult } from './session-file.js';
 
 export const TOOL_CALLS_PATH = path.join(USER_DIR, 'tool-calls.jsonl');
 
@@ -94,6 +94,7 @@ export function buildLogEntry({ sessionId, agent, headerNames, trace, params, re
     ss: args.ss === undefined ? undefined : Boolean(acceptSessionPath(args.ss)),
     ssAge,
     ssState: short(result?.structuredContent?.ss?.state, 12),
+    ssShape: shapeFromResult(firstText),
     ms,
     version: VERSION,
     ...traceFields(trace),

@@ -19,7 +19,7 @@ const random2 = () => randomInt(36 * 36).toString(36).padStart(2, '0');
 const two = (n) => String(n).padStart(2, '0');
 const sanitizeProject = (name) => (/^\.*$/.test(name) ? '_' : name.replace(/[^A-Za-z0-9._-]/g, '-'));
 
-// D3, v2 B3: basename of the nearest folder holding `.git` (a folder, or the file a worktree or submodule has), walking up from workingPath and stopping at workingRoot; none found is the working folder's own path as Claude Code keys it (`/Volumes/DEV/labs` → `-Volumes-DEV-labs`); no workingPath is `_`.
+// D3, v2 B3: the nearest `.git` folder's name, else the working folder as Claude Code keys it, else `_` (docs/arch/rule-context-delivery.md).
 export function projectKey(workingPath, workingRoot) {
   if (!workingPath) return '_';
   const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
@@ -31,7 +31,7 @@ export function projectKey(workingPath, workingRoot) {
     if (fs.existsSync(path.join(dir, '.git'))) return sanitizeProject(path.basename(dir));
     if (rel === '') break;
   }
-  return sanitizeProject(here);
+  return sanitizeProject(fs.statSync(here, { throwIfNoEntry: false })?.isFile() ? path.dirname(here) : here);
 }
 
 // D4, v2 D7: folded to ASCII and lowercased; spaces and underscores become `-`, other symbols drop (`P37·W8` → `p37w8`), at most LABEL_MAX characters, cut at the last whole word.
@@ -70,6 +70,32 @@ export function acceptSessionPath(p, { dir = SS_DIR, pathApi = path } = {}) {
 
 // D9: a write the filesystem tools name as an ss write.
 export const isSessionFile = (real) => Boolean(acceptSessionPath(real)) || LEGACY_WORKING_FILE.test(real);
+
+// v2 D1, D2: the frontmatter keys and headings a new ss is expected to carry.
+const SHAPE_KEYS = ['status', 'repo', 'chat', 'started', 'parent', 'successor', 'room', 'plan', 'transcript'];
+const SHAPE_HEADINGS = ['Now', 'Asked', 'Next', 'Decisions', 'Open', 'Files', 'Log'];
+const SHAPE_LINE = /^ss file written: .* · shape(?: (ok)|: missing (.+))$/m;
+
+// v2 D6: what an ss lacks of the frontmatter keys and headings, as written (`status`, `## Now`); empty when it has them all. A v1 file is reported, never refused.
+export function shapeOf(text) {
+  const lines = String(text).replace(/\r\n/g, '\n').split('\n');
+  const close = lines[0] === '---' ? lines.indexOf('---', 1) : -1;
+  const keys = new Set(lines.slice(1, close < 0 ? 1 : close).map((l) => /^([a-z]+):/.exec(l)?.[1]));
+  const heads = new Set(lines.map((l) => /^## (.*\S)\s*$/.exec(l)?.[1]));
+  return [...SHAPE_KEYS.filter((k) => !keys.has(k)), ...SHAPE_HEADINGS.filter((h) => !heads.has(h)).map((h) => `## ${h}`)];
+}
+
+// v2 D6: the end of the write-time line, a fact about the file just written.
+export function shapeNote(text) {
+  const missing = shapeOf(text);
+  return missing.length ? `shape: missing ${missing.join(', ')}` : 'shape ok';
+}
+
+// v2 D6: the call log's `ssShape`, read back from that same result line (no file read): `ok`, how many pieces were missing, or undefined when the result carries no shape.
+export function shapeFromResult(text) {
+  const m = typeof text === 'string' ? SHAPE_LINE.exec(text) : null;
+  return m ? (m[1] ? 'ok' : m[2].split(', ').length) : undefined;
+}
 
 // D11: whole minutes since the file was last written, -1 when it does not exist.
 export function ssAgeMinutes(file, now = Date.now()) {

@@ -136,6 +136,14 @@ test('appendLogEntry rotates a not-today current file to a dated sidecar and pru
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test('buildLogEntry reads ssShape from the write result line: ok, how many pieces were missing, or nothing', () => {
+  const shapeOf = (text) => buildLogEntry({ sessionId: 'sess-shape', agent: 'A', params: { name: 'aki__write_file', arguments: {} }, response: { result: { content: [{ type: 'text', text }] } }, ms: 1 }, { level: 'basic' }, new Set()).ssShape;
+  assert.equal(shapeOf('wrote /p\nss file written: /p · shape ok'), 'ok');
+  assert.equal(shapeOf('wrote /p\nss file written: /p · shape: missing status, ## Now'), 2);
+  assert.equal(shapeOf('wrote /p\nss file written: /p'), undefined, 'a legacy working.md write has no shape');
+  assert.equal(shapeOf('wrote /p'), undefined);
+});
+
 test('appendLogEntry rolls the current file over once it passes the MB cap', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tool-call-log-cap-'));
   const file = path.join(dir, 'tool-calls.jsonl');

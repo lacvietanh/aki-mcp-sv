@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { USER_DIR, SETTINGS_PATH } from '../scripts/userdata.js';
-import { SS_DIR, projectKey, sanitizeLabel, mintSessionPath, acceptSessionPath, isSessionFile, ssAgeMinutes, staleLine, sessionFor } from '../scripts/session-file.js';
+import { SS_DIR, projectKey, sanitizeLabel, mintSessionPath, acceptSessionPath, isSessionFile, shapeOf, shapeNote, shapeFromResult, ssAgeMinutes, staleLine, sessionFor } from '../scripts/session-file.js';
 
 const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ss-')));
 const at = new Date(2026, 9, 24, 18, 12);
@@ -117,6 +117,35 @@ test('sessionFor mints, keeps, ignores, and reports an unreachable data dir', ()
   } finally {
     fs.rmSync(SETTINGS_PATH, { force: true });
   }
+});
+
+test('projectKey keys a no-git file by its folder, like a folder', () => {
+  const dir = fs.mkdtempSync(path.join(tmp, 'nogit-'));
+  const file = path.join(dir, 'notes.md');
+  fs.writeFileSync(file, 'x');
+  assert.equal(projectKey(file), cwdKey(dir));
+  assert.equal(projectKey(dir), cwdKey(dir));
+});
+
+test('shapeOf names what an ss lacks of the v2 frontmatter and headings, and reports a v1 file instead of refusing it', () => {
+  const shaped = ['---', ...['status', 'repo', 'chat', 'started', 'parent', 'successor', 'room', 'plan', 'transcript'].map((k) => `${k}: none`), '---', '# t', ...['Now', 'Asked', 'Next', 'Decisions', 'Open', 'Files', 'Log'].map((h) => `## ${h}`), ''].join('\n');
+  assert.deepEqual(shapeOf(shaped), []);
+  assert.deepEqual(shapeOf(shaped.replace(/\n/g, '\r\n')), [], 'CRLF files count');
+  assert.deepEqual(shapeOf(shaped.replace('status: none\n', '').replace('## Now\n', '')), ['status', '## Now']);
+  assert.deepEqual(shapeOf(shaped.replace('transcript: none\n---\n', '---\ntranscript: none\n')), ['transcript'], 'a key after the closing --- is body, not frontmatter');
+  assert.deepEqual(shapeOf(`status: active\n${shaped.slice(shaped.indexOf('# t'))}`), ['status', 'repo', 'chat', 'started', 'parent', 'successor', 'room', 'plan', 'transcript'], 'frontmatter has to open the file');
+  const v1 = shapeOf('# goal\n## State\n## Next\n');
+  assert.equal(v1.length, 9 + 6, 'a v1 file is told everything it lacks');
+  assert.deepEqual([v1[0], v1.at(-1), v1.includes('## Next')], ['status', '## Log', false]);
+});
+
+test('the write-time note and the call log field are one format, written and read back', () => {
+  assert.equal(shapeNote('---\nstatus: active\n---\n'), `shape: missing ${shapeOf('---\nstatus: active\n---\n').join(', ')}`);
+  assert.equal(shapeFromResult('wrote /p\nss file written: /p · shape ok'), 'ok');
+  assert.equal(shapeFromResult('```diff\n+x\n```\nss file written: /p · shape: missing status, ## Now'), 2, 'the count of what is missing');
+  assert.equal(shapeFromResult('wrote /p\nss file written: /p'), undefined, 'a legacy write has no shape');
+  assert.equal(shapeFromResult('wrote /p'), undefined);
+  assert.equal(shapeFromResult(undefined), undefined);
 });
 
 test.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
