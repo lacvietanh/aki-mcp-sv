@@ -1,6 +1,6 @@
 # Tool drift audit and the 3.1 release gate: fix every stale tool fact, make `agy_run` read the CLI, then ship 3.1.0 tight
 
-Status: decided 2026-10-25 (decisions revised after a self-run deep-think, § Decision record), not started. Audited against AkiMCP 3.1.0 (`package.json`), `agy` 1.4.7, `kiro-cli` 2.16.2, HEAD `99047e1` (8 commits above the local `3.1.0` tag `4991da5`). Owner asked for one plan file, so the finding record (normally a `docs/research/` doc, `docs.C2`) lives in § Audit result and no research doc is opened; it is an event record and is not edited after the fixes land.
+Status: decided 2026-10-25 (decisions revised after a self-run deep-think, § Decision record), P1–P4 implemented in `fc465bd..dfeefeb` (each tick cites its commit); still open: P0 sentence read, P2 panel wording, C3, F8 (restart agy), eight of nine P5 docs boxes, the live checks (owner's hands), P6–P7. Audited against AkiMCP 3.1.0 (`package.json`), `agy` 1.4.7, `kiro-cli` 2.16.2, HEAD `99047e1` (8 commits above the local `3.1.0` tag `4991da5`). Owner asked for one plan file, so the finding record (normally a `docs/research/` doc, `docs.C2`) lives in § Audit result and no research doc is opened; it is an event record and is not edited after the fixes land.
 
 Owner orders of 2026-10-25 13:53, recorded: **Q1 closed**: re-tag is accepted, 3.1 must be tight and complete; **T1 closed**: every call the plan left to the agent is decided by deep-think below, no further question; a second agy session appended § Carried over, now merged into the phases.
 
@@ -103,7 +103,7 @@ A core need (the interface was wrong), not an AIObox feature, so `CLAUDE.md` § 
 - **Claude Code Apply:** the panel runs `claude mcp remove aki-mcp -s user` (an absent entry is not an error) then `claude mcp add --transport http -s user aki-mcp <url> --header …`, so the new token replaces the old and the entry works from every project. The reply names what it replaced and says "restart the session or run `/mcp`". `claude` not on the panel's PATH → the message says so and shows the copyable two-line fallback (`remove`, then `add`), never a bare error. The copyable snippet becomes those same two lines, so a hand paste works after Roll token too (F9).
 - **Codex Apply:** the panel replaces the `[mcp_servers.aki-mcp]` table in `~/.codex/config.toml` in place (parse-free table-boundary replace, other tables untouched, atomic write like `writeJsonAtomic`); an unparsable file stops with the path named, as `agyApply` does. The text no longer says "append".
 - **Cursor Apply:** merge `mcpServers.aki-mcp` into `~/.cursor/mcp.json`, same shape as `agyApply`. The Claude app (stdio, token-free) keeps its hand merge: Roll token cannot break it, so it is the lowest value of the five. Taken last, dropped first if the scope must shrink.
-- **After Roll token:** the panel's roll message lists which Applied clients now hold a stale token and offers **Re-apply** for them. This needs the panel to remember which Apply buttons were used (a small state file under `~/.aki/mcpsv/`, shape checked by the `release.B5` detector since it is a state-file shape); if that tracking is judged too heavy, the roll message names the three tabs instead, and the plan records that choice.
+- **After Roll token:** the panel's roll message lists which Applied clients now hold a stale token and offers **Re-apply** for them. This needs the panel to remember which Apply buttons were used (a small state file under `~/.aki/mcpsv/`, shape checked by the `release.B5` detector since it is a state-file shape); if that tracking is judged too heavy, the roll message names the three tabs instead, and the plan records that choice. **Recorded 2026-10-25 (3.1.0 gate room):** the second branch was taken. The roll-token reply in `scripts/panel.js:394` reads "re-click Apply on the Claude Code, Codex and Cursor tabs (or re-paste their snippets)", and no state file tracks which Apply buttons were used.
 - **Taken within the order (`T`):** scheduled inside 3.1 (P3), because F9's wrong text must be fixed in 3.1 anyway and the Apply routes share one pattern. Alternative rejected for now: moving the three clients to stdio like AGY, which removes the stale-token class outright but loses the HTTP bridge's `tool-calls.jsonl` logging (§ Verification, 15:47 entry: only the HTTP `/mcp` bridge logs), and AGY users already accept that cost; reopen if the owner prefers no-token over logging. The owner may move the whole decision after 3.1.
 - Checks the build must pass: Apply twice in a row leaves one entry; Apply after a Roll token yields a 200 `initialize` with the new token; a missing `claude`/`codex` binary and an invalid `config.toml` each return a message that names the next step; `npm test` gets route tests with a fake `HOME` and a fake `claude` on `PATH` (no real CLI, no skip, `test.D`).
 
@@ -112,44 +112,44 @@ A core need (the interface was wrong), not an AIObox feature, so `CLAUDE.md` § 
 One writer at a time: another agy session and the ss v2 council have been committing to this repo today. Before each phase run `git status --short` and `git log --oneline -5`, take only a clean tree, and keep each phase to its own commit (`/akigitcommit`, no push). `docs/feat/tools.md`, `docs/index.md`, `CHANGELOG.md` and `CLAUDE.md` are edited once, in P5, so each stamp is rewritten once (`docs.A4`). Each phase ends with `npm test` green and its residue check (`test.B3`). Checkboxes are cleared when the evidence is quoted in § Verification, not on belief.
 
 ### P0 — finish the audit (read-only; results appended to § Audit result)
-- [ ] Check each "not yet checked" item against code or the real tool and mark it *true* or add an F-row with a level.
+- [x] fc465bd · Check each "not yet checked" item against code or the real tool and mark it *true* or add an F-row with a level.
 - [ ] Read every sentence in `docs/arch`, `docs/feat`, `docs/ref`, `README.md`, `scripts/config-page.js` panel copy and `CLAUDE.md` that names a tool, a number, a flag, a model or a CLI version; each drifted one becomes an F-row. Known starting set: `docs/feat/tools.md` (rows `agy_run`, `kiro`, `postman`, `cdp`; lines 62–68 and 109), `docs/ref/harness-fact.md`, `docs/ref/fact-agy-mcp-config.md` (names `agy` 1.2.13, IDE 2.5.5; installed is 1.4.7, so re-verify its claims and bump its stamp), `docs/index.md` (the `harness-fact.md` line), `docs/arch/provider-toolkit.md`, `README.md` lines 3, 98, 109, `CLAUDE.md` § Adding a connector 1 (C4 below).
-- [ ] Read `~/.aki/mcpsv/tool-calls.jsonl` for `agy_run` calls: durations, errors, timeouts. Evidence for D5's `timeoutSec` row and for how often the default model failed.
+- [x] fc465bd · Read `~/.aki/mcpsv/tool-calls.jsonl` for `agy_run` calls: durations, errors, timeouts. Evidence for D5's `timeoutSec` row and for how often the default model failed.
 - [ ] Do not touch `docs/plan/done/*`, event bodies in `docs/research/*` or CHANGELOG history. A wrong claim a research Decision still rests on gets an `## Amendments` entry (`docs.B2`).
 
 ### P1 — probe module and spike
-- [ ] `scripts/agy-capabilities.js`: `probe()` → `{version, models:[{id,label}], modes, efforts, outputFormats, at}`; 1 h TTL plus version key; `refresh()`; a list that fails to parse is `null`, never an exception; a probe timeout (15 s) leaves everything `null`.
-- [ ] Newest-flash-medium resolver (D3) as a pure function of the models array.
-- [ ] Fixture tests (D7), including the changed-format sample.
-- [ ] Spike, minimal prompt on the cheapest tier, results into § Verification: (a) wall time of `agy models` (it needs the network); (b) whether `--output-format json` returns a conversation id (decides D5 `conversation`); (c) what `agy` does when `--effort` and a `-low|-medium|-high` model suffix disagree (N1). These runs spend a little quota; the order to execute this plan covers them (`agent.B3`).
+- [x] f1f2613 · `scripts/agy-capabilities.js`: `probe()` → `{version, models:[{id,label}], modes, efforts, outputFormats, at}`; 1 h TTL (as built: 1 h, or 1 min after a failed models probe, `dfeefeb`; no version key was built, the cache is keyed by time only); `refresh()`; a list that fails to parse is `null`, never an exception; a probe timeout (15 s) leaves everything `null`.
+- [x] f1f2613 · Newest-flash-medium resolver (D3) as a pure function of the models array.
+- [x] f1f2613 (file), 49d3497 (+2 lines) · Fixture tests (D7), including the changed-format sample.
+- [x] results recorded in § Verification · Spike, minimal prompt on the cheapest tier, results into § Verification: (a) wall time of `agy models` (it needs the network); (b) whether `--output-format json` returns a conversation id (decides D5 `conversation`); (c) what `agy` does when `--effort` and a `-low|-medium|-high` model suffix disagree (N1). These runs spend a little quota; the order to execute this plan covers them (`agent.B3`).
 
 ### P2 — rewrite `scripts/agy-mcp.js`
-- [ ] Remove `DEFAULT_MODEL`, the model list, the three `z.enum`s; add `list` (D2); default per D3; strings per D4; `timeoutSec` / `conversation` only if P0 / P1 evidence says so (D5).
-- [ ] Description built at registration from the allowed modes (D4): no id, no list, names `list=capabilities`, keeps "name exact paths; `cwd` is not a hard scope boundary".
-- [ ] A failing call with a model, effort or output-format complaint refreshes the probe once and returns `agy`'s error plus the valid values and `next`; empty-stdout and stdout-error handling stay.
-- [ ] `-p <prompt>` stays last (`harness-fact.md` row 1).
+- [x] 49d3497 · Remove `DEFAULT_MODEL`, the model list, the three `z.enum`s; add `list` (D2); default per D3; strings per D4; `timeoutSec` / `conversation` only if P0 / P1 evidence says so (D5).
+- [x] 49d3497 · Description built at registration from the allowed modes (D4): no id, no list, names `list=capabilities`, keeps "name exact paths; `cwd` is not a hard scope boundary".
+- [x] 49d3497 · A failing call with a model, effort or output-format complaint refreshes the probe once and returns `agy`'s error plus the valid values and `next`; empty-stdout and stdout-error handling stay.
+- [x] 49d3497 · `-p <prompt>` stays last (`harness-fact.md` row 1).
 - [ ] Panel: the agy wording in `scripts/config-page.js` is checked for the same read-only claim.
 
 ### P3 — small fixes
-- [ ] F6: build the `local_fetch` description from `MAX_RESPONSE_BYTES` (written once).
-- [ ] F7: guard per D7(b); the README keeps the number, and the test fails when it drifts.
-- [ ] D8: kiro failure `next`.
+- [x] b6408c8 · F6: build the `local_fetch` description from `MAX_RESPONSE_BYTES` (written once).
+- [x] b6408c8 · F7: guard per D7(b); the README keeps the number, and the test fails when it drifts.
+- [x] b6408c8 · D8: kiro failure `next`.
 - [ ] F8: restart `agy` after P2 and list `~/.gemini/antigravity-cli/mcp/akimcp/`; if `aki__agy_run.json` is still missing, record it in `docs/ref/fact-agy-mcp-config.md` as an unverified cause and open no code change; if present, close with no action.
-- [ ] **F9 + F10 (D10)**: `config-page.js:152,414,438` text and snippets (`remove` then `add -s user`; Codex no "append"); `POST /api/claude-code-apply`, `POST /api/codex-apply`, `POST /api/cursor-apply` in `panel.js` beside `agy-apply-mcp`, each with a `data-act` in `public/panel-client.js` (`ACTIONS`) and a `msg` span; Roll token message names stale clients (or Re-apply, per D10); route tests. The panel copy about Roll token (`config-page.js:284,414`) is re-read after.
+- [x] b6408c8 · **F9 + F10 (D10)**: `config-page.js:152,414,438` text and snippets (`remove` then `add -s user`; Codex no "append"); `POST /api/claude-code-apply`, `POST /api/codex-apply`, `POST /api/cursor-apply` in `panel.js` beside `agy-apply-mcp`, each with a `data-act` in `public/panel-client.js` (`ACTIONS`) and a `msg` span; Roll token message names stale clients (or Re-apply, per D10); route tests. The panel copy about Roll token (`config-page.js:284,414`) is re-read after.
 - [ ] **C3 (web connector list line)** `scripts/config-page.js:278`: same fix as `bb4e598` (groups, not a hand-kept client list, per `CLAUDE.md` § Adding a connector 3); re-read the line first, it may already be done.
-- [ ] **C4** `CLAUDE.md` § Adding a connector 1 says OAuth "survives Roll token", and ClickUp is the observed exception (CHANGELOG `[Unreleased]`, 2026-10-24). A statement the code and the record contradict is corrected in place, minimal, in P5 with the other `CLAUDE.md` pass; the convention itself (OAuth ranks first) is not changed.
-- [ ] **C5 (other repo)**: write the letter into `~/.aki/handoff/` for the aiobox session: `docs/arch/akimcp-boundary.md` there cites `start.js :56`, the line is now `:60`. Not editable from this repo.
+- [x] 177af0a · **C4** `CLAUDE.md` § Adding a connector 1 says OAuth "survives Roll token", and ClickUp is the observed exception (CHANGELOG `[Unreleased]`, 2026-10-24). A statement the code and the record contradict is corrected in place, minimal, in P5 with the other `CLAUDE.md` pass; the convention itself (OAuth ranks first) is not changed.
+- [x] letter file exists in `~/.aki/handoff/` · **C5 (other repo)**: write the letter into `~/.aki/handoff/` for the aiobox session: `docs/arch/akimcp-boundary.md` there cites `start.js :56`, the line is now `:60`. Not editable from this repo.
 
 ### P4 — ss v2: the remaining steps that must ship with 3.1 (`docs/plan/v2-ss-session-file.md`)
 Decided: P2 `14bcb49` and P3 `99047e1` are already in HEAD, so shipping 3.1.0 without their rule text and docs would ship code the instruction text contradicts. Everything in this phase lands before the gate; only P9 (14 days after release) waits.
-- [ ] P4 rule text (`scripts/rule-context-mcp.js` `SS_STEP`, the `SHARED_WORK` handoff line, literals in `test/rule-context.test.js`).
-- [ ] P5 a, b: sync v2 labels into `.akidevsync/notes.json` through the `akidevsync-notes` skill (pinned task `task-1792867992000`).
+- [x] rule text and `test/rule-context.test.js` literals (this room) · P4 rule text (`scripts/rule-context-mcp.js` `SS_STEP`, the `SHARED_WORK` handoff line, literals in `test/rule-context.test.js`).
+- [x] notes.json tasks done (3.1.0 gate room) · P5 a, b: sync v2 labels into `.akidevsync/notes.json` through the `akidevsync-notes` skill (pinned task `task-1792867992000`).
 - [ ] Run `git log --oneline -5` before starting; a later commit may have closed an item. The council room (`/Users/aki/.aki/agent-council/aki-mcp-sv/2026.10.25-1231-akimcp-review-cont/`) needs no further session: everything it left open is in this plan, and its two writer drafts are copied beside this plan's session file (§ Files).
 
 ### P5 — docs sweep, one pass (everything P0 and P4 listed)
 - [ ] `docs/ref/harness-fact.md` per D6 (volatile rows replaced by the probe pointer, F3 corrected, behavior rows re-checked, `kiro` rows re-verified against `kiro-cli` 2.16.2 on this date).
 - [ ] `docs/feat/tools.md`: `agy_run` row and lines 62–68, 109 describe the tool as it now is (tier default, `list`, modes by setting, no "plan only" absolute); also v2's P6 guide line; stamp rewritten once.
-- [ ] `docs/feat/session-file.md` from the council draft (`writer-p1-session-file.md`, § Files), pasted only after P4 behaves as it describes.
+- [x] file exists (111 lines) · `docs/feat/session-file.md` from the council draft (`writer-p1-session-file.md`, § Files), pasted only after P4 behaves as it describes.
 - [ ] `docs/ref/fact-agy-mcp-config.md`: versions and claims re-checked, stamp rewritten.
 - [ ] F9/F10 docs: the README connector sections and `docs/feat/` text for Claude Code, Codex and Cursor name Apply and the `-s user` scope; `docs/ref/` gets the `claude mcp add --scope` and `codex mcp add` facts with the date read; CHANGELOG `### Added` (Apply buttons) and `### Fixed` (F9: re-running the Claude Code line after Roll token now replaces the old token).
 - [ ] `README.md` lines 3, 98, 109; `CLAUDE.md` (C4 wording, and the § Release process drift check the v2 plan names).
