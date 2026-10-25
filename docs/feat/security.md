@@ -56,7 +56,7 @@ The two layers that actually block access:
 
 **Whoever knows the passphrase can get a token.** They can register their own client and read the code off the redirect. The passphrase is therefore the real key, and a leaked passphrase is handled as a leaked token (see When something leaks).
 
-Tokens: there is exactly one access token, shared by every client, TTL 1 year (`getOrIssueAccessToken`, design: `docs/plan/done/single-access-token.md`). Refresh tokens are per authorization, bound to their client, and do not expire. Panel section 1 shows the token and offers *Roll token* (new access token, refresh kept: OAuth clients — Claude, ChatGPT, Grok, Gemini, Notion — refresh silently on their next `401`; a token pasted as a fixed bearer has no refresh and gets `401` until re-pasted, which is why only local snippets take a pasted token and Notion connects with the passphrase like the other web AIs) and *Roll & sign out all clients* (also clears refresh tokens: every AI reconnects with the passphrase). Both files survive restarts: a connector is long-lived access, not a login session.
+Tokens: there is exactly one access token, shared by every client, TTL 1 year (`getOrIssueAccessToken`, design: `docs/plan/done/single-access-token.md`). Refresh tokens are per authorization, bound to their client, and do not expire. Panel section 1 shows the token and offers *Roll token* and *Roll & sign out all clients*. *Roll token* issues a new access token and keeps refresh tokens: OAuth clients (Claude, ChatGPT, Grok, Gemini, Notion, ClickUp) refresh on their next `401`, except that ClickUp's connectors sent no refresh after the 2026-10-24 roll, so ClickUp is reconnected once by hand. A token pasted as a fixed bearer has no refresh and gets `401` until it is set again, which is why Notion connects with the passphrase like the other web AIs. Claude Code, Codex and Cursor get the new token from the Apply button on their panel tab (`scripts/panel.js`, `POST /api/claude-code-apply`, `/api/codex-apply`, `/api/cursor-apply`): Claude Code by `claude mcp remove aki-mcp -s user` then `claude mcp add --transport http -s user`, Codex by replacing the `[mcp_servers.aki-mcp]` table in `~/.codex/config.toml` in place, Cursor by merging `mcpServers.aki-mcp` into `~/.cursor/mcp.json`. Buda's header is pasted again by hand. Stdio clients (the Claude app, AGY) carry no token, so a roll does not reach them. *Roll & sign out all clients* also clears refresh tokens: every AI reconnects with the passphrase. Both files survive restarts: a connector is long-lived access, not a login session.
 
 The ingress (Tailscale Funnel by default, a `PUBLIC_ORIGIN` edge, or a Cloudflare tunnel via `--tunnel`) only terminates TLS and forwards to the same loopback server; it never changes the trust boundary. Without an ingress, discovery, `/register`, `/authorize` and `/token` return `503` while local `/mcp` keeps serving; attaching one takes effect on restart.
 
@@ -120,7 +120,7 @@ Panel section 7 shows two tables, refreshed with the section's Refresh buttons; 
 
 ## Secrets on disk
 
-All under the data dir (`~/.aki/mcpsv/` by default), mode `0600`, never inside the repo.
+All under the data dir (`~/.aki/mcpsv/` by default), mode `0600`, never inside the repo, except the token copies the panel's Apply buttons write into Codex's and Cursor's own config files (the `~/.codex/config.toml` row below), also mode `0600`.
 
 | File | Holds | Leaked alone means | Revoke |
 |---|---|---|---|
