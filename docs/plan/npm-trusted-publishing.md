@@ -1,6 +1,6 @@
 # Plan — npm Trusted Publishing through GitHub Actions OIDC
 
-Status: wishlist · deferred, not started (owner 2026-10-24: "cái npm trusted pub là deffered/wishlist rồi"); `npm publish` with the owner's OTP stays the release step until the owner names this plan.
+Status: wishlist · deferred, not started (owner 2026-10-24: "cái npm trusted pub là deffered/wishlist rồi"); `npm publish` with the owner's OTP stays the release step until the owner names this plan. Scope call 2026-10-26 (release-gate room): stays out of 3.1.0 and its release; the Q1 key check found no npm or GitHub token in the exposed environment, so nothing here is urgent.
 
 ## Goal
 
