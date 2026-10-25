@@ -14,6 +14,7 @@ export const CLIENT_PATH = path.join(USER_DIR, 'oauth-client.json');
 export const DCR_CLIENTS_PATH = path.join(USER_DIR, 'oauth-dcr-clients.json');
 export const PASSPHRASE_PATH = path.join(USER_DIR, 'passphrase.txt');
 export const TOKENS_PATH = path.join(USER_DIR, 'tokens.json');
+export const RETIRED_TOKENS_PATH = path.join(USER_DIR, 'retired-tokens.json');
 export const INGRESS_CONFIG_PATH = path.join(USER_DIR, 'ingress.json');
 export const CLOUDFLARED_CRED_PATH = path.join(USER_DIR, 'cloudflared-cred.json');
 export const SECURITY_LOG_PATH = path.join(USER_DIR, 'security.log');

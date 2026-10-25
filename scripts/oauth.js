@@ -8,6 +8,7 @@ import {
   DCR_CLIENTS_PATH as DCR_FILE,
   PASSPHRASE_PATH as PASSPHRASE_FILE,
   TOKENS_PATH as TOKENS_FILE,
+  RETIRED_TOKENS_PATH as RETIRED_TOKENS_FILE,
 } from './userdata.js';
 import { log } from './log.js';
 import { logSecurity } from './security-log.js';
@@ -46,6 +47,19 @@ const PASSPHRASE_DISPLAY_PATH = PASSPHRASE_FILE.replace(os.homedir(), '~');
 const authCodes = new Map();
 const accessTokens = new Map();
 const refreshTokens = new Map();
+// sha256 of access tokens this server issued and then rolled or let expire, oldest first (docs/feat/security.md § Connection limits). Its own file: tokens.json's shape is pinned by the AIObox contract.
+const RETIRED_TOKEN_LIMIT = 16;
+const tokenHash = (token) => createHash('sha256').update(token).digest('hex');
+const retiredTokens = loadRetiredTokens();
+
+function loadRetiredTokens() {
+  try {
+    const saved = JSON.parse(readFileSync(RETIRED_TOKENS_FILE, 'utf8'));
+    return Array.isArray(saved) ? saved.filter((hash) => typeof hash === 'string').slice(-RETIRED_TOKEN_LIMIT) : [];
+  } catch {
+    return [];
+  }
+}
 
 function isAllowedRedirect(uri) {
   if (typeof uri !== 'string' || !uri) return false;
@@ -553,7 +567,7 @@ export function getOrIssueAccessToken(via = 'panel') {
   for (const [token, entry] of accessTokens) {
     if (entry.expires >= Date.now()) return token;
   }
-  accessTokens.clear();
+  retireAccessTokens();
   const token = randomBytes(32).toString('hex');
   accessTokens.set(token, { expires: Date.now() + ACCESS_TTL_S * 1000 });
   saveTokens();
@@ -561,9 +575,17 @@ export function getOrIssueAccessToken(via = 'panel') {
   return token;
 }
 
+function retireAccessTokens() {
+  if (!accessTokens.size) return;
+  for (const token of accessTokens.keys()) retiredTokens.push(tokenHash(token));
+  retiredTokens.splice(0, Math.max(0, retiredTokens.length - RETIRED_TOKEN_LIMIT));
+  accessTokens.clear();
+  writeFileSync(RETIRED_TOKENS_FILE, JSON.stringify(retiredTokens), { mode: 0o600 });
+}
+
 // Soft roll leaves refresh tokens alone, so it does not evict a holder of a leaked one; `revokeRefresh` signs every client out.
 export function rotateAccessToken({ revokeRefresh = false } = {}) {
-  accessTokens.clear();
+  retireAccessTokens();
   if (revokeRefresh) refreshTokens.clear();
   return getOrIssueAccessToken(revokeRefresh ? 'hard roll' : 'roll');
 }
@@ -582,8 +604,15 @@ function issueTokens(req, res, client, existingRefresh, via, scope = '') {
   json(res, 200, { access_token: accessToken, token_type: 'Bearer', expires_in: expiresIn, refresh_token: refreshToken, ...(scope ? { scope } : {}) });
 }
 
+// 'retired': a token this server issued before a roll or its expiry. A 256-bit token cannot be guessed, so presenting one proves the caller once held access and only missed the change.
+export function bearerStatus(authHeader) {
+  if (!authHeader?.startsWith('Bearer ')) return 'unknown';
+  const token = authHeader.slice(7);
+  const entry = accessTokens.get(token);
+  if (entry) return entry.expires >= Date.now() ? 'valid' : 'retired';
+  return retiredTokens.includes(tokenHash(token)) ? 'retired' : 'unknown';
+}
+
 export function verifyBearer(authHeader) {
-  if (!authHeader?.startsWith('Bearer ')) return false;
-  const entry = accessTokens.get(authHeader.slice(7));
-  return !!entry && entry.expires >= Date.now();
+  return bearerStatus(authHeader) === 'valid';
 }

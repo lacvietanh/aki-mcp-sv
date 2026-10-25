@@ -1,6 +1,6 @@
 # Security
 
-> updated 2026-10-22 · v3.0.1
+> updated 2026-10-25 · v3.1.0
 
 The one place for akimcp's whole security picture: stance, every surface and its gate, the connection limits, who holds access and who uses it, what each secret on disk unlocks and how to revoke it, and what is logged. README carries a summary and points here. Design record for client activity and the security-only log: `docs/plan/done/client-activity-and-security-log.md`.
 
@@ -82,6 +82,8 @@ Use the literal `127.0.0.1`, never `localhost`: on macOS `localhost` can resolve
 | `maxClients` | 500 | registered DCR clients stored; beyond it `/register` answers `429 too_many_clients` |
 
 - **What counts as a failure:** `401` only — wrong passphrase at `/authorize`, wrong client secret at `/token`, a wrong Bearer on `/mcp`. A `/mcp` call with no `Authorization` header gets the `401` challenge but does not count and is not logged: every MCP client starts with that call to read the challenge, so a reconnect burst must never block a legitimate caller. `400` and `404` never count: they happen during ordinary connects. Connecting many providers in a row is never blocked.
+- **A token this server issued before is not a failure:** a Bearer matching an access token that was rolled or expired (`bearerStatus` → `retired`; the sha256 of the last 16 are kept in `retired-tokens.json`) gets `401`, is never counted or refused, and is logged once per caller per start. A 256-bit token cannot be guessed, so it marks a past holder that missed a roll, not an attacker. Why: a cloud connector service (ClickUp) sends several calls at once from one egress address, so after a roll its connectors still holding the old token hit the 5-per-minute block on every reconnect, and the block then also refused that address's `/token`.
+- **Every `401` to a presented token carries `error="invalid_token"`** (RFC 6750 § 3.1), the standard cue for clients that refresh (ClickUp's connectors showed none and reconnect by hand); a probe with no `Authorization` header gets the bare challenge.
 - **When a block ends:** by itself after `blockMinutes` (the counter restarts from zero), when the owner presses Release (one caller, or everyone) in panel section 7, when limits are turned off, or on restart. The panel lists every blocked caller with its remaining time.
 - **Valid Bearer always passes:** a caller that is blocked but holds the real token keeps working, so an attacker's failures from a shared address never cut an existing connection.
 - **Settings are read on every request**: a save applies at once. A missing or malformed value falls back to its default (`LIMIT_DEFAULTS`).
@@ -124,6 +126,7 @@ All under the data dir (`~/.aki/mcpsv/` by default), mode `0600`, never inside t
 |---|---|---|---|
 | `passphrase.txt` | consent secret for `/authorize` | anyone can obtain a token | panel section 1: Roll passphrase, then Roll & sign out all clients |
 | `tokens.json` | the shared access token and every refresh token; AIObox gets the access token from `GET /api/access-token` (below), not from this file, to paste as Notion's bearer until it moves to the passphrase flow (AIObox keeps a fallback read of this file during the transition; once it drops that, the format here is free to change) | full tool access | Roll & sign out all clients (or delete the file and restart) |
+| `retired-tokens.json` | sha256 of the last 16 rolled or expired access tokens, so a past holder is told apart from a guesser | nothing: a hash does not authorize | delete any time; old tokens then count as wrong ones again |
 | `oauth-client.json` | the pre-issued client's ID/Secret (any client that wants a static client) | nothing without the passphrase | delete and restart, paste the new pair into the provider that uses it |
 | `oauth-dcr-clients.json` | registered public clients (no secret) | nothing | delete and restart; every DCR connector reconnects |
 | `setting.json` | folders, allowlist, trusted zones, limits | not secret, but a write widens access | the local owner (panel or editor); also the file tools while the data dir is under an allowed folder (by decision, see Real limitations) |
@@ -152,7 +155,7 @@ AkiMCP writes two things under AIObox's data dir `~/.aki/aiobox/` (never a secre
 | Printed | Not printed |
 |---|---|
 | `[security]` wrong passphrase (with caller), client approved (name, redirect host, first approval), token granted (grant type, client), passphrase rolled, client removed or signed out from the panel, access token issued or rolled (console only) | `/mcp` 2xx, 202 and 405 access lines |
-| `[security]` `/mcp` rejected bearer (a wrong bearer, with caller; a call with no bearer is not logged), caller blocked, caller released, limits saved | `/register` 201 (the client appears in the panel; its approval is the event) |
+| `[security]` `/mcp` rejected bearer (a wrong bearer, with caller; a call with no bearer is not logged), `/mcp` old token (a rolled or expired token, once per caller per start), caller blocked, caller released, limits saved | `/register` 201 (the client appears in the panel; its approval is the event) |
 | `[security]` token used by new caller (first valid request from an address since start) | `429` refusals (the block line already said it) |
 | `[gatekeeper]` access lines for discovery, `/authorize`, `/token` (rare; `CLAUDE.md` RECURRING #1 is diagnosed from them), and every 5xx | `404` on unknown paths (scanner noise) |
 | registration rejected (redirect not allowlisted), token failures | |

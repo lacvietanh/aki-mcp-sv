@@ -5,6 +5,7 @@ import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 
 // userdata.js reads AKI_MCP_DATA_DIR at import, so the env is set before the gatekeeper loads; the real ~/.aki/mcpsv is never touched.
 const dir = mkdtempSync(path.join(os.tmpdir(), 'aki-ratelimit-test-'));
@@ -13,9 +14,12 @@ process.env.AKI_MCP_DATA_DIR = dir;
 process.env.GATEKEEPER_PORT = '0';
 const goodToken = 'a'.repeat(64);
 writeFileSync(path.join(dir, 'tokens.json'), JSON.stringify({ access: { [goodToken]: { expires: Date.now() + 3600_000 } }, refresh: {} }));
+const persistedRetiredToken = 'b'.repeat(64);
+writeFileSync(path.join(dir, 'retired-tokens.json'), JSON.stringify([createHash('sha256').update(persistedRetiredToken).digest('hex')]));
 
 const { createLimiter, clientKey, useIngress, readLimits, validateLimits, LIMIT_DEFAULTS } = await import('../scripts/rate-limit.js');
 const { startGatekeeper } = await import('../scripts/gatekeeper.js');
+const { rotateAccessToken } = await import('../scripts/oauth.js');
 
 let clock = 0;
 const limiter = createLimiter({ settings: () => ({ enabled: true, max: 3, windowMs: 1000, blockMs: 5000 }), now: () => clock });
@@ -66,7 +70,7 @@ await new Promise((resolve) => server.once('listening', resolve));
 const call = (pathname, headers) => new Promise((resolve, reject) => {
   http.get({ host: '127.0.0.1', port: server.address().port, path: pathname, headers }, (res) => {
     res.resume();
-    res.on('end', () => resolve({ status: res.statusCode, retryAfter: res.headers['retry-after'] }));
+    res.on('end', () => resolve({ status: res.statusCode, retryAfter: res.headers['retry-after'], challenge: res.headers['www-authenticate'] }));
   }).on('error', reject);
 });
 
@@ -74,6 +78,7 @@ for (let i = 0; i < 30; i++) assert.equal((await call('/nope', { 'x-forwarded-fo
 
 const challengeProbe = { 'x-forwarded-for': '198.51.100.2' };
 for (let i = 0; i < 10; i++) assert.equal((await call('/mcp', challengeProbe)).status, 401, 'a call with no bearer gets the 401 challenge and is never blocked');
+assert.equal((await call('/mcp', challengeProbe)).challenge, 'Bearer', 'a probe gets the bare challenge, no error code');
 assert.equal((await call('/mcp', { ...challengeProbe, authorization: 'Bearer ' + goodToken })).status, 405, 'the caller that only probed still connects');
 assert.equal(printed.filter((l) => l.includes('rejected bearer from 198.51.100.2')).length, 0, 'a call with no bearer is not logged as a rejected bearer');
 
@@ -92,6 +97,22 @@ await call('/mcp', { 'x-forwarded-for': '198.51.100.3', authorization: 'Bearer '
 assert.equal(printed.filter((l) => l.includes('token used by new caller 198.51.100.3')).length, 1, 'a new caller is logged once');
 assert.equal(printed.filter((l) => l.includes('/nope') || l.includes('-> 429') || l.includes('GET /mcp')).length, 0, '404, 429 and /mcp access lines are not printed');
 assert.equal(printed.filter((l) => l.includes('caller 198.51.100.3 blocked after repeated failed attempts')).length, 1, 'a block is logged once');
+
+// A connector still holding the token from before a roll is a past holder, not a guesser: one cloud egress address carries several such connectors at once.
+const rolled = rotateAccessToken();
+const stale = { 'x-forwarded-for': '198.51.100.9', authorization: 'Bearer ' + goodToken };
+for (let i = 0; i < 10; i++) {
+  const res = await call('/mcp', stale);
+  assert.equal(res.status, 401, 'a rolled token gets 401, never a block');
+  assert.equal(res.challenge, 'Bearer error="invalid_token"', 'with the error code that tells an OAuth client to refresh');
+}
+assert.equal(printed.filter((l) => l.includes('old token from 198.51.100.9')).length, 1, 'a rolled token is logged once per caller');
+assert.equal(printed.filter((l) => l.includes('rejected bearer from 198.51.100.9')).length, 0, 'and never as a rejected bearer');
+assert.equal((await call('/mcp', { ...stale, authorization: 'Bearer ' + rolled })).status, 405, 'the new token works from that caller');
+
+const fromBeforeRestart = { 'x-forwarded-for': '198.51.100.10', authorization: 'Bearer ' + persistedRetiredToken };
+for (let i = 0; i < 10; i++) assert.equal((await call('/mcp', fromBeforeRestart)).status, 401, 'a token retired before the last start is never counted either');
+assert.equal(printed.filter((l) => l.includes('old token from 198.51.100.10')).length, 1, 'and is logged once as an old token');
 console.log = consoleLog;
 
 server.close();

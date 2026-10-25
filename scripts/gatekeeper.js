@@ -1,11 +1,11 @@
 // Public entry: OAuth AS (pre-issued client + DCR connectors) + Streamable HTTP /mcp via streamable-bridge.
 // Runs in-process inside start.js (docs/plan/done/consolidate-mcp-tool-processes.md, Part B): startGatekeeper() returns the http.Server so the orchestrator can close it on shutdown.
 import http from 'node:http';
-import { loadOrCreatePassphrase, metadataHandlers, handleAuthorize, handleToken, handleRegister, handleRevoke, verifyBearer } from './oauth.js';
+import { loadOrCreatePassphrase, metadataHandlers, handleAuthorize, handleToken, handleRegister, handleRevoke, bearerStatus } from './oauth.js';
 import { handleStreamableMcp, terminateSession } from './streamable-bridge.js';
 import { log, logErr } from './log.js';
 import { serveStatic } from './http.js';
-import { recordCaller } from './callers.js';
+import { recordCaller, createCallers } from './callers.js';
 import { logSecurity } from './security-log.js';
 import { failures, registrations, clientKey } from './rate-limit.js';
 
@@ -32,6 +32,15 @@ export function startGatekeeper(origin = null, onFatal) {
   const meta = origin ? metadataHandlers(origin) : null;
   const recordFailure = (key) => {
     if (failures.record(key)) logSecurity(`caller ${key} blocked after repeated failed attempts`);
+  };
+  const retiredCallers = createCallers();
+  const noteRetiredBearer = (key) => {
+    if (retiredCallers.recordCaller(key, '')) logSecurity(`/mcp old token from ${key} (rolled or expired), not counted as a failure: that connector must refresh or reconnect`);
+  };
+  // RFC 6750 § 3.1: a presented token that fails gets error="invalid_token", the cue for an OAuth client to refresh; on pure loopback there is no resource metadata to advertise.
+  const bearerChallenge = (tokenPresented) => {
+    const params = [tokenPresented && 'error="invalid_token"', origin && `resource_metadata="${origin}/.well-known/oauth-protected-resource/mcp"`].filter(Boolean);
+    return params.length ? `Bearer ${params.join(', ')}` : 'Bearer';
   };
 
   const route = async (req, res) => {
@@ -88,20 +97,20 @@ export function startGatekeeper(origin = null, onFatal) {
     }
 
     if (path === '/mcp') {
-      if (!verifyBearer(req.headers.authorization)) {
-        const wait = failures.retryAfterSeconds(key);
-        if (wait) return refuse(res, wait);
-        // A request with no Authorization header at all is the probe every MCP client sends first to read this 401 challenge; an empty or non-Bearer header is still a wrong credential.
-        if (req.headers.authorization !== undefined) {
-          logSecurity(`/mcp rejected bearer from ${key}`);
-          recordFailure(key);
+      const bearer = bearerStatus(req.headers.authorization);
+      if (bearer !== 'valid') {
+        if (bearer === 'retired') {
+          noteRetiredBearer(key);
+        } else {
+          const wait = failures.retryAfterSeconds(key);
+          if (wait) return refuse(res, wait);
+          // A request with no Authorization header at all is the probe every MCP client sends first to read this 401 challenge; an empty or non-Bearer header is still a wrong credential.
+          if (req.headers.authorization !== undefined) {
+            logSecurity(`/mcp rejected bearer from ${key}`);
+            recordFailure(key);
+          }
         }
-        // Advertise the OAuth resource metadata only when an ingress is attached; on pure loopback emit a bare
-        // Bearer challenge instead of a bogus "null/.well-known/..." URL.
-        res.writeHead(401, {
-          'Content-Type': 'text/plain',
-          'WWW-Authenticate': origin ? `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource/mcp"` : 'Bearer',
-        });
+        res.writeHead(401, { 'Content-Type': 'text/plain', 'WWW-Authenticate': bearerChallenge(req.headers.authorization !== undefined) });
         res.end('unauthorized');
         return;
       }
