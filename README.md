@@ -275,7 +275,7 @@ gatekeeper.js  — public port 9999
 tools-server.js — one shared McpServer, in-process (InMemoryTransport, no child, no SSE), tools mounted by provider-registry.js:
                                   search-mcp.js       (find_path/search_content, whole-tree in one call)
                                   shell-mcp.js        (allowlisted commands, inspection-first defaults)
-                                  agy-mcp.js          (Antigravity CLI, read-only plan mode)
+                                  agy-mcp.js          (Antigravity CLI, plan mode by default)
                                   kiro-mcp.js         (kiro_read, read-only, needs kiro-cli on PATH)
                                   filesystem-mcp.js   (native read/write/edit inside the allowed folders)
                                   postman/postman-mcp.js (Postman daemon status/eval/rename/panel tools)

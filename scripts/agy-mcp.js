@@ -32,7 +32,7 @@ function run(args, cwd) {
         // agy writes its own errors to stdout, not stderr — check stdout first or real failures show up as Node's generic "Command failed: <cmd>" with no explanation (see shell-mcp.js's same bug).
         return resolve({ result: err(stdout || stderr || error.message), said: Boolean(stdout || stderr) });
       }
-      // agy headless can't prompt for permission: a denied action auto-fails but still exits 0 with an empty response (harness-facts.md § Cross-CLI worker). Treat empty stdout as inconclusive, not clean.
+      // agy headless can't prompt for permission: a denied action auto-fails but still exits 0 with an empty response (docs/ref/harness-fact.md). Treat empty stdout as inconclusive, not clean.
       if (!stdout || !stdout.trim()) {
         return resolve({ result: err('agy returned no output — the call may have been silently denied rather than a clean empty result. Re-check the prompt/scope.') });
       }
@@ -133,7 +133,7 @@ export function register(server) {
       if (resolvedModel) args.push('--model', resolvedModel);
       if (effort) args.push('--effort', effort);
       if (outputFormat) args.push('--output-format', outputFormat);
-      // -p takes the prompt as its value and must come last — anything after it is silently swallowed as part of the prompt, not parsed as a flag (harness-facts.md § Cross-CLI worker, the flag-order trap).
+      // -p takes the prompt as its value and must come last — anything after it is silently swallowed as part of the prompt, not parsed as a flag (docs/ref/harness-fact.md, the flag-order trap).
       args.push('-p', prompt);
       return runWithValueHelp(args, dir);
     },
