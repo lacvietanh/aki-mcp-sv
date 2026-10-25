@@ -130,7 +130,7 @@ All under the data dir (`~/.aki/mcpsv/` by default), mode `0600`, never inside t
 | `oauth-client.json` | the pre-issued client's ID/Secret (any client that wants a static client) | nothing without the passphrase | delete and restart, paste the new pair into the provider that uses it |
 | `oauth-dcr-clients.json` | registered public clients (no secret) | nothing | delete and restart; every DCR connector reconnects |
 | `setting.json` | folders, allowlist, trusted zones, limits | not secret, but a write widens access | the local owner (panel or editor); also the file tools while the data dir is under an allowed folder (by decision, see Real limitations) |
-| `tool-calls.jsonl` | one line per `aki__` tool call (`scripts/tool-call-log.js`): time, client, user agent, tool, `op`, ok or error, never the arguments' text; kept 40 days, the current file rolls to a dated sidecar at 16 MB (both settable) | which AI drove which tool, when | delete any time |
+| `tool-calls.jsonl` | one line per `aki__` tool call over `/mcp`, none for stdio (`scripts/tool-call-log.js`): time, client, user agent, tool, `op`, ok or error, never the arguments' text; kept 40 days, the current file rolls to a dated sidecar at 16 MB (both settable) | which AI drove which tool, when | delete any time |
 
 The panel token lives only in memory and changes on every start; `instance.json` (0600) carries it with the panel port and the running ingress origin so AIObox can call the loopback panel, and is removed on shutdown. Which of these files AIObox reads, and in what shape, is pinned in `docs/plan/IMPORTANT-akimcp-aiobox-contract.md` and `test/aiobox-contract.test.js`.
 

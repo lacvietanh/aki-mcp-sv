@@ -275,13 +275,13 @@ ${field('Re-sync command', 'tailscale funnel --https=443 off && tailscale serve 
 </section>
 
 <section id="s1"><h2>1 · Connectors: local IDEs + web AIs</h2>
-<p class="helptext">One AKIMCP endpoint, two paths. <strong>Local tools</strong> (Postman, Cursor, Claude Code, the Claude app, AGY, Codex) connect directly over <span class="mono">127.0.0.1</span> — zero latency, no tunnel, works offline; each tab below carries a ready-to-paste local config. <strong>Web AIs</strong> (Claude, Grok, ChatGPT, Gemini, Notion, Buda, ClickUp) use the MCP URL below and ${origin ? 'are reachable now.' : 'need a public ingress — set it up in <a href="#s0">Section 0</a> first (the MCP URL fills in once ingress is active).'}</p>
+<p class="helptext">One AKIMCP endpoint, two paths. <strong>Local tools</strong> run on this computer with no tunnel and work offline: each connects over <span class="mono">127.0.0.1</span> or starts the tools itself over <span class="mono">stdio</span>, and its tab below says which and carries a ready-to-paste local config. <strong>Web AIs</strong> (Claude, Grok, ChatGPT, Gemini, Notion, Buda, ClickUp) use the MCP URL below and ${origin ? 'are reachable now.' : 'need a public ingress — set it up in <a href="#s0">Section 0</a> first (the MCP URL fills in once ingress is active).'}</p>
 ${field('MCP Name', MCP_NAME)}
 ${field('MCP URL', url, true)}
 ${secretField('Passphrase', passphrase)}
 ${secretField('Access token', accessToken)}
 <div class="acts"><button data-act="rollToken">Roll token</button><button data-act="rollTokenHard">Roll &amp; sign out all clients</button><button data-act="rollPassphrase">Roll passphrase</button><span class="msg" id="msgRoll"></span></div>
-<p class="helptext">One access token serves every client. <strong>Roll token</strong> replaces it: AIs connected with the passphrase refresh on their own, but a token pasted as a fixed bearer (a local snippet below) stops working until it is pasted again. Connect Notion with the passphrase like the other web AIs, never with a pasted token. <strong>Roll &amp; sign out all clients</strong> also revokes refresh, so every AI must reconnect with the passphrase; use it if the token may have leaked. <strong>Roll passphrase</strong> issues a new one: the old passphrase stops authorizing new connections, while already-connected AIs keep working; use it if the passphrase may have leaked.</p>
+<p class="helptext">One access token serves every client. <strong>Roll token</strong> replaces it: AIs connected with the passphrase refresh on their own (ClickUp may need one reconnect), but a token pasted as a fixed bearer (a local snippet below) stops working until it is pasted again. Connect Notion with the passphrase like the other web AIs, never with a pasted token. <strong>Roll &amp; sign out all clients</strong> also revokes refresh, so every AI must reconnect with the passphrase; use it if the token may have leaked. <strong>Roll passphrase</strong> issues a new one: the old passphrase stops authorizing new connections, while already-connected AIs keep working; use it if the passphrase may have leaked.</p>
 
 <nav class="tabs" role="tablist">
   <span class="tab-group-label">Local · direct 0ms</span>
@@ -381,7 +381,7 @@ ${secretField('Access token', accessToken)}
     <li>Set <strong>Authentication Method</strong> = <strong>OAuth</strong>. Leave <strong>Advanced configuration</strong> closed, then click <strong>Next</strong>.</li>
     <li>In the tab ClickUp opens, enter the <strong>Passphrase</strong> and approve. ClickUp continues on its own.</li>
   </ol>
-  <p class="helptext">ClickUp registers itself, so there is no Client ID, Secret or token to paste, and <strong>Roll token</strong> does not disconnect it. ClickUp Brain then uses AKIMCP's tools when a request needs them, without a mention.</p>
+  <p class="helptext">ClickUp registers itself, so there is no Client ID, Secret or token to paste. After <strong>Roll token</strong>, reconnect it once in ClickUp if it stops answering. ClickUp Brain then uses AKIMCP's tools when a request needs them, without a mention.</p>
 </div>
 
 <div class="tabpane active" id="tab-postman">
@@ -409,7 +409,7 @@ ${secretField('Access token', accessToken)}
 </div>
 
 <div class="tabpane" id="tab-claudelocal">
-  <p class="helptext">Claude Code and the Claude app are set up separately: connecting one does not connect the other. Both connect over <span class="mono">127.0.0.1</span> on the computer running AKIMCP, with no ingress. For claude.ai, the mobile app or the Claude app on another computer, use the <strong>Claude</strong> tab in the Web group.</p>
+  <p class="helptext">Claude Code and the Claude app are set up separately: connecting one does not connect the other. Both run on the computer running AKIMCP, with no ingress: Claude Code connects over <span class="mono">127.0.0.1</span>, and the Claude app starts the tools itself over <span class="mono">stdio</span>. For claude.ai, the mobile app or the Claude app on another computer, use the <strong>Claude</strong> tab in the Web group.</p>
   <h3 class="subh">Claude Code (terminal) — local, 0ms</h3>
   <p class="helptext">Run this in a terminal. It carries the access token, so after <strong>Roll token</strong> run the new line again.</p>
   ${secretSnippet('Claude Code command', claudeCodeCmd, [accessToken], 'claudeCodeCmd')}
@@ -554,7 +554,7 @@ ${aioboxInstalled() ? `<p class="helptext">${esc(AIOBOX_PANEL.installed)}</p>` :
 
 <section id="s9"><h2>9 · Logs</h2>
 <h3 class="subh">Call log</h3>
-<p class="helptext">Every tool call is written to <span class="mono">${esc(path.join(userDir, 'tool-calls.jsonl'))}</span> as one JSON line: when, which tool and op, ok or not, how long, which client. No prompt, expression or argument text is ever written.</p>
+<p class="helptext">Every tool call that reaches AkiMCP through its <span class="mono">/mcp</span> URL is written to <span class="mono">${esc(path.join(userDir, 'tool-calls.jsonl'))}</span> as one JSON line: when, which tool and op, ok or not, how long, which client. Calls through the local <span class="mono">stdio</span> command (<span class="mono">scripts/stdio.js</span>) are not written. No prompt, expression or argument text is ever written.</p>
 <p class="helptext"><strong>Basic</strong> (the default) keeps a short error code; <strong>Detail</strong> adds the full error text, the chat it acted on (from) and a hash of eval expressions. Keep days is how long past day-files stay before being deleted; the MB cap rolls the current file over to a dated one when it grows.</p>
 <label class="chk"><input type="checkbox" data-log="enabled"> Logging on</label>
 <div class="limits">

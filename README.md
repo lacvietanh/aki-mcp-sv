@@ -19,7 +19,7 @@ The Claude Desktop app already does local file access, but ties usage to a devic
 **aki-mcp-sv** routes around both problems: run an MCP server on your machine, expose it over HTTPS through Tailscale Funnel, and connect it to claude.ai as a custom connector.
 
 **The payoff:**
-- **Local-first by default:** local tools (Cursor, Claude Code, the Claude app, AGY, Postman) connect straight to `127.0.0.1:9999` — zero latency and fully offline; a public ingress is only needed for remote/web AI.
+- **Local-first by default:** local tools on the same computer need no tunnel and work fully offline: each one connects straight to `127.0.0.1:9999` or starts the tools itself over stdio (`scripts/stdio.js`), and its setup below says which. A public ingress is only needed for remote/web AI.
 - **Use your web quota** for local file and shell access, straight from the browser.
 - **True multi-account flexibility:** switch browser profiles to instantly pick up a different account, all pointed at the same machine.
 - **Safe by default:** a strict command whitelist, not a leaky blocklist — see [Security](#security).
@@ -149,7 +149,7 @@ ClickUp needs a public ingress. The panel's ClickUp tab walks through the setup.
 2. Set **Name** and **URL** from the panel, **Authentication Method** = **OAuth**, leave **Advanced configuration** closed, click **Next**.
 3. Enter the **Passphrase** in the tab ClickUp opens and approve.
 
-ClickUp self-registers through OAuth, so there is no Client ID, secret or token to paste, and it refreshes on its own after Roll token. ClickUp Brain then calls the tools when a request needs them, without a mention.
+ClickUp self-registers through OAuth, so there is no Client ID, secret or token to paste. After Roll token, reconnect the ClickUp connector once if it stops answering. ClickUp Brain then calls the tools when a request needs them, without a mention.
 
 ## Connecting from Buda
 
@@ -319,11 +319,11 @@ aki-mcp-sv/
 │   ├── security-log.js           # [security] events to console + security.log (rotated at 1 MB)
 │   ├── streamable-bridge.js      # Streamable HTTP shim <-> the in-process tools server (InMemoryTransport)
 │   ├── tools-server.js           # builds the one shared McpServer mounting every tool arm below
-│   ├── tool-call-log.js          # every aki__ tool call to tool-calls.jsonl, never their arguments (kept 40 days, a file rolls at 16 MB)
+│   ├── tool-call-log.js          # each aki__ tool call over /mcp to tool-calls.jsonl, never its arguments; stdio calls are not logged (kept 40 days, a file rolls at 16 MB)
 │   ├── version.js                # the running version, read once from package.json
 │   ├── provider-registry.js      # the list of tool providers: detect once, register all, hide unavailable or switched-off ones
 │   ├── find-on-path.js           # PATH lookup without spawning (PATHEXT on Windows), used by provider detect
-│   ├── stdio.js                  # the same tools server over stdin/stdout, for Antigravity CLI and IDE
+│   ├── stdio.js                  # the same tools server over stdin/stdout (also `akimcp --stdio`), for local apps that start the tools themselves, no token
 │   ├── http.js                   # shared HTTP helpers: readBody / json / serveStatic (+ MIME)
 │   ├── shell-mcp.js              # allowlist-gated shell tool (inspection-first defaults)
 │   ├── output-shape.js           # trims run_cmd output for the model, saves the full text under ~/.aki/mcpsv/out/
