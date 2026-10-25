@@ -1,5 +1,5 @@
 // Dedicated MCP tool for the `agy` CLI: passes prompt/model/mode as separate execFile args so no shell-tokenizing step can mis-split a multi-word -p prompt (the reason it is not routed through the generic shell tool). Modes are allowlisted via allowlist.js.
-// The interface holds NO model list and no effort/mode/output-format enum: the valid values are server-side and change without an agy release, so they are read live by scripts/agy-capabilities.js and the values are passed straight to agy, which validates them (docs/plan/audit-tool-drift-oct25.md D1-D5). The only pre-spawn check is AkiMCP's own mode allowlist.
+// The interface holds NO model list and no effort/mode/output-format enum: the valid values are server-side and change without an agy release, so they are read live by scripts/agy-capabilities.js and the values are passed straight to agy, which validates them (docs/plan/audit-tool-drift-oct25.md D1-D5). The only pre-spawn checks are AkiMCP's own mode allowlist and that no value starts with "-".
 import { execFile } from 'node:child_process';
 import { z } from 'zod';
 import { readSettings } from './allowlist.js';
@@ -10,6 +10,9 @@ import { capabilities, refresh, newestFlashMedium } from './agy-capabilities.js'
 
 // 'plan' is agy's non-mutating mode — the only one enabled out of the box. Anything else must be explicitly opted into via setting.json -> { "agy": { "allowedModes": [...] } }.
 const DEFAULT_MODES = ['plan'];
+
+// A value agy would read as one more flag (`--mode=…` after the allowlisted --mode) is refused before spawn, so the allowlist stays the only way to pick a mode.
+const agyValue = z.string().regex(/^[^-]/, 'must not start with "-"');
 
 function loadAllowedModes() {
   const configured = readSettings().agy?.allowedModes;
@@ -102,10 +105,10 @@ export function register(server) {
       inputSchema: {
         prompt: z.string().optional().describe('the task for agy; required unless list is set'),
         list: z.enum(['models', 'capabilities']).optional().describe('read-only: return what the installed agy offers (no prompt spawned)'),
-        mode: z.string().optional().describe('agy --mode (agy validates; "plan" is read-only and the default). Modes beyond the allowlist in setting.json are refused here'),
-        model: z.string().optional().describe('agy --model (agy validates). Omitted → the discovery-tier default; use list="models" to see the ids'),
-        effort: z.string().optional().describe('agy --effort thinking budget (agy validates; use list="capabilities" for the levels)'),
-        outputFormat: z.string().optional().describe('agy --output-format (agy validates; use list="capabilities" for the formats). Use "json" when a program parses the result'),
+        mode: agyValue.optional().describe('agy --mode (agy validates; "plan" is read-only and the default). Modes beyond the allowlist in setting.json are refused here'),
+        model: agyValue.optional().describe('agy --model (agy validates). Omitted → the discovery-tier default; use list="models" to see the ids'),
+        effort: agyValue.optional().describe('agy --effort thinking budget (agy validates; use list="capabilities" for the levels)'),
+        outputFormat: agyValue.optional().describe('agy --output-format (agy validates; use list="capabilities" for the formats). Use "json" when a program parses the result'),
         cwd: z.string().optional().describe('run inside this project dir; must be under an allowed root'),
       },
     },
