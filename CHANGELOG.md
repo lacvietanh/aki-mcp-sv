@@ -2,7 +2,7 @@
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning per [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [3.2.0] - 2026-10-27
 
 ### Added
 - **Any web chat that can send HTTP requests can use AkiMCP with a temporary token** (`scripts/oauth.js`, `scripts/panel.js`, `scripts/config-page.js`, `public/panel-client.js`, `docs/plan/done/web-chat-client.md`): panel section 1 → *Web · needs ingress* → *Any HTTP chat* → *Mint temp token & copy kickoff* mints a token that lasts 4 hours and copies a kickoff block (the owner's order line, then GUIDE, MCP_URL, TOKEN, EXPIRES) to paste into a chat that offers no custom MCP connector; the button is off until a public origin is set. Temporary tokens live in memory only, so a restart ends them all; they never enter `tokens.json` (whose single `access` entry AIObox reads) or `retired-tokens.json`, and `bearerStatus` stays the only check. Several can be live at once; the tab lists each with its creation time, its expiry and a Revoke button, plus Revoke all. *Roll & sign out all clients* revokes every temporary token, a plain Roll token leaves them. An expired or revoked one gets the `retired` 401, never counted as a failed login. Checked live 2026-10-27 against the public origin (panel mint, initialize, tools/list 33/33 parity with the shared token, tools/call, DELETE 204, then 401 on the next call); a provider's web chat UI is not yet tested.
