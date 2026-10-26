@@ -30,7 +30,7 @@ export function startGatekeeper(origin = null, onFatal) {
   };
   const retiredCallers = createCallers();
   const noteRetiredBearer = (key) => {
-    if (retiredCallers.recordCaller(key, '')) logSecurity(`/mcp old token from ${key} (rolled or expired), not counted as a failure: that connector must refresh or reconnect`);
+    if (retiredCallers.recordCaller(key, '')) logSecurity(`/mcp old token from ${key} (rolled, revoked or expired), not counted as a failure: that connector must refresh or reconnect`);
   };
   // RFC 6750 § 3.1: a presented token that fails gets error="invalid_token", the cue for an OAuth client to refresh; on pure loopback there is no resource metadata to advertise.
   const bearerChallenge = (tokenPresented) => {

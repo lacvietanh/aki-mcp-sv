@@ -149,6 +149,7 @@ AkiMCP writes two things under AIObox's data dir `~/.aki/aiobox/` (never a secre
 | Access token seen (screenshot, pasted snippet) | Roll & sign out all clients | a soft roll leaves refresh tokens, which a holder could use to get the new token |
 | Unknown client in the list, or a caller you do not recognize using the token | both rolls, as for the passphrase | a client can only have been authorized with the passphrase |
 | A connector you no longer use | Remove it in section 7, then Roll token | removal ends its refresh; the roll ends the access token it holds |
+| Temp token seen (chat shared, screenshot) | Revoke it in section 1 (*Any HTTP chat*), or Roll & sign out all clients | it ends that token only; it has no refresh to renew itself |
 | A flood of failed attempts | nothing; the limits handle it | brute force is infeasible; Release in panel section 7 if your own address got blocked |
 
 ## What is logged
@@ -160,6 +161,7 @@ AkiMCP writes two things under AIObox's data dir `~/.aki/aiobox/` (never a secre
 | `[security]` wrong passphrase (with caller), client approved (name, redirect host, first approval), token granted (grant type, client), passphrase rolled, client removed or signed out from the panel, access token issued or rolled (console only) | `/mcp` 2xx, 202 and 405 access lines |
 | `[security]` `/mcp` rejected bearer (a wrong bearer, with caller; a call with no bearer is not logged), `/mcp` old token (a rolled or expired token, once per caller per start), caller blocked, caller released, limits saved | `/register` 201 (the client appears in the panel; its approval is the event) |
 | `[security]` token used by new caller (first valid request from an address since start) | `429` refusals (the block line already said it) |
+| `[security]` `temp token <8 hex> minted`, `revoked by its holder`, `revoked from the panel`, `revoked by a hard roll` (the 8 hex are a sha256 prefix, never the token) | |
 | `[gatekeeper]` access lines for discovery, `/authorize`, `/token` (rare; `CLAUDE.md` RECURRING #1 is diagnosed from them), and every 5xx | `404` on unknown paths (scanner noise) |
 | registration rejected (redirect not allowlisted), token failures | |
 
@@ -174,6 +176,7 @@ Volume: idle, nothing; a normal day, tens of lines; under attack, at most `failM
 | authorization codes | memory, expired ones swept whenever a new code is added |
 | refresh tokens | one per approval, persisted; tokens of a client that no longer exists are dropped at start |
 | DCR clients | file, ≤ `maxClients`; unapproved ones expire after 1 hour, signed-out ones after 30 idle days |
+| temp tokens | memory, one entry per mint (sha256 and three fields), pruned at the next mint 4 hours after expiry |
 | security log | file, ≤ 1 MB plus one rotated copy |
 | disk writes | only on registration, approval, token grant, roll, settings save and a security event |
 
