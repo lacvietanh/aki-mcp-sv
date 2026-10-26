@@ -159,7 +159,7 @@ AkiMCP writes two things under AIObox's data dir `~/.aki/aiobox/` (never a secre
 | Printed | Not printed |
 |---|---|
 | `[security]` wrong passphrase (with caller), client approved (name, redirect host, first approval), token granted (grant type, client), passphrase rolled, client removed or signed out from the panel, access token issued or rolled (console only) | `/mcp` 2xx, 202 and 405 access lines |
-| `[security]` `/mcp` rejected bearer (a wrong bearer, with caller; a call with no bearer is not logged), `/mcp` old token (a rolled or expired token, once per caller per start), caller blocked, caller released, limits saved | `/register` 201 (the client appears in the panel; its approval is the event) |
+| `[security]` `/mcp` rejected bearer (a wrong bearer, with caller; a call with no bearer is not logged), `/mcp` old token (a rolled, revoked or expired token, once per caller per start), caller blocked, caller released, limits saved | `/register` 201 (the client appears in the panel; its approval is the event) |
 | `[security]` token used by new caller (first valid request from an address since start) | `429` refusals (the block line already said it) |
 | `[security]` `temp token <8 hex> minted`, `revoked by its holder`, `revoked from the panel`, `revoked by a hard roll` (the 8 hex are a sha256 prefix, never the token) | |
 | `[gatekeeper]` access lines for discovery, `/authorize`, `/token` (rare; `CLAUDE.md` RECURRING #1 is diagnosed from them), and every 5xx | `404` on unknown paths (scanner noise) |
