@@ -2,6 +2,16 @@
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning per [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Any web chat that can send HTTP requests can use AkiMCP with a temporary token** (`scripts/oauth.js`, `scripts/panel.js`, `scripts/config-page.js`, `public/panel-client.js`, `docs/plan/web-chat-client.md`): panel section 1 → *Web · needs ingress* → *Any HTTP chat* → *Mint temp token & copy kickoff* mints a token that lasts 4 hours and copies a kickoff block (the owner's order line, then GUIDE, MCP_URL, TOKEN, EXPIRES) to paste into a chat that offers no custom MCP connector; the button is off until a public origin is set. Temporary tokens live in memory only, so a restart ends them all; they never enter `tokens.json` (whose single `access` entry AIObox reads) or `retired-tokens.json`, and `bearerStatus` stays the only check. Several can be live at once; the tab lists each with its creation time, its expiry and a Revoke button, plus Revoke all. *Roll & sign out all clients* revokes every temporary token, a plain Roll token leaves them. An expired or revoked one gets the `retired` 401, never counted as a failed login. Not yet checked against a live web chat.
+- **A chat revokes its own temporary token with one request** (`scripts/gatekeeper.js`): `DELETE <MCP_URL>` with the temporary Bearer revokes that token and ends its session (`MCP-Session-Id` optional) with `204`; the next call, a repeated DELETE included, gets `401`. `Access-Control-Allow-Methods` now lists `DELETE`. A DELETE with the shared token still ends only that session, and no other token or client is touched.
+- **One public guide tells any HTTP-capable chat how to connect** (`public/guide/mcp-http/v1.md`, `scripts/http.js`): a plain-markdown spec of the raw HTTP handshake (`initialize` with the mandatory `MCP-Session-Id`, `tools/list`, the `aki__akidevrule_context` receipt, then tool calls), the errors and the revoke request, with a two-line Postman note. Its address is `https://akimcp.top/guide/mcp-http/v1.md`, versioned so a shipped panel keeps pointing at the guide its server speaks; the running server also serves it at `<public origin>/guide/mcp-http/v1.md`, and `.md` files are now sent as `text/markdown`.
+
+### Changed
+- **The docs no longer say the shared access token is the only bearer** (`docs/feat/security.md`, `README.md`, `docs/index.md`): they describe temporary tokens beside it (4 hours, memory only, revoked by their own DELETE or from the panel) and index the new plan.
+
 ## [3.1.0] - 2026-10-26
 
 ### Added
