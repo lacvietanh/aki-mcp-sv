@@ -6,7 +6,7 @@ One command opens a much larger operating surface: build and edit projects from 
 
 <img width="1672" height="941" alt="AKIMCP v2 control panel" src="public/img/akimcp-v2.jpg" />
 
-[![Version](https://img.shields.io/badge/version-3.1.0-blue.svg)](CHANGELOG.md) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![npm version](https://img.shields.io/npm/v/@akinet/akimcp.svg)](https://www.npmjs.com/package/@akinet/akimcp) [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](#install--run)
+[![Version](https://img.shields.io/badge/version-3.2.0-blue.svg)](CHANGELOG.md) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![npm version](https://img.shields.io/npm/v/@akinet/akimcp.svg)](https://www.npmjs.com/package/@akinet/akimcp) [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](#install--run)
 
 **Contents:** [Why this exists](#why-this-exists) · [When to use & Core Use-Cases](#when-to-use--core-use-cases) · [Install & Run](#install--run) · [Connecting from Claude web](#connecting-from-claude-web) · [Connecting from ChatGPT](#connecting-from-chatgpt) · [Connecting from Grok and Gemini](#connecting-from-grok-and-gemini) · [Connecting from Notion AI](#connecting-from-notion-ai) · [Connecting from ClickUp](#connecting-from-clickup) · [Connecting from Buda](#connecting-from-buda) · [Connecting from Postman](#connecting-from-postman) · [Connecting from any HTTP chat](#connecting-from-any-http-chat) · [Connecting local IDEs](#connecting-local-ides-cursor-claude-code-claude-app-agy-codex) · [Autonomous Cloud Automation](#autonomous-cloud-automation-grok--local-mcp) · [Requirements](#requirements) · [Architecture](#architecture) · [Directory layout](#directory-layout) · [Configuration](#configuration) · [Exposing to the internet](#exposing-to-the-internet) · [Finding files](#finding-files) · [Security](#security)
 
@@ -174,7 +174,7 @@ The Postman tab also has a **Launch** button that attaches control to the Postma
 
 ## Connecting from any HTTP chat
 
-For a web chat with no custom MCP connector whose AI can still send HTTPS requests: a sandbox with curl, a fetch tool, a Postman agent (WorkBuddy, CodeBuddy and similar). The AI becomes the MCP client itself, using a temporary token made for that one chat. It needs a public ingress.
+For a web chat with no custom MCP connector whose AI can still send HTTP requests: a sandbox with curl, a fetch tool, a Postman agent (WorkBuddy, CodeBuddy and similar). The AI becomes the MCP client itself, using a temporary token made for that one chat. It needs a public ingress.
 
 1. In the panel, section 1 → **Web · needs ingress** → **Any HTTP chat**, click **Mint temp token & copy kickoff**.
 2. Paste the copied block into the chat. It names the guide ([akimcp.top/guide/mcp-http/v1.md](https://akimcp.top/guide/mcp-http/v1.md)), the MCP URL and the token, and asks the AI to connect.
