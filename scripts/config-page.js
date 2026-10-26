@@ -144,6 +144,15 @@ export const localMcpUrl = () => `http://127.0.0.1:${process.env.GATEKEEPER_PORT
 export const httpBearerEntry = (url, token) => ({ url, headers: { Authorization: `Bearer ${token}` } });
 // Two lines: remove then add in `user` scope. A bare `claude mcp add` refuses when aki-mcp already exists and keeps the old token (F9), so re-pasting after Roll token must remove first; `-s user` makes the entry work from every project, not just the directory it was run in.
 export const claudeCodeLines = (url, token) => `claude mcp remove aki-mcp -s user\nclaude mcp add --transport http -s user aki-mcp ${url} --header "Authorization: Bearer ${token}"`;
+// The guide's public address lives here once; the four labels are the ones its section 0 reads (docs/plan/web-chat-client.md).
+export const GUIDE_URL = 'https://akimcp.top/guide/mcp-http/v1.md';
+export const tempTokenKickoff = ({ mcpUrl, token, expires }) => [
+  'I own this AkiMCP server. Connect to MCP_URL using TOKEN by following the protocol spec at GUIDE, then wait for my task. When I say the work is done, revoke the token as section 4 of the spec describes: send DELETE to MCP_URL with the same Bearer.',
+  `GUIDE: ${GUIDE_URL}`,
+  `MCP_URL: ${mcpUrl}`,
+  `TOKEN: ${token}`,
+  `EXPIRES: ${new Date(expires).toISOString()}`,
+].join('\n');
 export const CODEX_TABLE = '[mcp_servers.aki-mcp]';
 // Codex CLI (~/.codex/config.toml): `http_headers` carries a static bearer so the snippet is copy-paste-ready with no env var to export.
 export const codexBlock = (url, token) => `${CODEX_TABLE}\nurl = "${url}"\nhttp_headers = { "Authorization" = "Bearer ${token}" }`;
@@ -287,7 +296,7 @@ ${field('MCP URL', url, true)}
 ${secretField('Passphrase', passphrase)}
 ${secretField('Access token', accessToken)}
 <div class="acts"><button data-act="rollToken">Roll token</button><button data-act="rollTokenHard">Roll &amp; sign out all clients</button><button data-act="rollPassphrase">Roll passphrase</button><span class="msg" id="msgRoll"></span></div>
-<p class="helptext">One access token serves every client. <strong>Roll token</strong> replaces it: AIs connected with the passphrase refresh on their own (ClickUp may need one reconnect), but a token pasted as a fixed bearer (a local snippet below) stops working until it is pasted again. Connect Notion with the passphrase like the other web AIs, never with a pasted token. <strong>Roll &amp; sign out all clients</strong> also revokes refresh, so every AI must reconnect with the passphrase; use it if the token may have leaked. <strong>Roll passphrase</strong> issues a new one: the old passphrase stops authorizing new connections, while already-connected AIs keep working; use it if the passphrase may have leaked.</p>
+<p class="helptext">One access token serves every client. <strong>Roll token</strong> replaces it: AIs connected with the passphrase refresh on their own (ClickUp may need one reconnect), but a token pasted as a fixed bearer (a local snippet below) stops working until it is pasted again. Connect Notion with the passphrase like the other web AIs, never with a pasted token. <strong>Roll &amp; sign out all clients</strong> also revokes refresh, so every AI must reconnect with the passphrase; use it if the token may have leaked. <strong>Roll passphrase</strong> issues a new one: the old passphrase stops authorizing new connections, while already-connected AIs keep working; use it if the passphrase may have leaked. Temporary tokens (Web → Any HTTP chat) expire on their own or are revoked one by one; <strong>Roll &amp; sign out all clients</strong> revokes them too.</p>
 
 <div class="tier-switch" role="group" aria-label="Connector tier">
   <button type="button" class="tier-btn active" data-tier="local" aria-pressed="true" aria-controls="tabs-local"><span class="tier-title">Local · direct</span><span class="tier-sub">On this computer · 127.0.0.1 or stdio · no tunnel</span></button>
@@ -310,6 +319,7 @@ ${secretField('Access token', accessToken)}
   <button class="tab" data-tab="notion"><img src="/img/providers/notion.png" class="provider-icon" alt="">Notion</button>
   <button class="tab" data-tab="buda">Buda</button>
   <button class="tab" data-tab="clickup">ClickUp</button>
+  <button class="tab" data-tab="httpchat">Any HTTP chat</button>
 </nav>
 
 <div class="tabpane" id="tab-claude">
@@ -393,6 +403,16 @@ ${secretField('Access token', accessToken)}
     <li>In the tab ClickUp opens, enter the <strong>Passphrase</strong> and approve. ClickUp continues on its own.</li>
   </ol>
   <p class="helptext">ClickUp registers itself, so there is no Client ID, Secret or token to paste. After <strong>Roll token</strong>, reconnect it once in ClickUp if it stops answering. ClickUp Brain then uses AKIMCP's tools when a request needs them, without a mention.</p>
+</div>
+
+<div class="tabpane" id="tab-httpchat">
+  <p class="helptext">For web chats with no custom MCP connector that can still send HTTPS requests (WorkBuddy, CodeBuddy, Postman Agent, a chat with a code sandbox). Mint a temporary token that lasts 4 hours and paste the kickoff block into the chat. When the task is done, tell the AI to revoke its token, or click Revoke below. Your shared token and every connected AI are untouched. Restarting AKIMCP also revokes every temporary token.</p>
+  <div class="acts"><button class="primary" data-act="mintTemp"${origin ? '' : ' disabled'}>Mint temp token &amp; copy kickoff</button><span class="msg" id="msgTemp"></span></div>
+  ${origin ? '' : '<p class="helptext">Set up a public address in <a href="#s0">section 0</a> first, so the web chat can reach this computer.</p>'}
+  <textarea id="tempKickoff" class="mono" rows="6" readonly hidden style="width:100%"></textarea>
+  <p class="helptext" id="tempKickoffNote" hidden>Shown once: copy it now. After a reload only the row below remains, not the token.</p>
+  <div id="tempList"></div>
+  <div class="acts"><button data-act="revokeAllTemp" id="revokeAllTemp" hidden>Revoke all temporary tokens</button></div>
 </div>
 
 <div class="tabpane active" id="tab-postman">

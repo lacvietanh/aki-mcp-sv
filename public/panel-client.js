@@ -312,6 +312,31 @@ function rollToken(btn, hard) {
   });
 }
 
+const untilText = (ms) => {
+  const minutes = Math.max(0, Math.round((ms - Date.now()) / 60000));
+  return `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
+};
+function revokeTempButton({ id }) {
+  const btn = document.createElement('button');
+  btn.textContent = 'Revoke';
+  btn.onclick = () => act(btn, 'msgTemp', async () => {
+    const { message } = await api('POST', '/api/temp-token/revoke', { id });
+    await loadTempTokens();
+    return message;
+  });
+  return btn;
+}
+async function loadTempTokens() {
+  const { tokens } = await api('GET', '/api/temp-tokens');
+  renderTable('tempList', [
+    ['Created', (t) => timeCell(t.created)],
+    ['Expires in', (t) => untilText(t.expires)],
+    ['', revokeTempButton],
+  ], tokens, 'No active temporary tokens. Mint one above when you start a web chat.');
+  document.getElementById('revokeAllTemp').hidden = tokens.length < 2;
+  if (!tokens.length) for (const id of ['tempKickoff', 'tempKickoffNote']) document.getElementById(id).hidden = true;
+}
+
 let limitDefaults = {};
 const limitInputs = () => [...document.querySelectorAll('[data-limit]')];
 function fillLimits(limits) {
@@ -549,6 +574,21 @@ const ACTIONS = {
   }),
   rollToken: (btn) => rollToken(btn, false),
   rollTokenHard: (btn) => rollToken(btn, true),
+  mintTemp: (btn) => act(btn, 'msgTemp', async () => {
+    const { kickoff, expires } = await api('POST', '/api/temp-token');
+    const box = document.getElementById('tempKickoff');
+    box.value = kickoff;
+    box.hidden = false;
+    document.getElementById('tempKickoffNote').hidden = false;
+    const copied = await navigator.clipboard.writeText(kickoff).then(() => true, () => false);
+    await loadTempTokens();
+    return `${copied ? 'copied: paste it into your chat' : 'select the block and copy it'}, valid until ${new Date(expires).toLocaleTimeString()}`;
+  }),
+  revokeAllTemp: (btn) => act(btn, 'msgTemp', async () => {
+    const { message } = await api('POST', '/api/temp-token/revoke', { all: true });
+    await loadTempTokens();
+    return message;
+  }),
   rollPassphrase: (btn) => {
     if (!confirm('Roll the passphrase? The old one stops working for new connections; connected AIs are not signed out.')) return;
     return act(btn, 'msgRoll', async () => {
@@ -663,4 +703,6 @@ loadTailscale().then((m) => say('msgTs', m, m.startsWith('ready'))).catch((e) =>
 loadSecurity().catch((e) => say('msgLimits', e.message, false));
 loadProviders().catch((e) => say('msgProviders', e.message, false));
 loadLog().catch((e) => say('msgLogSettings', e.message, false));
+loadTempTokens().catch((e) => say('msgTemp', e.message, false));
+setInterval(() => loadTempTokens().catch(() => {}), 30_000);
 loadPostmanDaemon().catch((e) => { document.getElementById('msgPmDaemon').textContent = e.message; });

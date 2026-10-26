@@ -1,7 +1,7 @@
 // Public entry: OAuth AS (pre-issued client + DCR connectors) + Streamable HTTP /mcp via streamable-bridge.
 // Runs in-process inside start.js (docs/plan/done/consolidate-mcp-tool-processes.md, Part B): startGatekeeper() returns the http.Server so the orchestrator can close it on shutdown.
 import http from 'node:http';
-import { loadOrCreatePassphrase, metadataHandlers, handleAuthorize, handleToken, handleRegister, handleRevoke, bearerStatus } from './oauth.js';
+import { loadOrCreatePassphrase, metadataHandlers, handleAuthorize, handleToken, handleRegister, handleRevoke, bearerStatus, revokeTempToken } from './oauth.js';
 import { handleStreamableMcp, terminateSession } from './streamable-bridge.js';
 import { log, logErr } from './log.js';
 import { serveStatic } from './http.js';
@@ -45,7 +45,7 @@ export function startGatekeeper(origin = null, onFatal) {
     res.on('finish', () => { if (isSecurityAccess()) log(`[gatekeeper] ${req.method} ${path} -> ${res.statusCode} ${Date.now() - t0}ms`); });
 
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, MCP-Session-Id, MCP-Protocol-Version');
     res.setHeader('Access-Control-Expose-Headers', 'WWW-Authenticate, MCP-Session-Id, MCP-Protocol-Version');
     if (req.method === 'OPTIONS') {
@@ -113,6 +113,7 @@ export function startGatekeeper(origin = null, onFatal) {
       if (recordCaller(key, agent)) logSecurity(`token used by new caller ${key} (${agent.slice(0, 64)})`);
       if (req.method === 'POST') return handleStreamableMcp(req, res);
       if (req.method === 'DELETE') {
+        revokeTempToken(req.headers.authorization);
         const sid = req.headers['mcp-session-id'];
         if (sid) terminateSession(sid);
         res.writeHead(204);

@@ -5,8 +5,8 @@ import { execFile } from 'node:child_process';
 import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, unlinkSync, realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { renderPanel, AGY_SERVER_KEY, localMcpUrl, httpBearerEntry, claudeCodeLines, CODEX_TABLE, codexBlock } from './config-page.js';
-import { getOrIssueAccessToken, rotateAccessToken, rotatePassphrase, loadOrCreatePassphrase, listClients, removeClient } from './oauth.js';
+import { renderPanel, AGY_SERVER_KEY, localMcpUrl, httpBearerEntry, claudeCodeLines, CODEX_TABLE, codexBlock, tempTokenKickoff } from './config-page.js';
+import { getOrIssueAccessToken, rotateAccessToken, mintTempToken, listTempTokens, revokeTempTokenById, rotatePassphrase, loadOrCreatePassphrase, listClients, removeClient } from './oauth.js';
 import { logSecurity, readSecurityLog } from './security-log.js';
 import { LOG_DEFAULTS, loadLogSettings, normalizeLogSettings } from './tool-call-log.js';
 import { listCallers } from './callers.js';
@@ -383,6 +383,18 @@ export const ROUTES = {
   'GET /api/security': async () => ({ limits: readLimits(), defaults: LIMIT_DEFAULTS, blocked: failures.blockedList(), clients: listClients(), callers: listCallers(), log: readSecurityLog() }),
   // AIObox's connect and readiness read the bearer token here with x-panel-token instead of tokens.json, so that file's format stays free (docs/plan/done/akimcp-aiobox-boundary-plan.md § 4 I4).
   'GET /api/access-token': async () => ({ accessToken: getOrIssueAccessToken() }),
+  // The plain token leaves only in this reply (docs/plan/web-chat-client.md); a web chat reaches the public origin, so loopback-only runs have nothing to hand out.
+  'POST /api/temp-token': async (body, ctx) => {
+    if (!ctx.origin) throw new Error('a web chat needs a public address: set one up in section 0 first');
+    const { token, expires } = mintTempToken();
+    return { ok: true, expires, kickoff: tempTokenKickoff({ mcpUrl: `${ctx.origin}/mcp`, token, expires }) };
+  },
+  'GET /api/temp-tokens': async () => ({ tokens: listTempTokens() }),
+  'POST /api/temp-token/revoke': async (body) => {
+    const ids = body.all === true ? listTempTokens().map((t) => t.id) : [body.id];
+    const ended = ids.filter(revokeTempTokenById).length;
+    return { ok: true, message: `revoked ${ended} temporary token${ended === 1 ? '' : 's'}` };
+  },
   'POST /api/clients/remove': async (body) => ({ ok: true, message: removeClient(typeof body.clientId === 'string' ? body.clientId : '') }),
   'POST /api/rate-limit': async (body) => {
     setRateLimit(validateLimits(body.limits));
@@ -445,7 +457,7 @@ export function startPanel({ port, token, origin, ingress, client, passphrase, u
     if (req.headers['x-panel-token'] !== token) return json(res, 403, { error: 'wrong panel token: reload the panel from the URL printed in the terminal' });
 
     try {
-      json(res, 200, await handler(JSON.parse((await readBody(req)) || '{}'), { updateInfo }));
+      json(res, 200, await handler(JSON.parse((await readBody(req)) || '{}'), { updateInfo, origin }));
     } catch (e) {
       json(res, 400, { error: e.message });
     }

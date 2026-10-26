@@ -13,7 +13,7 @@ const MIME = {
   '.woff2': 'font/woff2',
   '.ico': 'image/x-icon', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
   '.json': 'application/json', '.webmanifest': 'application/manifest+json',
-  '.css': 'text/css', '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.txt': 'text/plain; charset=utf-8',
+  '.css': 'text/css', '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.txt': 'text/plain; charset=utf-8', '.md': 'text/markdown; charset=utf-8',
 };
 
 // Rejects when the client aborts mid-body, and with statusCode 413 past maxBytes: every caller must catch.
