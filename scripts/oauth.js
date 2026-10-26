@@ -38,7 +38,7 @@ const MAX_LOGGED_TEXT = 64;
 // Caller-supplied text (client_name, grant labels) reaches the log and the panel: control characters go, so a newline cannot forge a log line.
 const cut = (text) => String(text ?? '').replace(/[\x00-\x1f\x7f]/g, ' ').slice(0, MAX_LOGGED_TEXT);
 const ACCESS_TTL_S = 365 * 24 * 3600;
-// A temp token serves one chat's job and dies on its own; one constant, no picker (docs/plan/web-chat-client.md).
+// A temp token serves one chat's job and dies on its own; one constant, no picker (docs/plan/done/web-chat-client.md).
 const TEMP_TTL_MS = 4 * 3600_000;
 // no 0/o/1/l/i — avoid visual ambiguity when typing; 31 symbols, drawn with randomInt so none is favoured
 const PASSPHRASE_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';

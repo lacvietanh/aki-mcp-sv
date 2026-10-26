@@ -144,7 +144,7 @@ export const localMcpUrl = () => `http://127.0.0.1:${process.env.GATEKEEPER_PORT
 export const httpBearerEntry = (url, token) => ({ url, headers: { Authorization: `Bearer ${token}` } });
 // Two lines: remove then add in `user` scope. A bare `claude mcp add` refuses when aki-mcp already exists and keeps the old token (F9), so re-pasting after Roll token must remove first; `-s user` makes the entry work from every project, not just the directory it was run in.
 export const claudeCodeLines = (url, token) => `claude mcp remove aki-mcp -s user\nclaude mcp add --transport http -s user aki-mcp ${url} --header "Authorization: Bearer ${token}"`;
-// The guide's public address lives here once; the four labels are the ones its section 0 reads (docs/plan/web-chat-client.md).
+// The guide's public address lives here once; the four labels are the ones its section 0 reads (docs/plan/done/web-chat-client.md).
 export const GUIDE_URL = 'https://akimcp.top/guide/mcp-http/v1.md';
 export const tempTokenKickoff = ({ mcpUrl, token, expires }) => [
   'I own this AkiMCP server. Connect to MCP_URL using TOKEN by following the protocol spec at GUIDE, then wait for my task. When I say the work is done, revoke the token as section 4 of the spec describes: send DELETE to MCP_URL with the same Bearer.',

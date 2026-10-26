@@ -383,7 +383,7 @@ export const ROUTES = {
   'GET /api/security': async () => ({ limits: readLimits(), defaults: LIMIT_DEFAULTS, blocked: failures.blockedList(), clients: listClients(), callers: listCallers(), log: readSecurityLog() }),
   // AIObox's connect and readiness read the bearer token here with x-panel-token instead of tokens.json, so that file's format stays free (docs/plan/done/akimcp-aiobox-boundary-plan.md § 4 I4).
   'GET /api/access-token': async () => ({ accessToken: getOrIssueAccessToken() }),
-  // The plain token leaves only in this reply (docs/plan/web-chat-client.md); a web chat reaches the public origin, so loopback-only runs have nothing to hand out.
+  // The plain token leaves only in this reply (docs/plan/done/web-chat-client.md); a web chat reaches the public origin, so loopback-only runs have nothing to hand out.
   'POST /api/temp-token': async (body, ctx) => {
     if (!ctx.origin) throw new Error('a web chat needs a public address: set one up in section 0 first');
     const { token, expires } = mintTempToken();

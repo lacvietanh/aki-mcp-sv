@@ -1,6 +1,6 @@
 # Web chat client: temporary token + public guide
 
-Status: 3.2, unreleased until the owner's preview. Council room: `~/.aki/agent-council/aki-mcp-sv/2026.10.26-2102-temp-token-webchat/`.
+Status: done, shipped in 3.2.0. Council rooms: `~/.aki/agent-council/aki-mcp-sv/2026.10.26-2102-temp-token-webchat/` (build), `~/.aki/agent-council/aki-mcp-sv/2026.10.27-0017-temp-token-webchat-ship/` (ship).
 
 ## Problem
 
@@ -30,15 +30,15 @@ Core
 - [x] `scripts/panel.js` + `scripts/config-page.js` + `public/panel-client.js`: `POST /api/temp-token`, section 1 button, `GUIDE_URL`, kickoff block
 - [x] `test/temp-token.test.js`
 - [x] `scripts/http.js`: `.md` MIME; `docs/feat/security.md`, README, `docs/index.md` drift
-- [ ] CHANGELOG `[Unreleased]` (publisher)
+- [x] CHANGELOG `[Unreleased]` (publisher)
 
-Web (after the web room closes)
-- [ ] pull the guide from core `main` into the web repo `public/guide/mcp-http/v1.md` (needs core `main` pushed: owner), `public/_headers` for `/guide/*`
-- [ ] pitch line in the web positioning and the `/connect/` section once Hands names which providers can do it
-- [ ] release order: the guide file reaches akimcp.top with or before the core 3.2 publish; the pitch pages wait for core
+Web
+- [x] the web repo holds the guide at `public/guide/mcp-http/v1.md`, byte-equal to core (sha256 `290ddbe6…05a9`), and `public/_headers` covers `/guide/*`; its prebuild pulls the file from core `main` (`scripts/pull-panel.js`)
+- [x] pitch line in the web positioning and the `/connect/` section
+- [x] release order: core `main` is pushed first (the web prebuild reads it), then the npm publish, then the web push, then the tag and GitHub Release by `gh release create` once the live guide answers 200
 
 Release
-- [ ] 3.2 stays `[Unreleased]`: no bump, tag, publish or deploy until the owner has previewed
+- [x] 3.2 stayed `[Unreleased]` until the public-origin protocol check passed and the owner ordered `/akiship`
 
 ## No action
 
@@ -48,4 +48,4 @@ Release
 
 ## Live check
 
-Not run. Needs a fresh web chat holding only the kickoff block. Core serves the guide at `<public origin>/guide/mcp-http/v1.md` now, so the owner's preview needs no deploy (put that URL on the GUIDE line); the panel constant stays the akimcp.top address, which answers after the web deploy.
+Checked 2026-10-27 on the public origin (`https://mba20.akitao.com`, `fresh-chat.md`): `POST /api/temp-token` (4 h TTL, kickoff block), `GET /guide/mcp-http/v1.md` (`200 text/markdown`, CORS `*`, sha256 `290ddbe6…05a9`), `OPTIONS` preflight (`204`, `DELETE` allowed), `initialize` (`200`, `MCP-Session-Id`), `notifications/initialized` (`202`), `tools/list` (`200`, 33 tools = shared token 33 tools exact match), `tools/call aki__list_allowed_directories` (`200`), `DELETE <MCP_URL>` (`204`), second `DELETE` (`401`), `tools/list` after revoke (`401 invalid_token`), `GET /api/temp-tokens` (`0` rows). Pasting the kickoff into a provider's web chat UI was skipped by owner order (2026-10-27).
