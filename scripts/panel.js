@@ -5,7 +5,8 @@ import { execFile } from 'node:child_process';
 import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, unlinkSync, realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { renderPanel, AGY_SERVER_KEY, localMcpUrl, httpBearerEntry, claudeCodeLines, CODEX_TABLE, codexBlock, tempTokenKickoff } from './config-page.js';
+import { renderPanel, localMcpUrl, httpBearerEntry, claudeCodeLines, CODEX_TABLE, codexBlock, tempTokenKickoff } from './config-page.js';
+import { MCP_SERVER_KEY, LEGACY_MCP_SERVER_KEY } from './mcp-name.js';
 import { getOrIssueAccessToken, rotateAccessToken, mintTempToken, listTempTokens, revokeTempTokenById, rotatePassphrase, loadOrCreatePassphrase, listClients, removeClient } from './oauth.js';
 import { logSecurity, readSecurityLog } from './security-log.js';
 import { LOG_DEFAULTS, loadLogSettings, normalizeLogSettings } from './tool-call-log.js';
@@ -31,7 +32,7 @@ const RULES_REPO_URL = 'https://github.com/lacvietanh/akidevrule.git';
 
 const writeJsonAtomic = (file, data) => writeTextAtomic(file, `${JSON.stringify(data, null, 2)}\n`);
 
-// User config files, never looser than 0600: some of them carry the live /mcp bearer token, and the rename replaces the target's own mode. A symlinked file (a dotfile manager's) is written through to its target, so the link stays.
+// Always 0600: some of these files hold the live bearer token and the rename replaces the target's mode. realpath writes through a dotfile manager's symlink, keeping the link.
 function writeTextAtomic(file, text) {
   mkdirSync(path.dirname(file), { recursive: true });
   const target = existsSync(file) ? realpathSync(file) : file;
@@ -40,7 +41,6 @@ function writeTextAtomic(file, text) {
   renameSync(tmp, target);
 }
 
-// Claude Code (D10, F9): remove any stale entry, then add with the live token in `user` scope so it works from every project. A bare `claude mcp add` refuses when the entry exists and keeps the old token, so remove-then-add is the only re-runnable shape. claude not on PATH, or the add failing after the remove → the message carries the two-line fallback, never a bare error.
 function runClaude(args, cwd) {
   const launch = launchShim('claude', args);
   return new Promise((resolve) => {
@@ -49,42 +49,43 @@ function runClaude(args, cwd) {
     });
   });
 }
-// Local scope wins over user scope, and the pre-3.1 snippet had no -s, so its entry would keep the old token in the project it was run in. Claude Code keys local entries by project folder in its own config file.
+// Local scope beats user scope, and only the pre-3.1 snippet (no -s, legacy key) ever wrote a local entry, so the sweep targets the legacy key alone.
 function projectsWithLocalEntry() {
   const file = path.join(process.env.CLAUDE_CONFIG_DIR || os.homedir(), '.claude.json');
   try {
     const { projects = {} } = JSON.parse(readFileSync(file, 'utf8'));
-    return Object.keys(projects).filter((dir) => projects[dir]?.mcpServers?.['aki-mcp'] && existsSync(dir));
+    return Object.keys(projects).filter((dir) => projects[dir]?.mcpServers?.[LEGACY_MCP_SERVER_KEY] && existsSync(dir));
   } catch {
     return [];
   }
 }
+// Remove-then-add, for the reason on claudeCodeLines in config-page.js.
 async function applyClaudeCode() {
   const url = localMcpUrl();
   const token = getOrIssueAccessToken();
   const byHand = `Run these two lines in a terminal instead:\n${claudeCodeLines(url, token)}`;
   const probe = await runClaude(['--version']);
   if (!probe.ok && probe.code === 'ENOENT') return { ok: false, message: `claude is not on PATH. ${byHand}` };
-  await runClaude(['mcp', 'remove', 'aki-mcp', '-s', 'user']); // an absent entry is not an error
-  const added = await runClaude(['mcp', 'add', '--transport', 'http', '-s', 'user', 'aki-mcp', url, '--header', `Authorization: Bearer ${token}`]);
+  for (const key of [MCP_SERVER_KEY, LEGACY_MCP_SERVER_KEY]) await runClaude(['mcp', 'remove', key, '-s', 'user']); // an absent entry is not an error
+  const added = await runClaude(['mcp', 'add', '--transport', 'http', '-s', 'user', MCP_SERVER_KEY, url, '--header', `Authorization: Bearer ${token}`]);
   if (!added.ok) return { ok: false, message: `claude mcp add failed: ${added.out || 'unknown error'}\n${byHand}` };
   const local = projectsWithLocalEntry();
   const failed = [];
-  for (const dir of local) if (!(await runClaude(['mcp', 'remove', 'aki-mcp', '-s', 'local'], dir)).ok) failed.push(dir);
+  for (const dir of local) if (!(await runClaude(['mcp', 'remove', LEGACY_MCP_SERVER_KEY, '-s', 'local'], dir)).ok) failed.push(dir);
   const removed = local.length - failed.length;
-  const localNote = (removed ? ` Also removed the old aki-mcp entry kept inside ${removed} project${removed > 1 ? 's' : ''}.` : '')
-    + (failed.length ? ` Could not remove the old entry inside: ${failed.join(', ')}. Run "claude mcp remove aki-mcp -s local" in each.` : '');
-  return { ok: true, message: `Applied — replaced any old aki-mcp entry with the current token in user scope.${localNote} Restart the session or run /mcp in Claude Code.` };
+  const localNote = (removed ? ` Also removed the old ${LEGACY_MCP_SERVER_KEY} entry kept inside ${removed} project${removed > 1 ? 's' : ''}.` : '')
+    + (failed.length ? ` Could not remove the old entry inside: ${failed.join(', ')}. Run "claude mcp remove ${LEGACY_MCP_SERVER_KEY} -s local" in each.` : '');
+  return { ok: true, message: `Applied — ${MCP_SERVER_KEY} now carries the current token in user scope; an older ${LEGACY_MCP_SERVER_KEY} entry is gone.${localNote} Restart the session or run /mcp in Claude Code.` };
 }
 
-// Codex (D10, F10): replace the [mcp_servers.aki-mcp] table in place, other tables untouched, atomic write. The table is its header (bare or quoted key, trailing comment allowed) plus every [mcp_servers.aki-mcp.*] subtable: a survivor would sit beside the inline http_headers as a duplicate key. "Append it" would add a second table of the same name — invalid TOML. An unparsable file stops with the path named, as agyApply does.
+// A Codex table = header (bare or quoted key, trailing comment ok) + every `.sub` table: a leftover subtable duplicates the inline http_headers key; a second same-name table is invalid TOML.
 const TOML_HEADER = /^\s*(\[\[?)\s*((?:[\w.\- ]|"[^"]*"|'[^']*')+?)\s*\]\]?\s*(?:#.*)?$/;
 const tableName = (line) => {
   const header = TOML_HEADER.exec(line);
   return header?.[1] === '[' ? header[2].replace(/\s*\.\s*/g, '.').replace(/["']/g, '') : undefined;
 };
 const isTableHeader = (line) => TOML_HEADER.test(line);
-function replaceTomlTable(text, header, block) {
+function withoutTomlTable(text, header) {
   const name = header.slice(1, -1);
   const owned = (line) => { const found = tableName(line); return found === name || Boolean(found?.startsWith(`${name}.`)); };
   const kept = [];
@@ -95,10 +96,20 @@ function replaceTomlTable(text, header, block) {
     if (!dropping) kept.push(line);
     else if (at < 0) at = kept.length;
   }
+  return { kept, at };
+}
+const splitAround = (kept, at) => [kept.slice(0, at).join('\n').replace(/\n*$/, ''), kept.slice(at).join('\n').replace(/^\n*/, '')];
+function replaceTomlTable(text, header, block) {
+  const { kept, at } = withoutTomlTable(text, header);
   if (at < 0) return `${text.replace(/\n*$/, '')}\n\n${block}\n`;
-  const before = kept.slice(0, at).join('\n').replace(/\n*$/, '');
-  const after = kept.slice(at).join('\n').replace(/^\n*/, '');
+  const [before, after] = splitAround(kept, at);
   return `${before ? before + '\n\n' : ''}${block}\n${after ? '\n' + after : ''}`;
+}
+function removeTomlTable(text, header) {
+  const { kept, at } = withoutTomlTable(text, header);
+  if (at < 0) return text;
+  const rest = splitAround(kept, at).filter(Boolean).join('\n\n').replace(/\n*$/, '');
+  return rest ? `${rest}\n` : '';
 }
 function applyCodex() {
   const file = path.join(os.homedir(), '.codex', 'config.toml');
@@ -106,14 +117,13 @@ function applyCodex() {
   let existing = '';
   if (existsSync(file)) {
     existing = readFileSync(file, 'utf8');
-    // A null byte or an unterminated multi-line is the sign of a file we should not hand-edit; bail, naming the path.
     if (existing.includes('\u0000')) throw new Error(`${file} looks corrupt (null byte) — fix or remove it, then retry`);
   }
-  writeTextAtomic(file, replaceTomlTable(existing, CODEX_TABLE, block));
-  return { ok: true, message: `Applied — ${CODEX_TABLE} in ~/.codex/config.toml now carries the current token (other tables untouched). Restart Codex.` };
+  writeTextAtomic(file, replaceTomlTable(removeTomlTable(existing, `[mcp_servers.${LEGACY_MCP_SERVER_KEY}]`), CODEX_TABLE, block));
+  return { ok: true, message: `Applied — ${CODEX_TABLE} in ~/.codex/config.toml now carries the current token and an older [mcp_servers.${LEGACY_MCP_SERVER_KEY}] table is gone (other tables untouched). Restart Codex.` };
 }
 
-// Cursor (D10): merge mcpServers.aki-mcp into ~/.cursor/mcp.json; other servers untouched. Unparsable file stops with the path named.
+// Cursor (D10): merge mcpServers.akimcp into ~/.cursor/mcp.json; other servers untouched. Unparsable file stops with the path named.
 function applyCursor() {
   const file = path.join(os.homedir(), '.cursor', 'mcp.json');
   let config = {};
@@ -125,9 +135,10 @@ function applyCursor() {
     }
   }
   config.mcpServers = config.mcpServers || {};
-  config.mcpServers['aki-mcp'] = httpBearerEntry(localMcpUrl(), getOrIssueAccessToken());
+  delete config.mcpServers[LEGACY_MCP_SERVER_KEY];
+  config.mcpServers[MCP_SERVER_KEY] = httpBearerEntry(localMcpUrl(), getOrIssueAccessToken());
   writeJsonAtomic(file, config);
-  return { ok: true, message: 'Applied — aki-mcp in ~/.cursor/mcp.json now carries the current token. Reload Cursor.' };
+  return { ok: true, message: `Applied — ${MCP_SERVER_KEY} in ~/.cursor/mcp.json now carries the current token; an older ${LEGACY_MCP_SERVER_KEY} entry is gone. Reload Cursor.` };
 }
 
 // Every setting.json write goes through writeSettings (atomic): a partial file reads back as empty, which means defaults, i.e. a wider folder list or allowlist than the owner saved.
@@ -325,7 +336,7 @@ export const ROUTES = {
       }
     }
     mcpConfig.mcpServers = mcpConfig.mcpServers || {};
-    mcpConfig.mcpServers[AGY_SERVER_KEY] = { command: 'node', args: [path.join(REPO_ROOT, 'scripts', 'stdio.js')] };
+    mcpConfig.mcpServers[MCP_SERVER_KEY] = { command: 'node', args: [path.join(REPO_ROOT, 'scripts', 'stdio.js')] };
     writeJsonAtomic(mcpConfigPath, mcpConfig);
 
     // (B) Pre-allow -> ~/.gemini/antigravity-cli/settings.json (permissions only; agy does NOT read MCP servers here).
@@ -339,15 +350,15 @@ export const ROUTES = {
         throw new Error(`${settingsPath} is not valid JSON — fix or remove it, then retry`);
       }
     }
-    if (settings.mcpServers && settings.mcpServers[AGY_SERVER_KEY]) delete settings.mcpServers[AGY_SERVER_KEY];
+    if (settings.mcpServers && settings.mcpServers[MCP_SERVER_KEY]) delete settings.mcpServers[MCP_SERVER_KEY];
     settings.permissions = settings.permissions || { allow: [], deny: [] };
     settings.permissions.allow = settings.permissions.allow || [];
-    settings.permissions.allow = [...new Set([...settings.permissions.allow, `mcp(${AGY_SERVER_KEY}/*)`])];
+    settings.permissions.allow = [...new Set([...settings.permissions.allow, `mcp(${MCP_SERVER_KEY}/*)`])];
     writeJsonAtomic(settingsPath, settings);
 
     return { ok: true, message: 'Applied — akimcp (stdio) → ~/.gemini/config/mcp_config.json + pre-allow → antigravity-cli/settings.json. Restart agy to pick it up.' };
   },
-  // The three HTTP+Bearer clients (Claude Code, Codex, Cursor) each get a one-click Apply writing the live token, so Roll token is a re-click, never a silent stale entry (docs/plan/audit-tool-drift-oct25.md D10, F9, F10). Each is idempotent: a second Apply replaces the one entry, never adds a duplicate.
+  // One-click Apply with the live token, so Roll token is a re-click (docs/plan/done/audit-tool-drift-oct25.md D10, F9, F10); idempotent: a second Apply replaces the entry.
   'POST /api/claude-code-apply': async () => applyClaudeCode(),
   'POST /api/codex-apply': async () => applyCodex(),
   'POST /api/cursor-apply': async () => applyCursor(),
@@ -395,7 +406,13 @@ export const ROUTES = {
     const ended = ids.filter(revokeTempTokenById).length;
     return { ok: true, message: `revoked ${ended} temporary token${ended === 1 ? '' : 's'}` };
   },
-  'POST /api/clients/remove': async (body) => ({ ok: true, message: removeClient(typeof body.clientId === 'string' ? body.clientId : '') }),
+  // Only roll === true rolls: a removed client still holds the shared token, so cutting it rolls it for every Bearer holder. AIObox calls this (docs/plan/IMPORTANT-akimcp-aiobox-contract.md).
+  'POST /api/clients/remove': async (body) => {
+    const outcome = removeClient(typeof body.clientId === 'string' ? body.clientId : '');
+    if (body.roll !== true) return { ok: true, message: outcome };
+    rotateAccessToken({ revokeRefresh: false });
+    return { ok: true, message: `${outcome} and rolled the access token. Signed-in OAuth connectors renew on their next request (ClickUp may need one reconnect); Bearer clients (Buda, local Claude Code, Codex and Cursor) need the new token: click Apply again or re-paste.` };
+  },
   'POST /api/rate-limit': async (body) => {
     setRateLimit(validateLimits(body.limits));
     logSecurity('connection limits saved');
@@ -412,11 +429,10 @@ export const ROUTES = {
     refreshLocalVersions(ctx.updateInfo);
     return { ok: true, message };
   },
-  // No refresh: a repo pull only lands on disk; the process keeps the old version until restart, so the banner stays as a restart reminder and clears on the next boot.
   // The page reloads after this so every server-rendered snippet carries the new token; the token itself is never returned.
   'POST /api/roll-token': async (body) => {
     rotateAccessToken({ revokeRefresh: body.hard === true });
-    // D10: the Applied HTTP+Bearer clients now hold a stale token; name them so the owner clicks Apply again (the panel does not track which were used, so it names all three — the lighter choice over a state file).
+    // D10: Applied Bearer clients now hold a stale token; all three are named because the panel does not track which were used (lighter than a state file).
     const reapply = 're-click Apply on the Claude Code, Codex and Cursor tabs (or re-paste their snippets)';
     return { ok: true, message: body.hard === true ? `rolled — every client must re-authorize; ${reapply}` : `rolled — ${reapply}` };
   },
@@ -424,6 +440,7 @@ export const ROUTES = {
     rotatePassphrase();
     return { ok: true, message: 'rolled — the old passphrase no longer authorizes; connected AIs keep working' };
   },
+  // No refresh: a repo pull only lands on disk; the process keeps the old version until restart, so the banner stays as a restart reminder and clears on the next boot.
   'POST /api/pull-update': async () => ({ ok: true, message: await pullUpdate() }),
   // Ingress is decided at start.js boot, not live-switchable — saving here never restarts anything, only records the pick for the next `npm start`.
   'POST /api/ingress/cloudflared': async (body) => {

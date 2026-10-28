@@ -14,6 +14,11 @@ const { writeLock } = await import('../scripts/instance-lock.js');
 const { getOrIssueAccessToken, loadOrCreatePassphrase } = await import('../scripts/oauth.js');
 const { recordCaller } = await import('../scripts/callers.js');
 const { ROUTES } = await import('../scripts/panel.js');
+const { MCP_NAME, MCP_SERVER_KEY } = await import('../scripts/mcp-name.js');
+const { renderPanel } = await import('../scripts/config-page.js');
+const { createToolsServer } = await import('../scripts/tools-server.js');
+const { InMemoryTransport } = await import('@modelcontextprotocol/sdk/inMemory.js');
+const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
 
 // instance.json: panelPort + token for the loopback panel, origin + ingress for the connector URL in every mode.
 writeLock({ pid: 1, panelPort: 9998, gatePort: 9999, token: 'panel-token', version: '0.0.0', origin: 'https://host.example', ingress: 'funnel' });
@@ -57,6 +62,28 @@ assert.equal(typeof claude.signedIn, 'boolean');
 assert.ok(claude.tokenAt === null || typeof claude.tokenAt === 'number');
 assert.ok(security.callers[0].agent.startsWith('Claude-User'));
 assert.equal(typeof security.callers[0].lastSeen, 'number');
+// clients[] is listClients() unchanged, so its full field set AIObox's Clients card reads is held by test/oauth-activity.test.js.
+
+// POST /api/clients/remove { clientId, roll } → { ok, message }; what roll does is test/client-revoke.test.js's.
+const removed = await ROUTES['POST /api/clients/remove']({ clientId: 'claudeDcr', roll: false });
+assert.deepEqual(Object.keys(removed).sort(), ['message', 'ok']);
+assert.equal(removed.ok, true);
+
+// /mcp initialize: AIObox copies serverInfo.title as the MCP name (serverInfo.name as fallback); the bridge returns this result unchanged.
+const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+await createToolsServer().connect(serverSide);
+const mcpClient = new Client({ name: 'aiobox-contract', version: '0.0.0' });
+await mcpClient.connect(clientSide);
+const serverInfo = mcpClient.getServerVersion();
+assert.deepEqual([serverInfo.title, serverInfo.name], ['AkiMCP', 'akimcp']);
+await mcpClient.close();
+
+// Connector id and name: both must contain "akimcp" by AIObox's matching rule, and the retired key survives in the rendered page only as the one hint line.
+for (const name of [MCP_NAME, MCP_SERVER_KEY]) assert.ok(name.toLowerCase().replace(/\s+/g, '').includes('akimcp'), `${name} satisfies the contract pattern`);
+const page = renderPanel({ origin: 'https://host.example', client: {}, passphrase: 'p', token: 't', accessToken: 'tok', repoRoot: '/', rulesDir: '/', userDir: '/' });
+const hints = page.match(/<p class="helptext legacy-hint">.*?<\/p>/g) ?? [];
+assert.ok(hints.length > 0 && hints.some((hint) => hint.includes('aki-mcp</span> (Postman: <span class="mono">aki-mcp-sv</span>); delete that entry')), 'the legacy hint line is rendered');
+assert.doesNotMatch(page.replace(/<p class="helptext legacy-hint">.*?<\/p>/g, ''), /aki-mcp([^-]|$)/, 'no snippet or prose names the retired key outside the hint');
 
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log('aiobox-contract.test.js: ok');

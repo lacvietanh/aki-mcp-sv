@@ -60,7 +60,7 @@ async function run() {
     const firstBody = await firstInitialize.json();
     assert.equal(firstBody.id, 1);
     assert.match(firstBody.result.instructions, /aki__akidevrule_context/);
-    assert.equal(firstBody.result.serverInfo?.name, 'aki-mcp');
+    assert.equal(firstBody.result.serverInfo?.name, 'akimcp');
     assert.equal(firstBody.result.serverInfo?.version, pkgVersion, 'serverInfo carries the package version');
     assert.ok(firstBody.result.capabilities);
 

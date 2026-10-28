@@ -7,12 +7,13 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ruleContextInstructions } from './rule-context-mcp.js';
 import { mountProviders, listProviders } from './provider-registry.js';
 import { VERSION } from './version.js';
+import { MCP_NAME, MCP_SERVER_KEY } from './mcp-name.js';
 
 export function createToolsServer() {
   // The AIObox step names aki__aiobox, so it rides along only while that tool is served (installed and switched on).
   const aiobox = listProviders().find((p) => p.id === 'aiobox');
   const server = new McpServer(
-    { name: 'aki-mcp', version: VERSION, title: 'Aki MCP' },
+    { name: MCP_SERVER_KEY, version: VERSION, title: MCP_NAME },
     { instructions: ruleContextInstructions(Boolean(aiobox?.available && aiobox?.enabled)) },
   );
   return mountProviders(server, 'aki__');

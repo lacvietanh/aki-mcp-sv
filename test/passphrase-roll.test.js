@@ -42,7 +42,7 @@ for (const id of ['postmanJson', 'cursorJson', 'claudeCodeCmd', 'codexToml']) {
 }
 
 const maskedSpans = [...secretPage.matchAll(/<span class="txt" data-v="[^"]*" data-mask="([^"]*)">([^<]*)<\/span>/g)];
-assert.equal(maskedSpans.length, 7, 'passphrase, access token, Buda header and the four snippets carry a data-mask');
+assert.equal(maskedSpans.length, 10, 'passphrase, access token, Buda header, the four snippets and the three from-another-computer snippets carry a data-mask');
 for (const [, mask, shown] of maskedSpans) {
   assert.equal(shown, mask, 'the visible text is the data-mask, so hiding again restores it');
   assert.ok(!mask.includes('SECRETTOK') && !mask.includes(after), 'the masked text holds no secret');

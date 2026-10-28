@@ -238,7 +238,7 @@ function renderSavedIngress(saved) {
   box.append(p);
 }
 
-// Pure visibility toggle: hides non-matching chips/rows, never touches collectAllowlist()'s data. Position matters (above #cmdChips, below the add-input at the bottom): a filter box and an add box that looked identical would collide in the user's mental model.
+// Hide, never remove: collectAllowlist() reads every chip, so saving while filtered keeps the hidden ones. Kept above the chips, apart from the add box below, so the two never look alike.
 function filterCommands(q) {
   const needle = q.trim().toLowerCase();
   for (const el of document.querySelectorAll('#cmdChips .chip, #cmdRows .cmdrow')) {
@@ -296,8 +296,8 @@ async function loadPostmanDaemon() {
 
 // Snippets and the token field are server-rendered, so a reload is what refreshes them all at once; the open tab and the roll reply cross it in a one-shot key that only a roll writes.
 const RESTORE_KEY = 'akiRestore';
-function reloadKeepingTab(message) {
-  sessionStorage.setItem(RESTORE_KEY, JSON.stringify({ tab: document.querySelector('#s1 .tab.active').dataset.tab, message }));
+function reloadKeepingTab(message, resultId = 'msgRoll') {
+  sessionStorage.setItem(RESTORE_KEY, JSON.stringify({ tab: document.querySelector('#s1 .tab.active').dataset.tab, message, resultId }));
   setTimeout(() => location.reload(), 800);
 }
 function rollToken(btn, hard) {
@@ -329,9 +329,9 @@ function revokeTempButton({ id }) {
 async function loadTempTokens() {
   const { tokens } = await api('GET', '/api/temp-tokens');
   renderTable('tempList', [
-    ['Created', (t) => timeCell(t.created)],
-    ['Expires in', (t) => untilText(t.expires)],
-    ['', revokeTempButton],
+    ['Created', (t) => timeCell(t.created), { sortValue: (t) => t.created }],
+    ['Expires in', (t) => untilText(t.expires), { sortValue: (t) => t.expires }],
+    ['', revokeTempButton, NOT_SORTABLE],
   ], tokens, 'No active temporary tokens. Mint one above when you start a web chat.');
   document.getElementById('revokeAllTemp').hidden = tokens.length < 2;
   if (!tokens.length) for (const id of ['tempKickoff', 'tempKickoffNote']) document.getElementById(id).hidden = true;
@@ -382,15 +382,45 @@ function mutedNote(text) {
   note.textContent = text;
   return note;
 }
+const tableSort = {};
+const SORT_CYCLE = { asc: 'desc', desc: null };
+const SORT_ICON = { asc: 'sort-up', desc: 'sort-down' };
+const NOT_SORTABLE = { sortable: false };
+// A cell is [label, cellFn, { sortable, sortValue }?]; sortValue returns the raw value (epoch ms, count), so timestamps sort as numbers while the cell shows "3 h ago".
+function sortValueOf([, cell, options]) {
+  if (options?.sortValue) return options.sortValue;
+  return (row) => { const content = cell(row); return content instanceof Node ? content.textContent : content; };
+}
+function sortHeader(label, direction, onSort) {
+  const th = document.createElement('th');
+  th.scope = 'col';
+  th.append(label);
+  if (!onSort) return th;
+  th.dataset.sort = direction || 'none';
+  th.setAttribute('aria-sort', { asc: 'ascending', desc: 'descending' }[direction] || 'none');
+  th.tabIndex = 0;
+  th.append(icon(direction ? SORT_ICON[direction] : 'sort'));
+  th.onclick = onSort;
+  th.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSort(); } };
+  return th;
+}
 function renderTable(containerId, columns, rows, emptyText, rowClass) {
   const container = document.getElementById(containerId);
   if (!rows.length) { const p = document.createElement('p'); p.className = 'helptext'; p.textContent = emptyText; return container.replaceChildren(p); }
+  const { index, dir } = tableSort[containerId] || {};
+  const sortedBy = columns[index];
+  const valueOf = sortedBy && sortValueOf(sortedBy);
+  const shown = sortedBy ? [...rows].sort((a, b) => compareTableValues(valueOf(a), valueOf(b), dir)) : rows;
+  const cycle = (i) => {
+    const next = index === i ? SORT_CYCLE[dir] : 'asc';
+    if (next) tableSort[containerId] = { index: i, dir: next }; else delete tableSort[containerId];
+    renderTable(containerId, columns, rows, emptyText, rowClass);
+  };
   const table = document.createElement('table');
   table.className = 'datatable';
-  const headRow = table.createTHead().insertRow();
-  for (const [label] of columns) headRow.insertCell().textContent = label;
+  table.createTHead().insertRow().append(...columns.map(([label, , options], i) => sortHeader(label, index === i ? dir : null, options?.sortable === false ? null : () => cycle(i))));
   const body = table.createTBody();
-  for (const row of rows) {
+  for (const row of shown) {
     const tr = body.insertRow();
     if (rowClass?.(row)) tr.className = rowClass(row);
     for (const [, cell] of columns) tr.insertCell().append(cell(row));
@@ -400,6 +430,24 @@ function renderTable(containerId, columns, rows, emptyText, rowClass) {
   wrap.append(table);
   container.replaceChildren(wrap);
 }
+
+// Filter state lives here, not in the re-rendered table, so loadSecurity()'s redraw keeps what was typed; the inputs themselves are static page HTML.
+const tableFilters = { clientsList: { text: '', status: 'all' }, callersList: { text: '' } };
+const loadedRows = { clientsList: [], callersList: [] };
+const CLIENT_STATUS = {
+  all: () => true,
+  signedin: (c) => c.signedIn,
+  pending: (c) => c.pending,
+  signedout: (c) => !c.signedIn && !c.pending,
+};
+const matchesText = (fields, text) => fields.filter(Boolean).join(' ').toLowerCase().includes(text.trim().toLowerCase());
+const COUNT_NOUN = { clientsList: 'clients', callersList: 'callers' };
+function filterRows(containerId, rows, matches) {
+  const kept = rows.filter(matches);
+  const filtering = Object.values(tableFilters[containerId]).some((value) => value && value !== 'all');
+  document.querySelector('[data-count="' + containerId + '"]').textContent = filtering ? kept.length + ' of ' + rows.length : rows.length + ' ' + COUNT_NOUN[containerId];
+  return kept;
+}
 const CLIENT_KIND_LABEL = { static: 'pre-issued', dcr: 'connector' };
 function clientNameCell({ name, pending }) {
   const box = document.createElement('div');
@@ -407,47 +455,71 @@ function clientNameCell({ name, pending }) {
   if (pending) box.append(mutedNote('pending approval — removed after 1 h'));
   return box;
 }
-function removeClientButton({ clientId, kind, name, signedIn }) {
-  const signOutOnly = kind === 'static';
-  if (signOutOnly && !signedIn) return '';
+function clientActionButton({ text, confirmText, clientId, roll, note = '' }) {
   const btn = document.createElement('button');
-  btn.textContent = signOutOnly ? 'Sign out' : 'Remove';
+  btn.textContent = text;
   btn.onclick = () => {
-    const what = signOutOnly ? `Sign out ${name}? Its Client ID and secret stay valid, so it can connect again with the passphrase.` : `Remove ${name || 'this client'}? It must connect again with the passphrase.`;
-    if (!confirm(`${what}\n\nIt keeps the current access token until you press Roll token in section 1.`)) return;
+    if (!confirm(confirmText)) return;
     act(btn, 'msgClients', async () => {
-      const { message } = await api('POST', '/api/clients/remove', { clientId });
+      const { message } = await api('POST', '/api/clients/remove', { clientId, roll });
+      if (roll) { reloadKeepingTab(message, 'msgClients'); return message + ' — reloading'; }
       await loadSecurity();
-      return `${message} — press Roll token in section 1 to cut its access now`;
+      return message + note;
     });
   };
   return btn;
 }
+const ROLL_COLLATERAL = 'Every other client is affected too: signed-in connectors renew on their next request (ClickUp may need one reconnect); Bearer clients (Buda, local Claude Code, Codex, Cursor) need the new token — click Apply again or re-paste.';
+function removeClientButton({ clientId, kind, name, signedIn, tokenAt }) {
+  const signOutOnly = kind === 'static';
+  if (signOutOnly && !signedIn) return '';
+  const who = name || 'this client';
+  if (tokenAt == null && !signedIn) return clientActionButton({ text: 'Delete', confirmText: 'Delete ' + who + '?', clientId, roll: false });
+  const verb = signOutOnly ? 'Sign out' : 'Remove';
+  const keepsAccess = signOutOnly ? ' Its Client ID and secret stay valid, so it can connect again with the passphrase.' : ' It must connect again with the passphrase.';
+  const box = document.createDocumentFragment();
+  box.append(
+    clientActionButton({ text: 'Revoke & roll', confirmText: verb + ' ' + who + ' and roll the access token?\n\nIt loses access now. ' + ROLL_COLLATERAL, clientId, roll: true }),
+    clientActionButton({ text: signOutOnly ? 'Sign out only' : 'Remove only', confirmText: verb + ' ' + who + '?' + keepsAccess + '\n\nIts current access token keeps working until you press Roll token in section 1.', clientId, roll: false, note: ' — its current access token works until you press Roll token in section 1' }),
+  );
+  return box;
+}
 function renderClients(clients) {
+  loadedRows.clientsList = clients;
+  const { text, status } = tableFilters.clientsList;
+  const shown = filterRows('clientsList', clients, (c) => CLIENT_STATUS[status](c) && matchesText([c.name, c.kind, CLIENT_KIND_LABEL[c.kind], c.redirectHost, c.lastAddress, c.lastAgent], text));
   renderTable('clientsList', [
-    ['Name', clientNameCell],
-    ['Kind', (c) => CLIENT_KIND_LABEL[c.kind] || c.kind || '—'],
-    ['Redirect', (c) => c.redirectHost || (c.kind === 'static' ? 'any allowed callback' : '—')],
-    ['Signed in', (c) => c.signedIn ? 'yes' : 'no'],
-    ['First seen', (c) => timeCell(c.firstSeenAt, 'before tracking')],
-    ['Last approved', (c) => timeCell(c.approvedAt)],
-    ['Last token', (c) => timeCell(c.tokenAt)],
-    ['Last from', (c) => [c.lastAddress, c.lastAgent].filter(Boolean).join(' · ') || '—'],
-    ['', removeClientButton],
-  ], clients, 'No clients registered yet.', (c) => c.pending ? 'pending' : '');
+    ['Name', clientNameCell, { sortValue: (c) => c.name }],
+    ['Kind', (c) => CLIENT_KIND_LABEL[c.kind] || c.kind || '—', { sortValue: (c) => CLIENT_KIND_LABEL[c.kind] || c.kind }],
+    ['Redirect', (c) => c.redirectHost || (c.kind === 'static' ? 'any allowed callback' : '—'), { sortValue: (c) => c.redirectHost }],
+    ['Signed in', (c) => c.signedIn ? 'yes' : 'no', { sortValue: (c) => Number(c.signedIn) }],
+    ['First seen', (c) => timeCell(c.firstSeenAt, 'before tracking'), { sortValue: (c) => c.firstSeenAt }],
+    ['Last approved', (c) => timeCell(c.approvedAt), { sortValue: (c) => c.approvedAt }],
+    ['Last token', (c) => timeCell(c.tokenAt), { sortValue: (c) => c.tokenAt }],
+    ['Last from', (c) => [c.lastAddress, c.lastAgent].filter(Boolean).join(' · ') || '—', { sortValue: (c) => c.lastAddress }],
+    ['', removeClientButton, NOT_SORTABLE],
+  ], shown, clients.length ? 'No client matches the filter.' : 'No clients registered yet.', (c) => c.pending ? 'pending' : '');
 }
 function renderSecurityLog({ path, lines }) {
   document.getElementById('securityLogPath').textContent = path;
   document.getElementById('securityLog').textContent = lines.length ? lines.join('\n') : 'Nothing logged yet.';
 }
 function renderCallers(callers) {
+  loadedRows.callersList = callers;
+  const shown = filterRows('callersList', callers, (c) => matchesText([c.key, c.agent], tableFilters.callersList.text));
   renderTable('callersList', [
-    ['Caller', (c) => c.key],
-    ['Agent', (c) => c.agent || '—'],
-    ['First seen', (c) => timeCell(c.firstSeen)],
-    ['Last seen', (c) => timeCell(c.lastSeen)],
-    ['Requests', (c) => String(c.requests)],
-  ], callers, 'No one has used the token since the last restart.');
+    ['Caller', (c) => c.key, { sortValue: (c) => c.key }],
+    ['Agent', (c) => c.agent || '—', { sortValue: (c) => c.agent }],
+    ['First seen', (c) => timeCell(c.firstSeen), { sortValue: (c) => c.firstSeen }],
+    ['Last seen', (c) => timeCell(c.lastSeen), { sortValue: (c) => c.lastSeen }],
+    ['Requests', (c) => String(c.requests), { sortValue: (c) => c.requests }],
+  ], shown, callers.length ? 'No caller matches the filter.' : 'No one has used the token since the last restart.');
+}
+const REDRAW_FILTERED = { clientsList: () => renderClients(loadedRows.clientsList), callersList: () => renderCallers(loadedRows.callersList) };
+for (const input of document.querySelectorAll('[data-filter]')) {
+  const [table, key] = input.dataset.filter.split(':');
+  tableFilters[table][key] = input.value;
+  input.addEventListener('input', () => { tableFilters[table][key] = input.value; REDRAW_FILTERED[table](); });
 }
 async function loadSecurity() {
   const { limits, defaults, blocked, clients, callers, log } = await api('GET', '/api/security');
@@ -482,9 +554,9 @@ function providerInstalledCell(p) {
 function renderProviders(list) {
   renderTable('providersList', [
     ['Provider', (p) => p.title],
-    ['Installed', providerInstalledCell],
+    ['Installed', providerInstalledCell, { sortValue: (p) => Number(p.available) }],
     ['Tools', (p) => p.tools.map((n) => n.replace(/^aki__/, '')).join(', ')],
-    ['Switch', providerSwitch],
+    ['Switch', providerSwitch, NOT_SORTABLE],
   ], list, 'No providers.', (p) => (p.available && p.enabled ? '' : 'off'));
   document.querySelectorAll('#providersList td:nth-child(3)').forEach((td) => td.classList.add('wrap'));
 }
@@ -520,6 +592,8 @@ const ACTIONS = {
   saveLog: (btn) => act(btn, 'msgLogSettings', async () => (await api('POST', '/api/log', { log: readLogInputs() })).message),
   resetLog: () => { fillLog(logDefaults); say('msgLogSettings', 'defaults filled in — press Save to apply', true); },
   resetLimits: () => { fillLimits(limitDefaults); say('msgLimits', 'defaults filled in — press Save to apply', true); },
+  refreshClients: (btn) => act(btn, 'msgClients', async () => { await loadSecurity(); return 'refreshed'; }),
+  refreshCallers: (btn) => act(btn, 'msgCallers', async () => { await loadSecurity(); return 'refreshed'; }),
   refreshBlocked: (btn) => act(btn, 'msgBlocked', async () => { await loadSecurity(); return 'refreshed'; }),
   refreshLog: (btn) => act(btn, 'msgLog', async () => { await loadSecurity(); return 'refreshed'; }),
   releaseAll: (btn) => act(btn, 'msgBlocked', async () => { await api('POST', '/api/rate-limit/release', {}); await loadSecurity(); return 'everyone released'; }),
@@ -639,7 +713,7 @@ const ACTIONS = {
 
 document.querySelectorAll('[data-act]').forEach((btn) => (btn.onclick = () => ACTIONS[btn.dataset.act](btn)));
 
-// Scoped per section: independent tab groups share the page, so a global toggle would deactivate one group whenever the other's tab was clicked; lastTab makes Local -> Web -> Local land where the user left.
+// Scoped to its section: a page-wide toggle would deactivate the other tab group. lastTab lets a tier switch return to the tab the user left.
 document.querySelectorAll('.tabs').forEach((nav) => {
   const scope = nav.closest('section');
   nav.querySelectorAll('.tab').forEach((tab) => (tab.onclick = () => {
@@ -673,7 +747,7 @@ if (restore) {
   const bar = document.querySelector('#s1 .tab[data-tab="' + restore.tab + '"]').closest('.tabs');
   bar.dataset.lastTab = restore.tab;
   document.querySelector('.tier-btn[data-tier="' + bar.dataset.tierTabs + '"]').click();
-  say('msgRoll', restore.message, true);
+  say(restore.resultId || 'msgRoll', restore.message, true);
 }
 
 function updateDomainPrice() {

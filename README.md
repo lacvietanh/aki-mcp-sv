@@ -185,14 +185,14 @@ A temporary token lasts 4 hours, lives only in memory (restarting AkiMCP revokes
 
 ## Connecting local IDEs (Cursor, Claude Code, Claude app, AGY, Codex)
 
-Local tools run on the same machine as AKIMCP, so they need no tunnel and no WAN round-trip: Cursor, Claude Code and Codex connect **straight to the loopback engine** at `http://127.0.0.1:9999/mcp`, and the Claude app and AGY start the tools themselves over stdio (`scripts/stdio.js`), with no token. The Gatekeeper binds `127.0.0.1:9999` from the moment you run `akimcp`, whether or not a public ingress is configured. Bearer-token auth is still enforced on loopback (see [Security](#security)); grab the token from the panel at `http://127.0.0.1:9998` (the Postman tab shows the filled JSON; one access token serves every client, and panel section 1 can roll it if it leaks), or copy a config below and replace `YOUR_LOCAL_ACCESS_TOKEN`. (Ports are defaults; `--dev` mode uses `9997`/`9996` — the panel always shows the live values.)
+Local tools run on the same machine as AKIMCP, so they need no tunnel and no WAN round-trip: Cursor, Claude Code and Codex connect **straight to the loopback engine** at `http://127.0.0.1:9999/mcp`, and the Claude app and AGY start the tools themselves over stdio (`scripts/stdio.js`), with no token. The Gatekeeper binds `127.0.0.1:9999` from the moment you run `akimcp`, whether or not a public ingress is configured. Bearer-token auth is still enforced on loopback (see [Security](#security)); grab the token from the panel at `http://127.0.0.1:9998` (the Postman tab shows the filled JSON; one access token serves every client, and panel section 1 can roll it if it leaks), or copy a config below and replace `YOUR_LOCAL_ACCESS_TOKEN`. (Ports are defaults; `--dev` mode uses `9997`/`9996` — the panel always shows the live values.) Older AkiMCP versions used the name `aki-mcp`; the Apply buttons remove that entry, and with a hand-pasted config you delete it yourself if it is still there.
 
 **Cursor** — click **Apply to Cursor** in the panel's Cursor tab to write `~/.cursor/mcp.json` with the current token (other servers untouched), or paste this by hand (Settings → MCP Servers). After Roll token, click Apply again:
 
 ```json
 {
   "mcpServers": {
-    "aki-mcp": {
+    "akimcp": {
       "url": "http://127.0.0.1:9999/mcp",
       "headers": { "Authorization": "Bearer YOUR_LOCAL_ACCESS_TOKEN" }
     }
@@ -203,8 +203,8 @@ Local tools run on the same machine as AKIMCP, so they need no tunnel and no WAN
 **Claude Code CLI** — click **Apply to Claude Code** in the panel's Claude Code & app tab: it registers the server in `user` scope (works from every project) with the current token, replacing any old entry, including one an older setup left inside a single project. After Roll token, click Apply again. To do it by hand, run both lines — the `remove` first, because a bare `claude mcp add` refuses when the entry already exists and keeps the old token; if one project still gets 401, also run `claude mcp remove aki-mcp -s local` inside it:
 
 ```bash
-claude mcp remove aki-mcp -s user
-claude mcp add --transport http -s user aki-mcp http://127.0.0.1:9999/mcp --header "Authorization: Bearer YOUR_LOCAL_ACCESS_TOKEN"
+claude mcp remove akimcp -s user
+claude mcp add --transport http -s user akimcp http://127.0.0.1:9999/mcp --header "Authorization: Bearer YOUR_LOCAL_ACCESS_TOKEN"
 ```
 
 **Claude app (desktop)** — set up separately from Claude Code; one does not connect the other. Open **Settings → Developer → Edit Config** in the app, merge this under `mcpServers` in the `claude_desktop_config.json` it opens, then quit the app completely and reopen it. The app spawns `scripts/stdio.js` (the same tools, over stdio) with no token, so Roll token changes nothing; the panel's **Claude Code & app** tab shows the entry with your path filled in. If the server fails to start, replace `node` with the full path from `which node` (Windows: `where node`).
@@ -212,7 +212,7 @@ claude mcp add --transport http -s user aki-mcp http://127.0.0.1:9999/mcp --head
 ```json
 {
   "mcpServers": {
-    "aki-mcp": {
+    "akimcp": {
       "command": "node",
       "args": ["/absolute/path/to/aki-mcp-sv/scripts/stdio.js"]
     }
@@ -237,10 +237,10 @@ The button also pre-allows the server for the CLI; the IDE asks for its own appr
 
 Any other client that spawns MCP servers over stdio can run the package the same way, with no gateway, tunnel or token: `npx -y @akinet/akimcp --stdio`.
 
-**Codex CLI** — click **Apply to Codex** in the panel's Codex tab: it writes the `[mcp_servers.aki-mcp]` table into `~/.codex/config.toml` with the current token, replacing it in place (other tables untouched). After Roll token, click Apply again. To edit by hand, replace any existing `[mcp_servers.aki-mcp]` table — do not add a second one (duplicate tables are invalid TOML). Codex reaches the local engine over streamable HTTP, token inlined so there's no env var to export:
+**Codex CLI** — click **Apply to Codex** in the panel's Codex tab: it writes the `[mcp_servers.akimcp]` table into `~/.codex/config.toml` with the current token, replacing it in place (other tables untouched). After Roll token, click Apply again. To edit by hand, replace any existing `[mcp_servers.akimcp]` table — do not add a second one (duplicate tables are invalid TOML). Codex reaches the local engine over streamable HTTP, token inlined so there's no env var to export:
 
 ```toml
-[mcp_servers.aki-mcp]
+[mcp_servers.akimcp]
 url = "http://127.0.0.1:9999/mcp"
 http_headers = { "Authorization" = "Bearer YOUR_LOCAL_ACCESS_TOKEN" }
 ```
@@ -455,7 +455,7 @@ Use `aki__find_path` to locate a file or directory — it scans the whole tree i
 - **One shared access token** (1 year) for every client, shown and rolled in panel section 1. *Roll & sign out all clients* is the answer to any leak.
 - **Temporary tokens** (4 hours, memory only) for [any HTTP chat](#connecting-from-any-http-chat): each one is revoked by its own chat with `DELETE /mcp`, by **Revoke** in the panel, by expiry or by a restart, without touching the shared token. *Roll & sign out all clients* revokes them too.
 - **Loopback is not trusted**: the server binds `127.0.0.1` only and still requires the token, so a web page in your browser cannot drive it. The panel binds `127.0.0.1` too and needs its own per-start token.
-- **Wrong credentials get blocked**: default 5 in 60 seconds, then 15 minutes of `429`. Valid tokens are never counted or blocked. Panel section 7 edits every number, lists blocked callers and releases them, and shows every registered client (with Remove) and who used the token since the last restart; section 9 shows the security log (`security.log` in the data dir, rotated at 1 MB).
+- **Wrong credentials get blocked**: default 5 in 60 seconds, then 15 minutes of `429`. Valid tokens are never counted or blocked. Panel section 7 edits every number, lists blocked callers and releases them, and shows every registered client (Delete for one that never got a token; Revoke & roll or Remove only for the rest) and who used the token since the last restart, with a filter, sortable columns and Refresh on each table; section 9 shows the security log (`security.log` in the data dir, rotated at 1 MB).
 - **Tools reach only the folders you list** (default your home folder plus `~/.aki` and `~/.claude`), and the shell runs only allowlisted commands, without a shell (panel sections 5 and 6). Commands you add are your responsibility.
 - **Secrets** (`passphrase.txt`, `tokens.json`, `oauth-client.json`, `oauth-dcr-clients.json`) live in `~/.aki/mcpsv/`, mode 0600, never in the repo.
 

@@ -179,5 +179,14 @@ footer { border-top: 1px solid var(--line); margin-top: 24px; padding: 24px 0 28
 .datatable th { color: var(--muted); font-weight: 600; }
 .datatable tr.pending, .datatable tr.off { opacity: .6; }
 .datatable td.wrap { white-space: normal; }
+.datatable td button + button { margin-left: 4px; }
+th[data-sort] { cursor: pointer; user-select: none; }
+th[data-sort]:hover, th[data-sort]:focus-visible { color: var(--accent); }
+th[data-sort] i { margin-left: 6px; opacity: .5; }
+th[data-sort="asc"] i, th[data-sort="desc"] i { opacity: 1; color: var(--accent); }
+.table-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 8px; }
+.table-toolbar input[type=text] { flex: 0 1 240px; width: auto; }
+.table-toolbar select { width: auto; }
+.table-toolbar .helptext { margin: 0; }
 .datatable .helptext { margin: 0; font-size: 11px; }
 .logbox { font-family: ui-monospace, Menlo, monospace; font-size: 11px; max-height: 320px; overflow: auto; margin: 0 0 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; white-space: pre; }

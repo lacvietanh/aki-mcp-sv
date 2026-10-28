@@ -182,7 +182,7 @@ function redirectHostOf(uris) {
   }
 }
 
-// AIObox reads redirectHost, signedIn and tokenAt through GET /api/security (docs/plan/IMPORTANT-akimcp-aiobox-contract.md).
+// AIObox reads every field of this view through GET /api/security (docs/plan/IMPORTANT-akimcp-aiobox-contract.md).
 function activityView(record, kind, signedInIds) {
   const isStatic = kind === 'static';
   return {

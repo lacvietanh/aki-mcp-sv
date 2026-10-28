@@ -95,7 +95,7 @@ try {
   assert.equal(storedStatic.clientSecret, staticClient.clientSecret);
   assert.ok(storedStatic.firstSeenAt && storedStatic.approvedAt);
 
-  // listClients: contract fields, no secrets, most recent activity first, legacy last.
+  // listClients: contract fields (GET /api/security serves them to AIObox, docs/plan/IMPORTANT-akimcp-aiobox-contract.md), no secrets, most recent activity first, legacy last.
   const list = listClients();
   const fields = ['clientId', 'name', 'kind', 'redirectHost', 'firstSeenAt', 'approvedAt', 'tokenAt', 'lastAddress', 'lastAgent', 'pending', 'signedIn'];
   for (const view of list) assert.deepEqual(Object.keys(view).sort(), [...fields].sort());
