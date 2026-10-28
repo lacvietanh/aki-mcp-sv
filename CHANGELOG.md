@@ -2,6 +2,11 @@
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning per [SemVer](https://semver.org/).
 
+## [3.3.1] - 2026-10-29
+
+### Fixed
+- **A connector the server no longer remembers can be added again** (`scripts/oauth.js`, `test/oauth-activity.test.js`, `docs/feat/security.md`): a provider keeps the client ID it registered with and is never told the server dropped it (a registration never approved within an hour is pruned, and *Remove only* or *Revoke & roll* in panel section 7 forgets one on purpose), so ClickUp's MCP Server form kept sending the old ID and `/authorize` answered "Connection request invalid" with no way forward. A well-formed ID (32 hex characters) on an allowlisted callback is now rebuilt as a client named `MCP client` and stored only after the passphrase passes; a wrong passphrase, a malformed ID such as `constructor` and a callback outside the allowlist store nothing and are refused as before. The original client name is not recoverable, so the Clients table shows `MCP client`, and a client removed from the panel can be approved again with the passphrase. Checked live 2026-10-29 against ClickUp: the reconnect logged `client approved: MCP client (search.clickup-prod.com) — first approval`, then `token granted`; `test/oauth-activity.test.js` covers remove then reconnect.
+
 ## [3.3.0] - 2026-10-28
 
 ### Added
