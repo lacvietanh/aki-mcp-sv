@@ -2,6 +2,17 @@
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning per [SemVer](https://semver.org/).
 
+## [3.3.0] - 2026-10-28
+
+### Added
+- **Claude Code, Codex and Cursor can be set up from another computer** (`scripts/config-page.js`): the three Section 1 tabs each gain a *From another computer* block with a `${origin}/mcp` snippet, or a pointer to Section 0 when no public origin is set. The Bearer token in it is stored in plain text on that computer, and Roll token requires pasting it there again. Not yet checked against a live second computer.
+- **Section 7 Clients can be sorted and filtered** (`scripts/config-page.js`, `public/panel-client.js`, `public/table-sort.js`, `public/panel.css`): the Clients and Active now tables get a toolbar (text filter, a status filter on Clients, a row count, Refresh) and click-to-sort columns; every panel table now sorts by clicking its header, the providers and temporary-token tables included. Not yet checked in a browser.
+
+### Changed
+- **One MCP server key, `akimcp`, everywhere** (`scripts/mcp-name.js`, `scripts/config-page.js`, `scripts/panel.js`, `scripts/tools-server.js`): the key written for Claude Code, Codex (`[mcp_servers.akimcp]`), Cursor, the Claude app, Postman and AGY, and the server info name, now come from one constant module, with the display name `AkiMCP`. Apply removes the retired `aki-mcp` entries (Claude Code user and project scopes, the Codex table and its sub-tables, the Cursor key), and the hand-pasted snippets that can leave an old entry behind (Claude Code, Codex, Cursor, the Claude app, Postman) show a one-line hint to delete old `aki-mcp` / `aki-mcp-sv` entries. Claude Code tool names move from `mcp__aki-mcp__*` to `mcp__akimcp__*`, so a permission allow-list naming the old prefix must be renamed. Not yet checked against live clients.
+- **Section 7 Clients names what each removal does** (`scripts/panel.js`, `public/panel-client.js`, `scripts/config-page.js`): a registration that never received a token gets *Delete*, with no token warning. Every other row gets *Revoke & roll* (removes the client and rolls the shared access token: signed-in OAuth connectors renew, ClickUp may need one reconnect, Bearer clients such as Buda and the local Claude Code, Codex and Cursor snippets need the new token) and *Remove only* (*Sign out only* for a pre-issued client). Not yet checked against live clients.
+- **Plan records match what shipped** (`docs/plan/`, `docs/index.md`, `docs/research/audit-drift-and-remote-cli-oct28.md`): `v2-ss-session-file.md` is merged into `ss-session-file.md` § v2 with the v1 D2 and D3 supersedes recorded; `audit-tool-drift-oct25.md`, `cli-client-facts-followup.md` and `postman-summarize-handoff.md` move to `done/` with each closed or struck box's reason; code comments point at the new paths.
+
 ## [3.2.0] - 2026-10-27
 
 ### Added
