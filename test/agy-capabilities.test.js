@@ -5,7 +5,7 @@ import { parseModels, parseHelpEnum, newestFlashMedium, probe, capabilities, ref
 import { VALUE_COMPLAINT } from '../scripts/agy-mcp.js';
 import { MODEL_COMPLAINT } from '../scripts/kiro-mcp.js';
 
-// Recorded verbatim from this machine, agy 1.4.7, 2026-10-25 (docs/plan/audit-tool-drift-oct25.md § P0).
+// Recorded verbatim from this machine, agy 1.4.7, 2026-10-25 (docs/plan/done/audit-tool-drift-oct25.md § P0).
 const MODELS_2026_10_25 = [
   'gemini-4-argon-medium\tGemini 4 Argon (Medium)',
   'gemini-4-argon-high\tGemini 4 Argon (High)',

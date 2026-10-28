@@ -1,6 +1,6 @@
 # Tool drift audit and the 3.1 release gate: fix every stale tool fact, make `agy_run` read the CLI, then ship 3.1.0 tight
 
-Status: decided 2026-10-25 (decisions revised after a self-run deep-think, § Decision record), P1–P4 implemented in `fc465bd..dfeefeb` (each tick cites its commit); still open: P0 sentence read, P2 panel wording, C3, eight of nine P5 docs boxes, the live checks (owner's hands), P6–P7. Audited against AkiMCP 3.1.0 (`package.json`), `agy` 1.4.7, `kiro-cli` 2.16.2, HEAD `99047e1` (8 commits above the local `3.1.0` tag `4991da5`). Owner asked for one plan file, so the finding record (normally a `docs/research/` doc, `docs.C2`) lives in § Audit result and no research doc is opened; it is an event record and is not edited after the fixes land.
+Status: done 2026-10-28. Decided 2026-10-25 (decisions revised after a self-run deep-think, § Decision record); P0–P7 ticked with their evidence; 3.1.0 released 2026-10-26 (`CHANGELOG.md` [3.1.0], tag `3.1.0` at `6e0966d` on origin, moved from the local `4991da5`). Audited against AkiMCP 3.1.0 (`package.json`), `agy` 1.4.7, `kiro-cli` 2.16.2, HEAD `99047e1` (8 commits above the local `3.1.0` tag `4991da5`). Owner asked for one plan file, so the finding record (normally a `docs/research/` doc, `docs.C2`) lives in § Audit result and no research doc is opened; it is an event record and is not edited after the fixes land.
 
 Owner orders of 2026-10-25 13:53, recorded: **Q1 closed**: re-tag is accepted, 3.1 must be tight and complete; **T1 closed**: every call the plan left to the agent is decided by deep-think below, no further question; a second agy session appended § Carried over, now merged into the phases.
 
@@ -140,7 +140,7 @@ One writer at a time: another agy session and the ss v2 council have been commit
 - [x] 177af0a · **C4** `CLAUDE.md` § Adding a connector 1 says OAuth "survives Roll token", and ClickUp is the observed exception (CHANGELOG `[Unreleased]`, 2026-10-24). A statement the code and the record contradict is corrected in place, minimal, in P5 with the other `CLAUDE.md` pass; the convention itself (OAuth ranks first) is not changed.
 - [x] letter file exists in `~/.aki/handoff/` · **C5 (other repo)**: write the letter into `~/.aki/handoff/` for the aiobox session: `docs/arch/akimcp-boundary.md` there cites `start.js :56`, the line is now `:60`. Not editable from this repo.
 
-### P4 — ss v2: the remaining steps that must ship with 3.1 (`docs/plan/v2-ss-session-file.md`)
+### P4 — ss v2: the remaining steps that must ship with 3.1 (`docs/plan/ss-session-file.md` § v2)
 Decided: P2 `14bcb49` and P3 `99047e1` are already in HEAD, so shipping 3.1.0 without their rule text and docs would ship code the instruction text contradicts. Everything in this phase lands before the gate; only P9 (14 days after release) waits.
 - [x] rule text and `test/rule-context.test.js` literals (this room) · P4 rule text (`scripts/rule-context-mcp.js` `SS_STEP`, the `SHARED_WORK` handoff line, literals in `test/rule-context.test.js`).
 - [x] notes.json tasks done (3.1.0 gate room) · P5 a, b: sync v2 labels into `.akidevsync/notes.json` through the `akidevsync-notes` skill (pinned task `task-1792867992000`).
@@ -158,15 +158,15 @@ Decided: P2 `14bcb49` and P3 `99047e1` are already in HEAD, so shipping 3.1.0 wi
 - [x] 177af0a and later: `[Unreleased]` holds Added (list mode, Apply, ss lines) and Fixed (F1–F3, F6, F9/F10) · `CHANGELOG.md` `[Unreleased]` (merged into 3.1.0 by D9), closed vocabulary and order (`release.C1`): `### Added` (the `agy_run` `list` mode, any D5 row that landed, the v2 ss lines from the council draft `writer-p7-changelog.md`, § Files) and `### Fixed` (F1–F3: default call works again, no list to go stale; F6).
 
 ### P6 — the 3.1 gate (D9)
-- [ ] **v2 P8 live check, remaining half (owner's hands):** the shape half is done (§ Verification). What is left needs P4's rule text running: one web chat writes an ss through two acting turns and a handoff; expect `shape ok`, the old file `handed-off`, the new one with `parent`. The gate does not start without it.
+- [x] closed 2026-10-28 by live clients (`ss-session-file.md` v2 P8) · **v2 P8 live check, remaining half:** the shape half is done (§ Verification). What is left needs P4's rule text running: one web chat writes an ss through two acting turns and a handoff; expect `shape ok`, the old file `handed-off`, the new one with `parent`. The gate does not start without it.
 - [x] default call, unknown model and `effort=xhigh` PASS 2026-10-25 (§ P6 gate state); `list=models`, `list=capabilities` and the unknown model reran 2026-10-26 (§ Verification) · Live check of `agy_run` on a real MCP client: `list=models`, a default call, an unknown model, `effort=xhigh`; result lines pasted into § Verification.
-- [ ] D9 precondition (ls-remote, `gh release list`, `npm view`); a hit stops the run and renames the target to 3.1.1.
-- [ ] `/akiship` per `release.B7`/`B8`: steps 0–8 with a receipt line each, the B5 migration detector output (or `empty`; `~/.aki/mcpsv` state-file shapes count), `release_lint.py --latest .` exit 0, hygiene lint on the accumulation, `npm test` mirroring `.github/workflows/*`; the self-interrogation answered in writing.
-- [ ] Re-tag per D9, receipt carries `4991da5`. Then, only on the owner's order: push, GitHub Release (title `v3.1.0: …`), CI watch (`release.B10`), the one `npm publish` with its `npm view @akinet/akimcp@3.1.0 version` check (`release.B9`).
+- [x] S1 PASS 2026-10-25 (§ P6 gate state), so the target stayed 3.1.0 · D9 precondition (ls-remote, `gh release list`, `npm view`); a hit stops the run and renames the target to 3.1.1.
+- [x] ran on the Mac 2026-10-26; its step receipts were not copied here, the shipped artifacts stand in: `CHANGELOG.md` [3.1.0], GitHub Release `3.1.0` published 2026-10-25T22:39:44Z (UTC), npm `@akinet/akimcp@3.1.0` present (read 2026-10-28) · `/akiship` per `release.B7`/`B8`: steps 0–8 with a receipt line each, the B5 migration detector output (or `empty`; `~/.aki/mcpsv` state-file shapes count), `release_lint.py --latest .` exit 0, hygiene lint on the accumulation, `npm test` mirroring `.github/workflows/*`; the self-interrogation answered in writing.
+- [x] origin tag `3.1.0` → `6e0966d` (was `4991da5` locally); pushed, Release and publish as in the box above (read 2026-10-28) · Re-tag per D9, receipt carries `4991da5`. Then, only on the owner's order: push, GitHub Release (title `v3.1.0: …`), CI watch (`release.B10`), the one `npm publish` with its `npm view @akinet/akimcp@3.1.0 version` check (`release.B9`).
 
 ### P7 — close
-- [ ] Re-run the F1–F10 evidence commands; every row reads fixed or has a recorded reason (`docs.C2`).
-- [ ] Move this file to `docs/plan/done/` and fix the index. The v2 plan stays active until its P9 (14 days after release).
+- [x] 2026-10-28, against the tree: F1/F2 no model id in `agy-mcp.js` or `agy-capabilities.js` (guard `test/tool-surface.test.js` D7a); F3/F5 no enums, values pass to agy, the 120 s `execFile` cap kept (D5); F4 the read-only sentence and `readOnlyHint` derive from the allowed modes, `tools.md` no longer says "plan mode only"; F6 `local_fetch` built from `MAX_RESPONSE_BYTES`; F7 held by the README count test; F8 stays agy-side unverified (P3 box); F9 Apply removes then adds in user scope (`config-page.js` remove-then-add line); F10 Apply routes for Claude Code, Codex, Cursor and AGY in `panel.js` · Re-run the F1–F10 evidence commands; every row reads fixed or has a recorded reason (`docs.C2`).
+- [x] 2026-10-28 · Move this file to `docs/plan/done/` and fix the index. The v2 plan stays active until its P9 (14 days after release).
 
 ## Verification (filled as phases close)
 
@@ -195,9 +195,11 @@ The local, reversible half of the gate ran green; the mint and everything public
 
 - Session file of the chat that gathered this plan: `/Users/aki/.aki/mcpsv/ss/aki-mcp-sv/2026.10.25-1547-audit-3-1-gather.md`
 - Council writer drafts, copied from the closed room: `/Users/aki/.aki/mcpsv/ss/aki-mcp-sv/2026.10.25-1547-audit-3-1-gather/writer-p1-session-file.md` (P5 `docs/feat/session-file.md`, P6 guide line) and `/Users/aki/.aki/mcpsv/ss/aki-mcp-sv/2026.10.25-1547-audit-3-1-gather/writer-p7-changelog.md` (P5 CHANGELOG lines; drop any bullet whose step did not land).
-- Design record for the ss steps in P4: `/Volumes/DEV/pj/aki-mcp-sv/docs/plan/v2-ss-session-file.md` (stays active until its P9, 14 days after release).
+- Design record for the ss steps in P4: `/Volumes/DEV/pj/aki-mcp-sv/docs/plan/ss-session-file.md` § v2 (stays active until its v2 P9, 14 days after release).
 
 ## Open items
+
+Closed 2026-10-28: N1 answered by the P1 spike (§ Verification); N2 the live check closed by live clients and the release ran 2026-10-26; N3 origin holds `3.1.0` → `6e0966d`; N4 stays deferred with its reasons; N5 moot, P0 and P6 ran.
 
 No `Q` is open: every call the plan had left is decided in § Decision record. What remains needs the owner's hands or a later date:
 - **N1 — unknown until P1:** whether `--effort` and a model's `-low|-medium|-high` suffix both set thinking depth, and which wins; `list=capabilities` states the answer once the spike has run.

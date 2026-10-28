@@ -1,4 +1,4 @@
-// The one place that knows what the agy CLI offers: it runs `agy --version`, `agy models` and `agy --help`, parses them, and caches the result (docs/plan/audit-tool-drift-oct25.md D1). agy-mcp.js holds no model list, no effort/mode/output-format enum — this module reads them live so a new agy release needs no AkiMCP edit.
+// The one place that knows what the agy CLI offers: it runs `agy --version`, `agy models` and `agy --help`, parses them, and caches the result (docs/plan/done/audit-tool-drift-oct25.md D1). agy-mcp.js holds no model list, no effort/mode/output-format enum — this module reads them live so a new agy release needs no AkiMCP edit.
 // The model list is server-side (`agy models` prints "Fetching available models…"), so it moves without an agy version bump: the cache lives 1 h (1 min when the models probe failed, so one transient failure cannot switch the default model off for an hour), and a probe that fails or parses to nothing leaves that field null, which the tool treats as a pass-through.
 import { execFile } from 'node:child_process';
 
@@ -6,7 +6,7 @@ const PROBE_TIMEOUT_MS = 15_000;
 const TTL_MS = 60 * 60_000;
 const RETRY_MS = 60_000;
 
-// Defaults are injectable so the fixture tests exercise the parsers and resolver with recorded CLI text and never spawn agy (docs/plan/audit-tool-drift-oct25.md D7).
+// Defaults are injectable so the fixture tests exercise the parsers and resolver with recorded CLI text and never spawn agy (docs/plan/done/audit-tool-drift-oct25.md D7).
 function runAgy(args, { cwd } = {}) {
   return new Promise((resolve) => {
     execFile('agy', args, { cwd, timeout: PROBE_TIMEOUT_MS, maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {

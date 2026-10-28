@@ -1,6 +1,6 @@
 # Plan: summarize a Postman AI chat into a new chat
 
-Status: decided 2026-10-25, wait bound and reply detection 2026-10-26; code in `4c7800c`; live check by the owner open (step 6). Reverses decision 5 of `docs/plan/done/postman-auto-summarize.md` (summary only, no new chat, no paste), which the owner reopened.
+Status: decided 2026-10-25, wait bound and reply detection 2026-10-26; code in `4c7800c`, released in 3.1.0 (2026-10-26, `CHANGELOG.md` [3.1.0]: "Not yet checked against a live Postman chat"); steps 1–5 done; step 6 dropped by the owner 2026-10-28 ("không cần thiết"), so the live check stays unrun and the plan is done. Reverses decision 5 of `docs/plan/done/postman-auto-summarize.md` (summary only, no new chat, no paste), which the owner reopened.
 
 ## Goal
 
@@ -34,7 +34,7 @@ The owner's request: wait until Send is available, which means the agent has sto
 - [x] 3. `summarizeHandoff` with the phases of decision 2, keeping the three names the daemon-copy test pins.
 - [x] 4. A test of the phase order and of each timeout exit (`scripts/postman/test/postman-summarize-handoff.test.js`).
 - [x] 5. Button and switch labels, README § Connecting from Postman, CHANGELOG 3.1.0.
-- [ ] 6. Live check by the owner in a fresh empty Postman chat, never an existing user chat: fired while the assistant replies, the prompt waits and sends once Send is back; the captured text equals the last message; the new chat opens, the instruction is sent first when the switch is on, the summary sits in the box unsent; the old chat is not typed into again.
+- [~] dropped by the owner 2026-10-28 · 6. Live check by the owner in a fresh empty Postman chat, never an existing user chat: fired while the assistant replies, the prompt waits and sends once Send is back; the captured text equals the last message; the new chat opens, the instruction is sent first when the switch is on, the summary sits in the box unsent; the old chat is not typed into again.
 
 ## Not in scope
 

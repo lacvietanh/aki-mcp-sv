@@ -1,5 +1,5 @@
 // Dedicated MCP tool for the `agy` CLI: passes prompt/model/mode as separate execFile args so no shell-tokenizing step can mis-split a multi-word -p prompt (the reason it is not routed through the generic shell tool). Modes are allowlisted via allowlist.js.
-// The interface holds NO model list and no effort/mode/output-format enum: the valid values are server-side and change without an agy release, so they are read live by scripts/agy-capabilities.js and the values are passed straight to agy, which validates them (docs/plan/audit-tool-drift-oct25.md D1-D5). The only pre-spawn checks are AkiMCP's own mode allowlist and that no value starts with "-".
+// The interface holds NO model list and no effort/mode/output-format enum: the valid values are server-side and change without an agy release, so they are read live by scripts/agy-capabilities.js and the values are passed straight to agy, which validates them (docs/plan/done/audit-tool-drift-oct25.md D1-D5). The only pre-spawn checks are AkiMCP's own mode allowlist and that no value starts with "-".
 import { execFile } from 'node:child_process';
 import { z } from 'zod';
 import { readSettings } from './allowlist.js';
