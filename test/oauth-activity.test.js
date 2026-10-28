@@ -120,11 +120,24 @@ try {
   assert.ok(!Object.keys(readJson('tokens.json').refresh).includes('rStatic'));
   assert.throws(() => removeClient('nope'), /unknown client/);
 
+  // The removed id comes back on /authorize: a well-formed id on an allowlisted callback is rebuilt and stored only once the passphrase passes.
+  const reauthorize = (fields) => fetch(`${base}/authorize`, {
+    ...form({ redirect_uri: redirectUri, client_id: registered.client_id, code_challenge: challenge, code_challenge_method: 'S256', passphrase: 'pass', ...fields }),
+    redirect: 'manual',
+  });
+  assert.equal((await reauthorize({ passphrase: 'wrong' })).status, 401);
+  assert.equal((await reauthorize({ client_id: 'constructor' })).status, 400);
+  assert.equal((await reauthorize({ redirect_uri: 'https://attacker.example/cb' })).status, 400);
+  assert.ok(!dcrFile()[registered.client_id], 'a wrong passphrase or a rejected request stores nothing');
+  assert.equal((await reauthorize({})).status, 302);
+  assert.equal(dcrFile()[registered.client_id].clientName, 'MCP client');
+  assert.ok(dcrFile()[registered.client_id].approvedAt);
+
   // Security events reach the log file.
   const securityLog = readFileSync(path.join(dir, 'security.log'), 'utf8');
   for (const event of ['client approved: New app', 'token granted (authorization_code) to New app', 'client removed from the panel: New app']) assert.ok(securityLog.includes(event), event);
 
-  console.log('PASS: client activity — prune, activity fields, listClients contract, remove, security log');
+  console.log('PASS: client activity — prune, activity fields, listClients contract, remove, reconnect after remove, security log');
 } finally {
   server.close();
   rmSync(dir, { recursive: true, force: true });

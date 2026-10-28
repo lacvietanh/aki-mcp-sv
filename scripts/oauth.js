@@ -395,6 +395,19 @@ function errorPage(title, message) {
 </body></html>`;
 }
 
+// An unknown 32-hex client_id on an allowlisted callback is rebuilt, stored only after the passphrase passes (docs/feat/security.md § Remote auth).
+function reclaimClient(clientId, redirectUri) {
+  if (!/^[0-9a-f]{32}$/.test(clientId ?? '') || !isAllowedRedirect(redirectUri)) return null;
+  return { clientId, clientSecret: null, redirectUris: [redirectUri], tokenEndpointAuthMethod: 'none', clientName: 'MCP client', firstSeenAt: Date.now() };
+}
+
+function rememberClient(client) {
+  const map = loadDcrClients();
+  if (client.isStatic || Object.hasOwn(map, client.clientId)) return;
+  map[client.clientId] = client;
+  saveDcrClients(map);
+}
+
 export async function handleAuthorize(req, res, passphrase, origin) {
   res.setHeader('Cache-Control', 'no-store');
   const url = new URL(req.url, 'http://internal');
@@ -405,7 +418,7 @@ export async function handleAuthorize(req, res, passphrase, origin) {
   const codeChallengeMethod = q.get('code_challenge_method');
   const state = q.get('state') || '';
   const scope = (q.get('scope') || '').trim();
-  const client = resolveClient(clientId);
+  const client = resolveClient(clientId) ?? reclaimClient(clientId, redirectUri);
   // DCR clients are pinned to their registered redirect_uri; the static client accepts any allowlisted callback because several providers share it.
   const redirectOk = !!client && (client.redirectUris.includes(redirectUri) || (client.isStatic && isAllowedRedirect(redirectUri)));
 
@@ -444,6 +457,7 @@ export async function handleAuthorize(req, res, passphrase, origin) {
     res.end(errorPage('Wrong passphrase', "That passphrase didn't match."));
     return;
   }
+  rememberClient(client);
   const code = randomBytes(24).toString('hex');
   addAuthCode(code, { clientId, redirectUri, codeChallenge, scope, expires: Date.now() + CODE_TTL_MS });
   const redirect = new URL(redirectUri);
