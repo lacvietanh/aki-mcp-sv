@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const fixtures = path.dirname(fileURLToPath(import.meta.url));
 const scripts = path.resolve(fixtures, '..', '..', 'scripts');
+const DEADLINE_MS = Number(process.argv.find((arg) => arg.startsWith('--deadline-ms='))?.split('=')[1] ?? 30000);
 // The default recording runs first: creating ~/.aki/aiobox/ is what makes the second one differ.
 const OUTPUTS = [
   { file: 'surface-3.3.1.json', withAiobox: false },
@@ -36,7 +37,12 @@ const servedSurface = async () => {
     waiting.get(message.id)?.(message.result);
   });
   const send = (message) => child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', ...message })}\n`);
-  const ask = (id, method, params) => Promise.race([new Promise((resolve) => { waiting.set(id, resolve); send({ id, method, params }); }), exited]);
+  const ask = (id, method, params) => {
+    let timer;
+    const silence = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`stdio.js gave no answer to ${method} within ${DEADLINE_MS} ms`)), DEADLINE_MS); });
+    const answer = new Promise((resolve) => { waiting.set(id, resolve); send({ id, method, params }); });
+    return Promise.race([answer, exited, silence]).finally(() => clearTimeout(timer));
+  };
   try {
     const initialize = await ask(1, 'initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'record-surface', version: '1' } });
     send({ method: 'notifications/initialized' });
@@ -64,8 +70,8 @@ const record = async ({ withAiobox }) => {
 
 const home = os.homedir();
 if (!path.basename(path.dirname(home)).startsWith('akimcp-test-')) throw new Error(`HOME ${home} is not a scratch directory made by test/setup.js`);
-console.log(`child HOME: ${home}`);
-console.log(`child AKI_MCP_DATA_DIR: ${process.env.AKI_MCP_DATA_DIR ?? 'not set'}`);
+console.log(`HOME passed to the children: ${home}`);
+console.log(`AKI_MCP_DATA_DIR passed to the children: ${process.env.AKI_MCP_DATA_DIR ?? 'not set'}`);
 
 const recorded = [];
 for (const output of OUTPUTS) {
