@@ -1,0 +1,1451 @@
+{
+  "initialize": {
+    "protocolVersion": "2025-06-18",
+    "capabilities": {
+      "tools": {
+        "listChanged": true
+      }
+    },
+    "serverInfo": {
+      "name": "akimcp",
+      "version": "3.3.1",
+      "title": "AkiMCP"
+    },
+    "instructions": "Before the first substantive action, call aki__akidevrule_context once; pass an absolute workingPath when known. Do not discover or read bootstrap files individually. A returned receipt is the only success signal. Every tool that acts (not read-only) takes receipt=<the sha256:… receipt this returns> and refuses without it, with an unknown one, or once the rules change; then call this again and pass the new receipt. Then follow /akirule: the SKILL.md routing table is already included in this output (and in every session) — do not re-read SKILL.md; from its routes, Read only the RULE/METHOD files the task needs, since those are not preloaded. Open your first reply with `[RULES] agent (core) + <topics> (router)` naming the route files you actually Read; a receipt without (router), or the sha256 line copied, is a violation. Attempt an operation before calling it impossible, never claim a missing capability, and on failure report the exact command, absolute path, exit status and stderr; state the action and its impact before a destructive or external step. Session file (ss): the `ss:` line of the aki__akidevrule_context result is this chat's file, an absolute path made for you; never build one yourself. Create it with the first act that changes something (a file edit, a commit, a writing command) or when the owner asks for it; skip it for Q&A and lookups. Keep one per chat: pass it back as ss=<path> on every later aki__akidevrule_context call and beside receipt on every acting call. Use the shape in docs/feat/session-file.md — `status`/`repo`/`chat`/`started`/`parent`/`successor`/`room`/`plan`/`transcript` frontmatter, then `## Now`/`## Asked`/`## Next`/`## Decisions`/`## Open`/`## Files`/`## Log` — not whole pasted messages; the write-time line reports what the file still lacks. In every turn that acted, rewrite `## Now`, append one `## Log` line, and end your reply with `ss: <absolute path> · <what changed>`; no write, no line. Set `status` when the chat ends or hands off. One writer per chat: a handoff successor mints its OWN ss with `parent: <old ss>`, and the old chat sets its own `status: handed-off` and `successor: <new ss>` — never write another chat's ss. In a council session, the seat file the opener names (`<room>/<seat>.md`) is this chat's ss, and posts in the room thread carry no `ss:` line. A result line `ss: <path> · last written N min ago` or `· not created yet` means the file is behind this chat's work. `folder missing`: create the folder first. A page title starting with a handle like P2·W1 · means you are inside an AIObox window: call aki__aiobox op=state first."
+  },
+  "providers": {
+    "rule": [
+      {
+        "name": "aki__akidevrule_context",
+        "title": "Load Effective Aki/Claude Context",
+        "description": "Call once before the first substantive action in every chat to load the effective default guidance. The server resolves global imports and applicable project CLAUDE.local/AGENTS context itself; do not search for or individually read bootstrap files. Pass an absolute workingPath when known. Read-only. Every tool that acts (not read-only) takes receipt=<the sha256:… receipt this returns> and refuses without it, with an unknown one, or once the rules change; then call this again and pass the new receipt. Then follow /akirule: the SKILL.md routing table is already included in this output (and in every session) — do not re-read SKILL.md; from its routes, Read only the RULE/METHOD files the task needs, since those are not preloaded. Open your first reply with `[RULES] agent (core) + <topics> (router)` naming the route files you actually Read; a receipt without (router), or the sha256 line copied, is a violation. Attempt an operation before calling it impossible, never claim a missing capability, and on failure report the exact command, absolute path, exit status and stderr; state the action and its impact before a destructive or external step. Session file (ss): the `ss:` line of the aki__akidevrule_context result is this chat's file, an absolute path made for you; never build one yourself. Create it with the first act that changes something (a file edit, a commit, a writing command) or when the owner asks for it; skip it for Q&A and lookups. Keep one per chat: pass it back as ss=<path> on every later aki__akidevrule_context call and beside receipt on every acting call. Use the shape in docs/feat/session-file.md — `status`/`repo`/`chat`/`started`/`parent`/`successor`/`room`/`plan`/`transcript` frontmatter, then `## Now`/`## Asked`/`## Next`/`## Decisions`/`## Open`/`## Files`/`## Log` — not whole pasted messages; the write-time line reports what the file still lacks. In every turn that acted, rewrite `## Now`, append one `## Log` line, and end your reply with `ss: <absolute path> · <what changed>`; no write, no line. Set `status` when the chat ends or hands off. One writer per chat: a handoff successor mints its OWN ss with `parent: <old ss>`, and the old chat sets its own `status: handed-off` and `successor: <new ss>` — never write another chat's ss. In a council session, the seat file the opener names (`<room>/<seat>.md`) is this chat's ss, and posts in the room thread carry no `ss:` line. A result line `ss: <path> · last written N min ago` or `· not created yet` means the file is behind this chat's work. `folder missing`: create the folder first.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "workingPath": {
+              "type": "string",
+              "description": "Absolute local file or directory path for applicable project context"
+            },
+            "mode": {
+              "type": "string",
+              "enum": [
+                "effective",
+                "exact-audit"
+              ],
+              "description": "Defaults to effective"
+            },
+            "knownReceipt": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            },
+            "ss": {
+              "type": "string",
+              "description": "The ss path this tool returned earlier in this chat, kept instead of a new one"
+            },
+            "label": {
+              "type": "string",
+              "description": "A short name for this chat, used in a new ss file name"
+            }
+          },
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false,
+          "destructiveHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      }
+    ],
+    "shell": [
+      {
+        "name": "aki__run_cmd",
+        "title": "Run Command",
+        "description": "Run one allowlisted shell command. Default set is inspection-first (ls, cat, grep, head, tail, stat, git status/log/diff/show, …); the owner extends it in the panel. Output: ANSI removed, repeats counted; past ~20k chars only start and end are shown, the full text saved to a file the output names. stderr follows under [stderr]; a failure adds the exit code. Commands stop after 10s; a dev server or watch fits aki__task_start. Dedicated tools are cheaper: find_path/search_content, read_text_file, git (find is not allowlisted: its flags escape read-only). cwd: absolute path under an allowed root, or relative to the first root. One command per call, no chaining/redirection.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string"
+            },
+            "cwd": {
+              "type": "string"
+            },
+            "receipt": {
+              "type": "string",
+              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+            },
+            "ss": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "command"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": true,
+          "openWorldHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      }
+    ],
+    "search": [
+      {
+        "name": "aki__find_path",
+        "title": "Find Path",
+        "description": "Find files AND directories anywhere under the configured roots in one call — use this first when locating a project, repo, or file by name, instead of walking directories one level at a time. query is a case-insensitive substring by default (\"mcp\" finds aki-mcp-sv), or a glob when it contains * or ? (\"*.config.js\", \"src/**/*.ts\"). Globs without a slash match the basename. Skips node_modules/.git/build output automatically; the result names the skipped directories, the depth limit and unreadable directories it hit on line 1 as omitted from search. Directories come back with a trailing slash.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string",
+              "description": "subdirectory to search under, absolute or relative to the root"
+            },
+            "limit": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false,
+          "destructiveHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "aki__search_content",
+        "title": "Search Content",
+        "description": "Search file contents recursively under the configured roots and return file:line:text. Case-insensitive extended regex (grep -iE): put every alias in one query with | — \"funnel|ingress|thay.*funnel\" hits EN+VI+synonym in one call, no need for separate calls per term. Use after find_path when you need where a string actually appears. glob narrows by filename (e.g. \"*.json\"). Skips binaries and build/vendor directories (a no-match result lists them). A timed-out or over-capture search says incomplete on line 1.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            },
+            "glob": {
+              "type": "string"
+            },
+            "limit": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false,
+          "destructiveHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      }
+    ],
+    "filesystem": [
+      {
+        "name": "aki__read_text_file",
+        "title": "Read Text File",
+        "description": "Read the complete contents of a text file. Use \"tail\"/\"head\" to read only the last/first N lines of a large file instead of the whole thing. Only works under the configured roots.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "tail": {
+              "type": "number",
+              "description": "If provided, returns only the last N lines"
+            },
+            "head": {
+              "type": "number",
+              "description": "If provided, returns only the first N lines"
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false,
+          "destructiveHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "aki__write_file",
+        "title": "Write File",
+        "description": "Create a new file or completely overwrite an existing one. Use with caution — overwrites without warning. Only works under the configured roots.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "content": {
+              "type": "string"
+            },
+            "receipt": {
+              "type": "string",
+              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+            },
+            "ss": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "content"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": true,
+          "openWorldHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "aki__edit_file",
+        "title": "Edit File",
+        "description": "Make targeted edits to a text file: each edit replaces an exact (or whitespace-tolerant) text match with new text. Returns a git-style diff of what changed. Set dryRun to preview without writing.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "edits": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "oldText": {
+                    "type": "string",
+                    "description": "Text to search for — must match"
+                  },
+                  "newText": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "oldText",
+                  "newText"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "dryRun": {
+              "type": "boolean",
+              "default": false
+            },
+            "receipt": {
+              "type": "string",
+              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+            },
+            "ss": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path",
+            "edits"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": true,
+          "openWorldHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "aki__create_directory",
+        "title": "Create Directory",
+        "description": "Create a directory (and any missing parents). Succeeds silently if it already exists.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "receipt": {
+              "type": "string",
+              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+            },
+            "ss": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": false,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "aki__move_file",
+        "title": "Move File",
+        "description": "Move or rename a file/directory. Fails if the destination already exists. Both source and destination must be under the configured roots — this is the only sanctioned move/rename path (the shell tool's allowlist deliberately excludes mv).",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "source": {
+              "type": "string"
+            },
+            "destination": {
+              "type": "string"
+            },
+            "receipt": {
+              "type": "string",
+              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+            },
+            "ss": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "source",
+            "destination"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": true,
+          "openWorldHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "aki__get_file_info",
+        "title": "Get File Info",
+        "description": "Get size, timestamps, permissions, and type for a file or directory, without reading its content.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false,
+          "destructiveHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "aki__list_allowed_directories",
+        "title": "List Allowed Directories",
+        "description": "List the directories this server can currently read/write. Subdirectories within them are also accessible.",
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {}
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false,
+          "destructiveHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      }
+    ],
+    "postman": [
+      {
+        "name": "aki__postman_status",
+        "title": "Postman Control Status",
+        "description": "Report whether the Postman control daemon is running and its live CDP ownership state. Does not launch Postman or open a connection.",
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {}
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false,
+          "destructiveHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "aki__postman_eval",
+        "title": "Postman: evaluate JS in the app",
+        "description": "Evaluate a JavaScript expression inside the running Postman desktop renderer over CDP and return the serialized result. Auto-discovers Postman's remote-debugging endpoint (launch Postman from the Aki panel first) and its main renderer target. Use it to inspect or drive Postman's own UI.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "expression": {
+              "type": "string",
+              "description": "JS evaluated in the Postman renderer; the last expression is returned"
+            },
+            "receipt": {
+              "type": "string",
+              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+            },
+            "ss": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "expression"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": true,
+          "openWorldHint": true
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "aki__postman_rename_conversation",
+        "title": "Postman: rename current chat",
+        "description": "Rename the currently open Agent Mode conversation by driving Postman's own inline edit (double-click → type → Enter) so the change persists in app state.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "description": "the new conversation title"
+            },
+            "receipt": {
+              "type": "string",
+              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+            },
+            "ss": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": false,
+          "openWorldHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "aki__postman_panel_fullwidth",
+        "title": "Postman: toggle right panel full width",
+        "description": "Override the width of Postman's right context panel (#global-contextbar-overlay-container) to fill the window via an injected style tag that survives re-renders. Pass enable=false to restore.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "enable": {
+              "type": "boolean",
+              "description": "true (default) = full width; false = restore"
+            },
+            "receipt": {
+              "type": "string",
+              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+            },
+            "ss": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": false,
+          "openWorldHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      }
+    ],
+    "cdp": [
+      {
+        "name": "aki__devtools_targets",
+        "title": "DevTools: list targets",
+        "description": "List the CDP page targets on a Chromium/Electron remote-debugging endpoint (Chrome, Postman, VS Code, …). Provide port or omit to use active Chrome session. A window not launched by aki__chrome_launch has no active session: find its port with aki__port_status first, then pass port.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "port": {
+              "type": "integer",
+              "description": "remote-debugging port (default: active Chrome session)"
+            },
+            "host": {
+              "type": "string",
+              "description": "default 127.0.0.1"
+            }
+          },
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false,
+          "destructiveHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "aki__devtools_eval",
+        "title": "DevTools: evaluate JS",
+        "description": "Evaluate a JavaScript expression inside a page/renderer over CDP and return the serialized result (throws surface the page-side error). Optionally pick the target by a url/title substring (filter) or an exact targetId; default = first page. For Postman, aki__postman_eval finds its endpoint and main renderer itself. A window not launched by aki__chrome_launch has no active session: find its port with aki__port_status first, then pass port.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "expression": {
+              "type": "string",
+              "description": "JS evaluated in the page; the last expression is returned (returnByValue)"
+            },
+            "port": {
+              "type": "integer",
+              "description": "remote-debugging port (default: active Chrome session)"
+            },
+            "filter": {
+              "type": "string",
+              "description": "substring matched against \"<url> <title>\" to choose the target"
+            },
+            "targetId": {
+              "type": "string",
+              "description": "exact CDP target id (overrides filter)"
+            },
+            "host": {
+              "type": "string",
+              "description": "default 127.0.0.1"
+            },
+            "awaitPromise": {
+              "type": "boolean",
+              "description": "await a returned Promise before serializing (default true)"
+            },
+            "receipt": {
+              "type": "string",
+              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+            },
+            "ss": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "expression"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": true,
+          "openWorldHint": true
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "aki__devtools_screenshot",
+        "title": "DevTools: capture screenshot",
+        "description": "Capture a screenshot of a Chromium/Electron target page over CDP. Returns image directly in MCP response. A window not launched by aki__chrome_launch has no active session: find its port with aki__port_status first, then pass port.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "port": {
+              "type": "integer",
+              "description": "remote-debugging port (default: active Chrome session)"
+            },
+            "host": {
+              "type": "string",
+              "description": "default 127.0.0.1"
+            },
+            "filter": {
+              "type": "string",
+              "description": "substring matched against \"<url> <title>\" to choose target"
+            },
+            "targetId": {
+              "type": "string",
+              "description": "exact CDP target id (overrides filter)"
+            },
+            "format": {
+              "type": "string",
+              "enum": [
+                "png",
+                "jpeg"
+              ],
+              "description": "image format (default png)"
+            },
+            "quality": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100,
+              "description": "compression quality for jpeg (0-100)"
+            }
+          },
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false,
+          "destructiveHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      }
+    ],
+    "aiobox": [
+      {
+        "name": "aki__aiobox",
+        "title": "AIObox: read windows",
+        "description": "AIObox windows. Call op=state first: it returns the guide and every op with its args. window = handle, chatId or targetId; expect = text the target chat's url or title must contain; args as the guide says. Each op's help in op=state overrides the guide. Reads only; to act use aki__aiobox_write.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,63}$",
+              "description": "op name; op=state lists them"
+            },
+            "window": {
+              "type": "string",
+              "description": "handle P#·W#, chatId or targetId"
+            },
+            "expect": {
+              "type": "string",
+              "description": "text the target chat's url or title must contain; refused if the window shows another"
+            },
+            "wait": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "description": "seconds this call may take (default and most 50)"
+            },
+            "args": {
+              "type": "object",
+              "additionalProperties": {},
+              "description": "op arguments, as the guide says"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false,
+          "destructiveHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "aki__aiobox_write",
+        "title": "AIObox: act in windows",
+        "description": "AIObox windows, acting. Same envelope as aki__aiobox plus receipt (the sha256:... from aki__akidevrule_context); call its op=state first: op, window, expect, args as the guide says. Each op's help in op=state overrides the guide. from = your own window, so AIObox can refuse acting on yourself. One call takes at most 50 s.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]{0,63}$",
+              "description": "op name; op=state lists them"
+            },
+            "window": {
+              "type": "string",
+              "description": "handle P#·W#, chatId or targetId"
+            },
+            "expect": {
+              "type": "string",
+              "description": "text the target chat's url or title must contain; refused if the window shows another"
+            },
+            "wait": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "description": "seconds this call may take (default and most 50)"
+            },
+            "args": {
+              "type": "object",
+              "additionalProperties": {},
+              "description": "op arguments, as the guide says"
+            },
+            "from": {
+              "type": "string",
+              "description": "your own window"
+            },
+            "receipt": {
+              "type": "string",
+              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+            },
+            "ss": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": true,
+          "openWorldHint": true
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      }
+    ],
+    "chrome": [
+      {
+        "name": "aki__chrome_profiles",
+        "title": "Chromium: list installed browsers and profiles",
+        "description": "List installed Chromium browsers (Chrome, Brave, Edge) and their profiles (name, email, folder ID) from Local State, plus shared clone ids for chrome_launch.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "browser": {
+              "type": "string",
+              "description": "chrome, brave, or edge (default chrome)"
+            }
+          },
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false,
+          "destructiveHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "aki__chrome_launch",
+        "title": "Chromium: open shared profile on a CDP port",
+        "description": "Opens a shared profile clone (logins kept). If another process runs it, attaches to its CDP port (owned false) and opens url as a new tab; else launches stealth Chrome on --remote-debugging-port=0 (owned true). Never clones.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "profile": {
+              "type": "string",
+              "description": "Profile 14 or shared id chrome-profile-14 (default Default)"
+            },
+            "browser": {
+              "type": "string",
+              "description": "chrome, brave, or edge (default chrome)"
+            },
+            "url": {
+              "type": "string",
+              "description": "URL to open (new tab on attach)"
+            },
+            "headless": {
+              "type": "boolean",
+              "description": "only for a new launch (default false)"
+            },
+            "receipt": {
+              "type": "string",
+              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+            },
+            "ss": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": false,
+          "openWorldHint": true
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "aki__chrome_tabs",
+        "title": "Chromium: manage tabs (list, open, close, activate)",
+        "description": "Manage page tabs on the active Chrome session or target port. Supports listing open tabs, opening new URL, closing, and activating a tab.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": [
+                "list",
+                "open",
+                "close",
+                "activate"
+              ],
+              "description": "action to perform (default list)"
+            },
+            "url": {
+              "type": "string",
+              "description": "URL to open when action is open"
+            },
+            "targetId": {
+              "type": "string",
+              "description": "target ID to close or activate"
+            },
+            "port": {
+              "type": "integer",
+              "description": "CDP port (default: active session port)"
+            },
+            "receipt": {
+              "type": "string",
+              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+            },
+            "ss": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": true,
+          "openWorldHint": true
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "aki__chrome_interact",
+        "title": "Chromium: interact with DOM element (click or type)",
+        "description": "Interacts with a web page: \"click\" scrolls the element into center view before clicking; \"type\" dispatches synthetic input and change events so React/Vue/SPA forms accept the value.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": [
+                "click",
+                "type"
+              ],
+              "description": "interaction type"
+            },
+            "selector": {
+              "type": "string",
+              "description": "CSS selector of the target element"
+            },
+            "text": {
+              "type": "string",
+              "description": "text to type (required for type action)"
+            },
+            "clear": {
+              "type": "boolean",
+              "description": "clear existing value before typing (default false)"
+            },
+            "enter": {
+              "type": "boolean",
+              "description": "dispatch Enter key after typing (default false)"
+            },
+            "targetId": {
+              "type": "string",
+              "description": "optional CDP target ID"
+            },
+            "port": {
+              "type": "integer",
+              "description": "CDP port (default: active session port)"
+            },
+            "receipt": {
+              "type": "string",
+              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+            },
+            "ss": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "action",
+            "selector"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": true,
+          "openWorldHint": true
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "aki__chrome_stop",
+        "title": "Chromium: stop active or specified Chrome session",
+        "description": "Ends the active session: kills a Chrome this server launched (owned true), only forgets an attached one (owner keeps running). An explicit pid is always killed.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "pid": {
+              "type": "integer",
+              "description": "PID to kill (default: active session if owned)"
+            },
+            "receipt": {
+              "type": "string",
+              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+            },
+            "ss": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": true,
+          "openWorldHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      }
+    ],
+    "fetch": [
+      {
+        "name": "aki__local_fetch",
+        "title": "Localhost & Intranet HTTP Fetcher",
+        "description": "Make HTTP/HTTPS requests to localhost, local dev servers, or internal LAN services with SSRF protection (blocks cloud metadata/link-local addresses; enforces 512KB cap and max 15s timeout).",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "description": "full HTTP/HTTPS URL (e.g. \"http://localhost:3000/api/health\")"
+            },
+            "method": {
+              "type": "string",
+              "enum": [
+                "GET",
+                "POST",
+                "PUT",
+                "DELETE",
+                "PATCH",
+                "HEAD"
+              ],
+              "description": "HTTP method (default GET)"
+            },
+            "headers": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              },
+              "description": "optional HTTP request headers"
+            },
+            "body": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": {}
+                }
+              ],
+              "description": "request body (string or JSON object)"
+            },
+            "timeoutMs": {
+              "type": "integer",
+              "minimum": 500,
+              "maximum": 15000,
+              "description": "timeout in ms (default 5000, max 15000)"
+            },
+            "receipt": {
+              "type": "string",
+              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+            },
+            "ss": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "url"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": true,
+          "openWorldHint": true
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      }
+    ],
+    "system": [
+      {
+        "name": "aki__notify_user",
+        "title": "OS Notification & Sound Alert",
+        "description": "Display a native OS desktop notification and sound alert (macOS notification banner with Glass chime, Windows Toast, Linux notify-send) to alert the user when a long task completes.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "message": {
+              "type": "string",
+              "description": "notification message to show the user"
+            },
+            "title": {
+              "type": "string",
+              "description": "notification title (default: \"Aki MCP\")"
+            },
+            "sound": {
+              "type": "boolean",
+              "description": "play alert sound chime (default true)"
+            },
+            "receipt": {
+              "type": "string",
+              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+            },
+            "ss": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "message"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": false,
+          "openWorldHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "aki__clipboard_read",
+        "title": "Read System Clipboard",
+        "description": "Read the current text content from the operating system clipboard (pbpaste / Get-Clipboard / xclip).",
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {}
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false,
+          "destructiveHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "aki__clipboard_write",
+        "title": "Write to System Clipboard",
+        "description": "Copy text into the operating system clipboard so the user can immediately paste it (pbcopy / Set-Clipboard / xclip).",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "text": {
+              "type": "string",
+              "description": "text to copy into the clipboard"
+            },
+            "receipt": {
+              "type": "string",
+              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+            },
+            "ss": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "text"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": false,
+          "openWorldHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      }
+    ],
+    "task": [
+      {
+        "name": "aki__task_start",
+        "title": "Start Background Task",
+        "description": "Start an allowlist-approved shell command in the background (detached process). Logs are streamed directly to disk with zero-RAM overhead. Returns taskId and pid for tracking with aki__task_manage.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string",
+              "description": "The shell command to run in background (e.g. \"npm test\", \"git status\")"
+            },
+            "cwd": {
+              "type": "string",
+              "description": "Working directory under allowed roots"
+            },
+            "taskId": {
+              "type": "string",
+              "description": "Optional unique identifier for the task (letters, numbers, _, -)"
+            },
+            "receipt": {
+              "type": "string",
+              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+            },
+            "ss": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "command"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": false,
+          "openWorldHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "aki__task_manage",
+        "title": "Manage Background Tasks",
+        "description": "Manage background tasks started with aki__task_start: inspect status/liveness, tail logs without loading full files into memory, stop process trees cleanly across platforms, list tasks, or delete finished records.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": [
+                "status",
+                "tail_logs",
+                "stop",
+                "list",
+                "delete"
+              ],
+              "description": "Action: status, tail_logs, stop, list, delete"
+            },
+            "taskId": {
+              "type": "string",
+              "description": "Task ID (required for status, tail_logs, stop, delete)"
+            },
+            "maxBytes": {
+              "type": "number",
+              "description": "Max bytes to tail from log file (default: 10240)"
+            },
+            "lines": {
+              "type": "number",
+              "description": "Max lines from end of log to return"
+            },
+            "receipt": {
+              "type": "string",
+              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+            },
+            "ss": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": true,
+          "openWorldHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      }
+    ],
+    "port": [
+      {
+        "name": "aki__port_status",
+        "title": "Check listening ports and dev servers",
+        "description": "Inspect active TCP listening ports and processes (e.g. dev servers on port 3000, 5173, 8080). Provide `port` to check a specific port, or omit to list all listening ports.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "port": {
+              "type": "integer",
+              "description": "Specific TCP port to inspect (e.g. 3000)"
+            }
+          },
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false,
+          "destructiveHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "aki__kill_port",
+        "title": "Kill process listening on a port",
+        "description": "Terminate the process(es) listening on a specific TCP port (e.g. freeing port 3000 when EADDRINUSE). Will refuse to kill the Aki MCP server itself.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "port": {
+              "type": "integer",
+              "description": "TCP port to free up (e.g. 3000)"
+            },
+            "force": {
+              "type": "boolean",
+              "description": "Send SIGKILL instead of SIGTERM (default false)"
+            },
+            "receipt": {
+              "type": "string",
+              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+            },
+            "ss": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "port"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": true,
+          "openWorldHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      }
+    ],
+    "git": [
+      {
+        "name": "aki__git",
+        "title": "Read-only git",
+        "description": "Read-only git with compact output, cheaper in tokens than run_cmd. op=status: branch, upstream, staged/unstaged/untracked as JSON. op=diff: working-tree diff (staged=true for the index, file= to narrow); a big diff shows whole files first and names the omitted ones so you can ask for them with file=. op=log: last commits as {commits:[{hash,author,date,subject}],more} JSON (limit, max 50); subject line only, the full message is `git log` through run_cmd; more=true means older commits exist. op=tags: local tags newest first, or the remote's tags when remote=<configured remote name>. Warnings follow under [stderr]. Anything that writes (commit, push, branch, tag creation) goes through run_cmd.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": [
+                "status",
+                "diff",
+                "log",
+                "tags"
+              ],
+              "description": "status | diff | log | tags"
+            },
+            "repoPath": {
+              "type": "string",
+              "description": "Repository directory path (defaults to root)"
+            },
+            "staged": {
+              "type": "boolean",
+              "description": "diff: show the staged (cached) diff"
+            },
+            "file": {
+              "type": "string",
+              "description": "diff: specific file path"
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "description": "log: number of commits (default 10)"
+            },
+            "remote": {
+              "type": "string",
+              "description": "tags: configured remote name, to list its tags instead of local ones"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": true,
+          "destructiveHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      }
+    ],
+    "sqlite": [
+      {
+        "name": "aki__sqlite_schema",
+        "title": "Inspect SQLite database schema",
+        "description": "Read schema of a local SQLite database (.sqlite, .db, .sqlite3). Returns all tables, views, columns, and indexes.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "dbPath": {
+              "type": "string",
+              "description": "Absolute or relative path to SQLite database file within allowed roots"
+            }
+          },
+          "required": [
+            "dbPath"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false,
+          "destructiveHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "aki__sqlite_query",
+        "title": "Execute read-only SQL query on SQLite database",
+        "description": "Execute a read-only SQL query (SELECT, PRAGMA, EXPLAIN, WITH) on a local SQLite database. Writes and DDL are strictly rejected. Output capped at 100 rows.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "dbPath": {
+              "type": "string",
+              "description": "Path to SQLite database file within allowed roots"
+            },
+            "query": {
+              "type": "string",
+              "description": "Read-only SQL query to execute"
+            },
+            "params": {
+              "type": "array",
+              "items": {
+                "type": [
+                  "string",
+                  "number",
+                  "boolean",
+                  "null"
+                ]
+              },
+              "description": "Positional SQL query parameters"
+            }
+          },
+          "required": [
+            "dbPath",
+            "query"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false,
+          "destructiveHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      }
+    ]
+  }
+}
