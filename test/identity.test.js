@@ -2,7 +2,8 @@
 import './setup.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveIdentity, problemLine, served, IDENTITY } from '../scripts/mcp-name.js';
+import { resolveIdentity, problemLine, served, IDENTITY, IDENTITY_PROBLEM } from '../scripts/mcp-name.js';
+import { readSettings } from '../scripts/allowlist.js';
 
 const DEFAULTS = { name: 'AkiMCP', key: 'akimcp', prefix: 'aki__' };
 
@@ -44,11 +45,13 @@ test('nothing set gives the defaults and no problem', () => {
 
 test('a null field counts as not set, and resolveIdentity takes the stored identity alone', () => {
   assert.deepEqual(resolveIdentity({ name: null, key: null, prefix: null }), { identity: DEFAULTS, problem: null });
+  assert.deepEqual(resolveIdentity({ name: null }), { identity: DEFAULTS, problem: null });
   assert.equal(resolveIdentity.length, 1);
 });
 
 test('the process identity is the default under an empty setting.json, and served() adds the prefix', () => {
   assert.deepEqual(IDENTITY, DEFAULTS);
+  assert.deepEqual(IDENTITY_PROBLEM, resolveIdentity(readSettings().identity).problem);
   assert.equal(served('run_cmd'), 'aki__run_cmd');
 });
 
@@ -108,8 +111,12 @@ const INVALID = [
   [{ key: 'a'.repeat(14), prefix: `${'b'.repeat(13)}__` }, 'Server ID and Tool prefix'],
   [{ name: 'Laptop văn phòng' }, 'Server ID and Tool prefix'],
   [{ key: ['akimcp'] }, 'Server ID'],
-  [{ prefix: ['x'] }, 'Tool prefix'],
+  [{ prefix: ['work__'] }, 'Tool prefix'],
   [{ name: true }, 'Display name'],
+  ['Work', 'identity'],
+  [5, 'identity'],
+  [true, 'identity'],
+  [['Work'], 'identity'],
 ];
 
 for (const [stored, field] of INVALID) {

@@ -40,6 +40,7 @@ const refuse = (field, value, reason) => ({
 
 // The one place the rule lives. A bad value never throws: the defaults are served and `problem` says which field and why.
 export function resolveIdentity(stored) {
+  if (stored != null && (typeof stored !== 'object' || Array.isArray(stored))) return refuse('identity', stored, 'must be an object with name, key and prefix');
   const { name: rawName, key: handKey, prefix: handPrefix } = stored ?? {};
   const notText = [['Display name', rawName], ['Server ID', handKey], ['Tool prefix', handPrefix]].find(([, value]) => value != null && typeof value !== 'string');
   if (notText) return refuse(notText[0], notText[1], 'must be text');
@@ -47,7 +48,7 @@ export function resolveIdentity(stored) {
   if (!NAME_RULE.test(name)) return refuse('Display name', rawName, 'use letters, digits, spaces and . _ - only, starting with a letter or digit, 1 to 40 characters, nothing invisible');
   const derivedKey = slug(name);
   const key = handKey ?? derivedKey;
-  if (!KEY_RULE.test(key)) return refuse('Server ID', key, derivedKey === '' && handKey === undefined ? 'no letter a to z or digit can be made from the Display name, set it by hand' : 'use lowercase letters a to z and digits, starting with a letter');
+  if (!KEY_RULE.test(key)) return refuse('Server ID', key, derivedKey === '' && handKey == null ? 'no letter a to z or digit can be made from the Display name, set it by hand' : 'use lowercase letters a to z and digits, starting with a letter');
   const prefix = handPrefix ?? (derivedKey === '' ? null : `${stem(derivedKey)}__`);
   if (prefix === null) return refuse('Tool prefix', '', 'no prefix can be made from the Display name, set it by hand');
   if (prefix !== '' && !PREFIX_RULE.test(prefix)) return refuse('Tool prefix', prefix, 'leave it empty, or use lowercase letters and digits ending in two underscores');
@@ -61,5 +62,7 @@ export function problemLine({ field, value, reason }, settingPath) {
   return `${field} ${quoted} in ${settingPath} is not valid: ${reason}. Serving the default names until it is fixed in panel section 1.`;
 }
 
-export const { identity: IDENTITY } = resolveIdentity(readSettings().identity);
+const resolved = resolveIdentity(readSettings().identity);
+export const IDENTITY = resolved.identity;
+export const IDENTITY_PROBLEM = resolved.problem;
 export const served = (bare) => `${IDENTITY.prefix}${bare}`;
