@@ -3,6 +3,7 @@
 // A receipt counts only when this server issued it (aki__akidevrule_context records it here, in memory) and the same call made now still returns it: a changed rule file changes the receipt, so the old one is refused.
 // Beside receipt every acting tool takes the chat's optional `ss`; a call that ran ends with one line when that file is missing or behind (D10 in docs/plan/ss-session-file.md). The server stores nothing per chat: it reads one mtime.
 import { z } from 'zod';
+import { served } from './mcp-name.js';
 import { assembleRuleContext } from './rule-context.js';
 import { pathsOf, filePathsOf, rulesFor, routeRulesFor, rulesBlock, rulesLine, contentSha } from './project-rules.js';
 import { staleLine } from './session-file.js';
@@ -13,7 +14,7 @@ const SS_ARG = 'ss';
 const ssSchema = z.string().optional();
 const RECEIPT_RE = /^sha256:[a-f0-9]{64}$/;
 const MAX_ISSUED = 200;
-const receiptSchema = z.string().optional().describe('required: the sha256:… receipt from aki__akidevrule_context');
+const receiptSchema = z.string().optional().describe(`required: the sha256:… receipt from ${served('akidevrule_context')}`);
 
 let assemble = assembleRuleContext;
 const issued = new Map(); // receipt → { mode, workingPath, extraFiles }, oldest first
@@ -43,7 +44,7 @@ export function recordIssued(receipt, input = {}) {
   while (issued.size > MAX_ISSUED) issued.delete(issued.keys().next().value);
 }
 
-const AGAIN = 'call aki__akidevrule_context (without knownReceipt if the rules are no longer in your context), then call this tool again with receipt=<the sha256:… it returns> (a schema of this tool without receipt is stale: reconnect AkiMCP first)';
+const AGAIN = `call ${served('akidevrule_context')} (without knownReceipt if the rules are no longer in your context), then call this tool again with receipt=<the sha256:… it returns> (a schema of this tool without receipt is stale: reconnect AkiMCP first)`;
 
 // { refused: { code, message } } or { entry, current } with the rules the receipt stands for now.
 async function verify(receipt) {
@@ -133,7 +134,7 @@ export function gate(handler, hadSchema) {
     if (pending) {
       const { fresh, recent } = claimShown(receipt, pending.files, pending.shaOf);
       const again = `Call again with receipt=${pending.receipt}.`;
-      const elsewhere = recent.length ? `${recent.map((f) => `${f} (sha256 ${pending.shaOf.get(f).slice(0, 12)})`).join(', ')} went with another call a moment ago; if no result in this turn shows ${recent.length > 1 ? 'them' : 'it'}, read ${recent.length > 1 ? 'them' : 'it'} with aki__read_text_file first. ` : '';
+      const elsewhere = recent.length ? `${recent.map((f) => `${f} (sha256 ${pending.shaOf.get(f).slice(0, 12)})`).join(', ')} went with another call a moment ago; if no result in this turn shows ${recent.length > 1 ? 'them' : 'it'}, read ${recent.length > 1 ? 'them' : 'it'} with ${served('read_text_file')} first. ` : '';
       if (!fresh.length) return { content: [{ type: 'text', text: `RULE_PUSH: Not run yet: the rules for this path, ${elsewhere}${again}` }] };
       return { content: [
         { type: 'text', text: `RULE_PUSH: Not run yet: rules for this path are below. ${elsewhere}${again}` },

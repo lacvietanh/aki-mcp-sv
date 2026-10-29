@@ -16,7 +16,7 @@ fs.writeFileSync(path.join(tmp, 'data', 'setting.json'), JSON.stringify({ folder
 process.env.AKI_MCP_DATA_DIR = path.join(tmp, 'data');
 const { createToolsServer } = await import('../scripts/tools-server.js');
 const { PROVIDERS, listProviders, setEnabled, redetect } = await import('../scripts/provider-registry.js');
-const { TOOL_BUDGET, DEFAULT_PREFIX } = await import('../scripts/mcp-name.js');
+const { TOOL_BUDGET, DEFAULT_PREFIX, IDENTITY } = await import('../scripts/mcp-name.js');
 // What's installed decides what's served, so every probe here says installed — the full surface, on every machine; the real probes return after the PATH check below.
 const realDetect = new Map(PROVIDERS.map((p) => [p, p.detect]));
 const pretendInstalled = () => { for (const p of PROVIDERS) if (p.detect) p.detect = () => ({ available: true }); };
@@ -102,11 +102,12 @@ const readmeCounts = [...readme.matchAll(/(\d+)\s+tools/g)].map((m) => Number(m[
 assert.ok(readmeCounts.length >= 1, 'README states a tool count');
 for (const n of readmeCounts) assert.equal(n, registeredCount, `README says ${n} tools but providers register ${registeredCount}`);
 
-// Every aki__<name> a description (or the server instructions) points at must be a registered tool, so a rename never leaves a dead reference.
+// Every <Tool prefix><name> a description (or the server instructions) points at must be a registered tool, so a rename never leaves a dead reference.
+const toolReference = new RegExp(`${IDENTITY.prefix}[a-z0-9_]+`, 'g');
 const names = new Set(registered.map((t) => t.name));
 const texts = [['instructions', client.getInstructions() || ''], ...registered.map((t) => [t.name, t.description || ''])];
 for (const [owner, text] of texts) {
-  for (const [ref] of text.matchAll(/aki__[a-z0-9_]+/g)) assert.ok(names.has(ref), `${owner} references ${ref}, which is not a tool`);
+  for (const [ref] of text.matchAll(toolReference)) assert.ok(names.has(ref), `${owner} references ${ref}, which is not a tool`);
 }
 
 // Every registered tool belongs to exactly one provider.

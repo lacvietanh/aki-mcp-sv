@@ -19,6 +19,10 @@ function loadInstruction(sourcePaths) {
   return '';
 }
 
+function renderInstruction(text, identity) {
+  return text.replaceAll('{serverId}', identity.key).replaceAll('{prefix}', identity.prefix);
+}
+
 function saveInstruction(userPath, text) {
   fs.mkdirSync(path.dirname(userPath), { recursive: true });
   fs.writeFileSync(userPath, String(text), 'utf8');
@@ -31,4 +35,4 @@ function copyDefaultIfMissing(destPath, srcPath) {
   fs.copyFileSync(srcPath, destPath);
 }
 
-module.exports = { loadInstruction, saveInstruction, copyDefaultIfMissing };
+module.exports = { loadInstruction, renderInstruction, saveInstruction, copyDefaultIfMissing };

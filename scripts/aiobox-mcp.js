@@ -6,6 +6,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
 import { ok, err } from './mcp-tool.js';
+import { served } from './mcp-name.js';
 import cdp from './cdp-engine.js';
 import { VERSION } from './version.js';
 import { aioboxDir, aioboxInstalled, windowsFile, GUIDE_URL, AIOBOX_PITCH } from './aiobox-guide.js';
@@ -79,7 +80,7 @@ const asRefusal = (e, request) => {
     : new Refusal(code, e.message, `${next}; request ${request} may already have taken effect: find it in the runs (op=state names the op that reads them) before sending it again`, { request });
 };
 const refusalOut = (e) => err(JSON.stringify({ ok: false, by: 'akimcp', code: e.code, why: e.message, next: e.next, ...e.extra }, null, 2));
-const NEXT_STATE = 'call aki__aiobox op=state and name the window by its handle';
+const NEXT_STATE = `call ${served('aiobox')} op=state and name the window by its handle`;
 const notRunning = () => new Refusal('not_running', 'AIObox is not running (no ~/.aki/aiobox/cdp/windows.json)', 'ask the owner to open AIObox');
 
 // Out of time: a read is safe to call again; a write may have acted, so it is checked before it is asked again.
@@ -390,7 +391,7 @@ function routeOp(ops, op, mode) {
     entry = named(actual);
   }
   if (!entry) throw new Refusal('unknown_op', `no op '${op}'; ops: ${Object.keys(ops).join(', ') || 'none'}`, 'call op=state: it lists every op with its args');
-  if (mode === 'read' && entry.tool !== 'read') throw new Refusal('wrong_tool', `op=${actual} acts, so it is not a read`, 'call it with aki__aiobox_write');
+  if (mode === 'read' && entry.tool !== 'read') throw new Refusal('wrong_tool', `op=${actual} acts, so it is not a read`, `call it with ${served('aiobox_write')}`);
   if (NEEDS_APP.has(entry.channel) && !appRunning()) throw notRunning();
   return { entry, actual, renamed: actual === op ? null : { from: op, to: actual } };
 }
@@ -441,7 +442,7 @@ export function register(server) {
     {
       title: 'AIObox: read windows',
       annotations: { readOnlyHint: true, openWorldHint: false },
-      description: "AIObox windows. Call op=state first: it returns the guide and every op with its args. window = handle, chatId or targetId; expect = text the target chat's url or title must contain; args as the guide says. Each op's help in op=state overrides the guide. Reads only; to act use aki__aiobox_write.",
+      description: "AIObox windows. Call op=state first: it returns the guide and every op with its args. window = handle, chatId or targetId; expect = text the target chat's url or title must contain; args as the guide says. Each op's help in op=state overrides the guide. Reads only; to act use " + served('aiobox_write') + ".",
       inputSchema: envelope,
     },
     serve('read'),
@@ -452,7 +453,7 @@ export function register(server) {
     {
       title: 'AIObox: act in windows',
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
-      description: "AIObox windows, acting. Same envelope as aki__aiobox plus receipt (the sha256:... from aki__akidevrule_context); call its op=state first: op, window, expect, args as the guide says. Each op's help in op=state overrides the guide. from = your own window, so AIObox can refuse acting on yourself. One call takes at most 50 s.",
+      description: "AIObox windows, acting. Same envelope as " + served('aiobox') + " plus receipt (the sha256:... from " + served('akidevrule_context') + "); call its op=state first: op, window, expect, args as the guide says. Each op's help in op=state overrides the guide. from = your own window, so AIObox can refuse acting on yourself. One call takes at most 50 s.",
       inputSchema: { ...envelope, from: z.string().optional().describe('your own window') },
     },
     serve('write'),

@@ -41,6 +41,7 @@ for (const [name, key, prefix] of DERIVED) {
 test('nothing set gives the defaults and no problem', () => {
   assert.deepEqual(resolveIdentity(), { identity: DEFAULTS, problem: null });
   assert.deepEqual(resolveIdentity({}), { identity: DEFAULTS, problem: null });
+  assert.deepEqual(resolveIdentity(null), { identity: DEFAULTS, problem: null });
 });
 
 test('a null field counts as not set, and resolveIdentity takes the stored identity alone', () => {

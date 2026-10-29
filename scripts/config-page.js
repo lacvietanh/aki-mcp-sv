@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { esc } from './html.js';
 import { aioboxInstalled, AIOBOX_PANEL } from './aiobox-guide.js';
-import { MCP_NAME, MCP_SERVER_KEY, LEGACY_MCP_SERVER_KEY } from './mcp-name.js';
+import { IDENTITY, MCP_NAME, MCP_SERVER_KEY, LEGACY_MCP_SERVER_KEY } from './mcp-name.js';
 
 const CLAUDE_DIR = path.join(os.homedir(), '.claude');
 const AKI_DIR = path.join(os.homedir(), '.aki');
@@ -25,7 +25,7 @@ const TAILSCALE_DOWNLOAD_URL = 'https://tailscale.com/download';
 const TAILSCALE_FUNNEL_URL = 'https://tailscale.com/docs/features/tailscale-funnel';
 // Static on purpose: tool details live in tool descriptions and aki__akidevrule_context; only the two musts stay here, as a client-side instruction is the one place that can insist.
 const WEB_PROMPT = [
-  'Always use the akimcp tools (aki__*) for local files, shell and browser.',
+  `Always use the ${IDENTITY.key} tools (${IDENTITY.prefix}*) for local files, shell and browser.`,
   'You MUST follow /akirule in every chat, in full, from your first action on. Never skip it, even for a small task.',
 ].join('\n');
 
@@ -144,7 +144,7 @@ const noOriginNotice = (reason) => `<p class="helptext">Set up a public address 
 // The same snippet pointed at the public address, for a second computer: Apply would write to this computer's own files, so it is copy-only.
 function fromAnotherComputer({ origin, accessToken, label, id, snippetFor }) {
   const remote = origin ? `${secretSnippet(label, snippetFor(`${origin}/mcp`, accessToken), [accessToken], id)}
-  <p class="helptext">The <span class="mono">aki__</span> tools run on the machine running AkiMCP, not on the computer you paste this on. The token is stored in plain text on that computer. After <strong>Roll token</strong> it stops working there until the new snippet is pasted.</p>` : noOriginNotice('so another computer can reach this one');
+  <p class="helptext">The <span class="mono">${IDENTITY.prefix}</span> tools run on the machine running AkiMCP, not on the computer you paste this on. The token is stored in plain text on that computer. After <strong>Roll token</strong> it stops working there until the new snippet is pasted.</p>` : noOriginNotice('so another computer can reach this one');
   return `<details class="adv"><summary>From another computer (via the section 0 address)</summary>
   ${remote}
   </details>`;

@@ -15,11 +15,12 @@ import {
   resolvePort,
 } from './chrome-profile.js';
 import { windowsFile } from './aiobox-guide.js';
+import { served } from './mcp-name.js';
 
 // While AIObox runs it owns these clones: a Chrome opened here has no AIObox panel, guard or handle.
 function aioboxWarning() {
   if (!fs.existsSync(windowsFile())) return null;
-  return 'AIObox is running and owns these profiles; a Chrome opened here has no AIObox panel or handle. To open an AIObox window, call aki__aiobox op=state first.';
+  return `AIObox is running and owns these profiles; a Chrome opened here has no AIObox panel or handle. To open an AIObox window, call ${served('aiobox')} op=state first.`;
 }
 
 // Resolved at call time: provider-registry.js imports this module, so a static import would be a cycle.

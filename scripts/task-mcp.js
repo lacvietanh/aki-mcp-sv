@@ -10,6 +10,7 @@ import { USER_DIR } from './userdata.js';
 import { resolveUnderRoot, refuseCredentialArgs } from './roots.js';
 import { Shell } from './shell-mcp.js';
 import { ok, fail } from './mcp-tool.js';
+import { served } from './mcp-name.js';
 import { launchOf } from './find-on-path.js';
 
 const TASKS_FILE = path.join(USER_DIR, 'tasks.json');
@@ -313,7 +314,7 @@ export function register(server) {
     {
       title: 'Start Background Task',
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
-      description: 'Start an allowlist-approved shell command in the background (detached process). Logs are streamed directly to disk with zero-RAM overhead. Returns taskId and pid for tracking with aki__task_manage.',
+      description: 'Start an allowlist-approved shell command in the background (detached process). Logs are streamed directly to disk with zero-RAM overhead. Returns taskId and pid for tracking with ' + served('task_manage') + '.',
       inputSchema: {
         command: z.string().describe('The shell command to run in background (e.g. "npm test", "git status")'),
         cwd: z.string().optional().describe('Working directory under allowed roots'),
@@ -335,7 +336,7 @@ export function register(server) {
     {
       title: 'Manage Background Tasks',
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
-      description: 'Manage background tasks started with aki__task_start: inspect status/liveness, tail logs without loading full files into memory, stop process trees cleanly across platforms, list tasks, or delete finished records.',
+      description: 'Manage background tasks started with ' + served('task_start') + ': inspect status/liveness, tail logs without loading full files into memory, stop process trees cleanly across platforms, list tasks, or delete finished records.',
       inputSchema: {
         action: z.enum(['status', 'tail_logs', 'stop', 'list', 'delete']).describe('Action: status, tail_logs, stop, list, delete'),
         taskId: z.string().optional().describe('Task ID (required for status, tail_logs, stop, delete)'),

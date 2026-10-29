@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { getRoots, containedIn } from './roots.js';
 import { PROJECT_FILES } from './rule-context.js';
+import { served } from './mcp-name.js';
 
 // Input names the tools use for a path they touch; a relative path is skipped (its base differs per tool).
 const PATH_KEYS = ['path', 'paths', 'cwd', 'workdir', 'workingPath', 'source', 'destination', 'directory', 'dir', 'root', 'file', 'files'];
@@ -210,7 +211,7 @@ export async function rulesBlock(files) {
     try { buffer = await fs.readFile(file); } catch { continue; }
     const head = `<!-- source: ${file} (sha256 ${shortSha(buffer)}) -->`;
     if (used + buffer.length > MAX_RULE_BYTES) {
-      parts.push(`${head}\n(${buffer.length} bytes, over the ${MAX_RULE_BYTES / 1024} KiB cap; readable with aki__read_text_file)`);
+      parts.push(`${head}\n(${buffer.length} bytes, over the ${MAX_RULE_BYTES / 1024} KiB cap; readable with ${served('read_text_file')})`);
       continue;
     }
     used += buffer.length;
@@ -226,5 +227,5 @@ export async function rulesLine(files) {
     try { listed.push(`${file} (sha256 ${shortSha(await fs.readFile(file))})`); } catch { /* vanished */ }
   }
   if (!listed.length) return null;
-  return `Rule files applying to this path (${LABEL}): ${listed.join(', ')}. Readable with aki__read_text_file.`;
+  return `Rule files applying to this path (${LABEL}): ${listed.join(', ')}. Readable with ${served('read_text_file')}.`;
 }

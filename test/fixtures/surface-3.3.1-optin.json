@@ -1,0 +1,102 @@
+{
+  "providers": {
+    "agy": [
+      {
+        "name": "aki__agy_run",
+        "title": "Antigravity CLI",
+        "description": "Delegate a task to the local agy CLI (read-only retrieval, never judgment). Mode defaults to \"plan\" (read-only by mechanism). Model defaults to the newest Gemini Flash (medium) discovery tier the installed CLI reports, not a pinned id (override: agy.defaultModel in setting.json). list=\"models\"/\"capabilities\" (no prompt) reads the ids, modes, effort levels and formats the installed agy accepts now. model/effort/outputFormat pass straight to agy, which validates them; a rejected value returns agy's error and the live list. Name exact paths in the prompt — agy resolves files outside cwd, so cwd is not a hard boundary. prompt is one verbatim arg, no shell quoting.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "prompt": {
+              "type": "string",
+              "description": "the task for agy; required unless list is set"
+            },
+            "list": {
+              "type": "string",
+              "enum": [
+                "models",
+                "capabilities"
+              ],
+              "description": "read-only: return what the installed agy offers (no prompt spawned)"
+            },
+            "mode": {
+              "type": "string",
+              "pattern": "^[^-]",
+              "description": "agy --mode (agy validates; \"plan\" is read-only and the default). Modes beyond the allowlist in setting.json are refused here"
+            },
+            "model": {
+              "$ref": "#/properties/mode",
+              "description": "agy --model (agy validates). Omitted → the discovery-tier default; use list=\"models\" to see the ids"
+            },
+            "effort": {
+              "$ref": "#/properties/mode",
+              "description": "agy --effort thinking budget (agy validates; use list=\"capabilities\" for the levels)"
+            },
+            "outputFormat": {
+              "$ref": "#/properties/mode",
+              "description": "agy --output-format (agy validates; use list=\"capabilities\" for the formats). Use \"json\" when a program parses the result"
+            },
+            "cwd": {
+              "type": "string",
+              "description": "run inside this project dir; must be under an allowed root"
+            }
+          },
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "destructiveHint": false,
+          "openWorldHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      }
+    ],
+    "kiro": [
+      {
+        "name": "aki__kiro_read",
+        "title": "Kiro CLI (read-only)",
+        "description": "Delegate a read-only task to a Kiro CLI session locked to claude-sonnet-4.5. Restricted to fs_read by mechanism (--trust-tools=fs_read) — it can read files under the allowed roots but cannot write or run shell. prompt is passed straight to kiro-cli as one argument — no shell quoting, spaces/punctuation are safe as-is.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "prompt": {
+              "type": "string"
+            },
+            "effort": {
+              "type": "string",
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+                "max"
+              ],
+              "description": "kiro-cli --effort, thinking budget"
+            },
+            "cwd": {
+              "type": "string",
+              "description": "run inside this project dir; must be under an allowed root"
+            }
+          },
+          "required": [
+            "prompt"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": true,
+          "openWorldHint": false,
+          "destructiveHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      }
+    ]
+  }
+}

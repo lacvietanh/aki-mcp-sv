@@ -9,6 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import CDP from 'chrome-remote-interface';
+import { served } from './mcp-name.js';
 
 const DEFAULT_HOST = '127.0.0.1';
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -75,7 +76,7 @@ async function bounded(timeoutMs, onTimeout, work) {
     if (client) await client.close().catch(() => {});
   }
 }
-const endpointTimeout = (host, port, timeoutMs) => () => timeoutError(`the CDP endpoint ${host}:${port} did not answer within ${timeoutMs / 1000}s`, 'check the app is running with aki__port_status, then try once more');
+const endpointTimeout = (host, port, timeoutMs) => () => timeoutError(`the CDP endpoint ${host}:${port} did not answer within ${timeoutMs / 1000}s`, `check the app is running with ${served('port_status')}, then try once more`);
 
 export async function listTargets({ host = DEFAULT_HOST, port, timeoutMs = CALL_BOUND_MS } = {}) {
   return bounded(timeoutMs, endpointTimeout(host, port, timeoutMs), () => CDP.List({ host, port }));

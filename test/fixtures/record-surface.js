@@ -9,11 +9,26 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const fixtures = path.dirname(fileURLToPath(import.meta.url));
 const scripts = path.resolve(fixtures, '..', '..', 'scripts');
 const DEADLINE_MS = Number(process.argv.find((arg) => arg.startsWith('--deadline-ms='))?.split('=')[1] ?? 30000);
+const OPT_IN = process.argv.includes('--opt-in');
+const OPT_IN_CLIS = { agy: 'agy', kiro: 'kiro-cli' };
 // The default recording runs first: creating ~/.aki/aiobox/ is what makes the second one differ.
-const OUTPUTS = [
-  { file: 'surface-3.3.1.json', withAiobox: false },
-  { file: 'surface-3.3.1-aiobox.json', withAiobox: true },
-];
+const OUTPUTS = OPT_IN
+  ? [{ file: 'surface-3.3.1-optin.json', withAiobox: false }]
+  : [
+    { file: 'surface-3.3.1.json', withAiobox: false },
+    { file: 'surface-3.3.1-aiobox.json', withAiobox: true },
+  ];
+
+// agy and kiro are detected by their binary on PATH and stay off until setting.json switches them on: the scratch HOME gets stub binaries and that setting.
+const switchOnOptInProviders = () => {
+  const bin = path.join(os.homedir(), 'bin');
+  fs.mkdirSync(bin, { recursive: true });
+  for (const cli of Object.values(OPT_IN_CLIS)) fs.writeFileSync(path.join(bin, cli), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  process.env.PATH = `${bin}${path.delimiter}${process.env.PATH}`;
+  const dataDir = path.join(os.homedir(), '.aki', 'mcpsv');
+  fs.mkdirSync(dataDir, { recursive: true });
+  fs.writeFileSync(path.join(dataDir, 'setting.json'), JSON.stringify({ providers: Object.fromEntries(Object.keys(OPT_IN_CLIS).map((id) => [id, { enabled: true }])) }));
+};
 
 // The parent imports nothing from scripts/: the provider-to-tool map comes from a second child that mounts them.
 const providerMap = () => {
@@ -55,6 +70,7 @@ const servedSurface = async () => {
 
 const record = async ({ withAiobox }) => {
   if (withAiobox) fs.mkdirSync(path.join(os.homedir(), '.aki', 'aiobox'), { recursive: true });
+  if (OPT_IN) switchOnOptInProviders();
   const providers = providerMap();
   const { initialize, tools } = await servedSurface();
   const byName = new Map(tools.map((tool) => [tool.name, tool]));
@@ -65,7 +81,9 @@ const record = async ({ withAiobox }) => {
   }
   const groupedCount = Object.values(grouped).flat().length;
   if (groupedCount !== tools.length) throw new Error(`${tools.length - groupedCount} served tools belong to no provider`);
-  return { initialize, providers: grouped };
+  const unserved = OPT_IN ? Object.keys(OPT_IN_CLIS).filter((id) => !grouped[id]) : [];
+  if (unserved.length) throw new Error(`the opt-in providers ${unserved.join(', ')} are not served in the scratch HOME`);
+  return OPT_IN ? { providers: Object.fromEntries(Object.keys(OPT_IN_CLIS).map((id) => [id, grouped[id]])) } : { initialize, providers: grouped };
 };
 
 const home = os.homedir();
@@ -79,7 +97,7 @@ for (const output of OUTPUTS) {
   recorded.push({ ...output, text: `${JSON.stringify(surface, null, 2)}\n`, count: Object.values(surface.providers).flat().length });
 }
 for (const { file, count } of recorded) console.log(`${file}: ${count} tools`);
-if (recorded[0].count === recorded[1].count) throw new Error('both recordings list the same tool count: the AIObox directory changed nothing that is served');
+if (!OPT_IN && recorded[0].count === recorded[1].count) throw new Error('both recordings list the same tool count: the AIObox directory changed nothing that is served');
 
 if (process.argv.includes('--check')) {
   const differing = recorded.filter(({ file, text }) => fs.readFileSync(path.join(fixtures, file), 'utf8') !== text);

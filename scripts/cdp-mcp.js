@@ -6,9 +6,10 @@ import { z } from 'zod';
 import { ok, okImage, fail } from './mcp-tool.js';
 import cdp from './cdp-engine.js';
 import { resolvePort } from './chrome-profile.js';
+import { served } from './mcp-name.js';
 
 // Served without AIObox too, so it names no aiobox tool (P3, D-L2a).
-const NO_SESSION_HINT = 'A window not launched by aki__chrome_launch has no active session: find its port with aki__port_status first, then pass port.';
+const NO_SESSION_HINT = `A window not launched by ${served('chrome_launch')} has no active session: find its port with ${served('port_status')} first, then pass port.`;
 
 // No detect: it also serves Postman, VS Code and AIObox's Chrome, so hiding it by "no session running" would hide it exactly when an attach needs it.
 export const provider = { id: 'cdp', title: 'DevTools (CDP)', register };
@@ -45,7 +46,7 @@ export function register(server) {
       title: 'DevTools: evaluate JS',
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description:
-        'Evaluate a JavaScript expression inside a page/renderer over CDP and return the serialized result (throws surface the page-side error). Optionally pick the target by a url/title substring (filter) or an exact targetId; default = first page. For Postman, aki__postman_eval finds its endpoint and main renderer itself. ' + NO_SESSION_HINT,
+        'Evaluate a JavaScript expression inside a page/renderer over CDP and return the serialized result (throws surface the page-side error). Optionally pick the target by a url/title substring (filter) or an exact targetId; default = first page. For Postman, ' + served('postman_eval') + ' finds its endpoint and main renderer itself. ' + NO_SESSION_HINT,
       inputSchema: {
         expression: z.string().describe('JS evaluated in the page; the last expression is returned (returnByValue)'),
         port: z.number().int().optional().describe('remote-debugging port (default: active Chrome session)'),

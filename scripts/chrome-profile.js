@@ -6,6 +6,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { USER_DIR } from './userdata.js';
+import { served } from './mcp-name.js';
 
 const SESSION_FILE = path.join(USER_DIR, 'chrome-session.json');
 
@@ -297,9 +298,9 @@ export async function resolvePort(explicitPort) {
 }
 
 // The path that needs no shared profile: also the next step when chrome_launch finds none.
-const ATTACH_PATH = 'attach to a window already running with a remote-debugging port: find the port with aki__port_status (a Chrome process listening on 127.0.0.1), run aki__devtools_targets on it, match the tab by title or url, then pass that port and targetId explicitly.';
+const ATTACH_PATH = `attach to a window already running with a remote-debugging port: find the port with ${served('port_status')} (a Chrome process listening on 127.0.0.1), run ${served('devtools_targets')} on it, match the tab by title or url, then pass that port and targetId explicitly.`;
 export const NO_CDP_PORT_MESSAGE =
-  `No CDP port specified and no active Chrome session. Open a shared profile with aki__chrome_launch, or ${ATTACH_PATH}`;
+  `No CDP port specified and no active Chrome session. Open a shared profile with ${served('chrome_launch')}, or ${ATTACH_PATH}`;
 
 async function openUrl(port, url) {
   if (!url) return null;

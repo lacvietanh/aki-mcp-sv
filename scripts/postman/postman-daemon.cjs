@@ -11,7 +11,7 @@ const { execFile } = require('child_process');
 const { fetchAllUsage } = require('./postman-usage.cjs');
 const { PostmanSession } = require('./postman-session.cjs');
 const { eligibleTargets, deterministicOwnerTargetId, waitForEligibleTargets, openOwnedWindow, normalizeOwnershipStatus } = require('./postman-ownership.cjs');
-const { loadInstruction, copyDefaultIfMissing } = require('./postman-instruction-store.cjs');
+const { loadInstruction, renderInstruction, copyDefaultIfMissing } = require('./postman-instruction-store.cjs');
 const daemonPid = require('./postman-daemon-pid.cjs');
 const {
   localSnapshot,
@@ -203,6 +203,13 @@ function loadAkiData() {
   return data;
 }
 
+let identity = null;
+
+// mcp-name.js is an ES module and this daemon is CommonJS, so the identity arrives through one dynamic import before main() runs.
+async function loadIdentity() {
+  ({ IDENTITY: identity } = await import('../mcp-name.js'));
+}
+
 function loadInstructionFile() {
   // Served natively read-only from the bundled repo asset — intentionally no user/home/legacy override.
   return loadInstruction([DEFAULT_PROMPT_PATH]);
@@ -310,7 +317,7 @@ function getScriptBundle() {
     window.__pmUsageData = ${JSON.stringify(cachedUsageData)};
     window.__pmUpdateInfo = ${JSON.stringify(cachedUpdateInfo)};
     window.__pmAppVersion = ${JSON.stringify(getAppVersion())};
-    window.__pmInitialInstruction = ${JSON.stringify(loadInstructionFile())};
+    window.__pmInitialInstruction = ${JSON.stringify(renderInstruction(loadInstructionFile(), identity))};
     window.__pmRuntime = ${JSON.stringify({ cdpPort: controlSession ? controlSession.port : null, daemonPid: process.pid })};
   `;
 
@@ -552,6 +559,7 @@ process.on('exit', () => {
 });
 
 async function main() {
+  await loadIdentity();
   daemonPid.claim();
   console.log('⚡ Postman CDP Daemon — non-invasive, native gateway');
 
