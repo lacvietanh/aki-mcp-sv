@@ -1,6 +1,6 @@
 # Plan — npm Trusted Publishing through GitHub Actions OIDC
 
-Status: wishlist · deferred, not started (owner 2026-10-24: "cái npm trusted pub là deffered/wishlist rồi"); `npm publish` with the owner's OTP stays the release step until the owner names this plan. Scope call 2026-10-26 (release-gate room): stays out of 3.1.0 and its release; the Q1 key check found no npm or GitHub token in the exposed environment, so nothing here is urgent.
+Status: active · named by the owner 2026-10-29 (deferred before that: 2026-10-24 "deffered/wishlist", 2026-10-26 out of 3.1.0). `release.yml` is rewritten (verify → publish → release). Open: the owner saves the trusted publisher on npmjs.com immediately before tagging the next release (a saved configuration expires if no publish succeeds within 2 days), then the first tag release proves it. Until that release succeeds, `npm publish` by hand with the owner's login stays the fallback.
 
 ## Goal
 
@@ -22,6 +22,7 @@ In npm package settings for the existing `@akinet/akimcp` package, add a GitHub 
 | Repository | `aki-mcp-sv` |
 | Workflow filename | `release.yml` |
 | Environment name | blank, unless the workflow is deliberately bound to a GitHub Environment |
+| Allowed actions | direct `npm publish` enabled (npm docs 2026-10-29: `npm stage publish` is always allowed, direct publish is a separate choice) |
 
 - The filename is only `release.yml`, not `.github/workflows/release.yml`.
 - Confirm the actor configuring the package has package publish permission and the package is already associated with the npm scope `@akinet`.
@@ -32,14 +33,13 @@ In npm package settings for the existing `@akinet/akimcp` package, add a GitHub 
 Update `.github/workflows/release.yml` only:
 
 1. Keep `push.tags: ['[0-9]+.[0-9]+.[0-9]+']`; it matches the repository's bare-semver tag convention.
-2. Retain `contents: write` for `gh release create` and add `id-token: write` at job or workflow scope. Do not grant broader permissions.
-3. Use a GitHub-hosted runner, check out the tagged commit with full history, set up Node `>=22.14.0`, and install npm `>=11.5.1` before publishing because that npm version supports trusted publishing.
-4. Run `npm ci`, `npm test`, `npm pack --dry-run`, then install and exercise the packed tarball in CI's temporary directory; fail before publish on any error.
-5. Assert `package.json` version equals `${GITHUB_REF_NAME}` and that the tag's `CHANGELOG.md` contains the matching version heading.
-6. Run `npm publish` with no `NPM_TOKEN`, `NODE_AUTH_TOKEN`, `--otp`, or interactive input. Keep `publishConfig.access: public`.
-7. Verify the registry after publish with `npm view @akinet/akimcp@${GITHUB_REF_NAME} version`; it must equal the tag.
-8. Create the GitHub Release only after that verification, retaining the existing tagged-CHANGELOG notes and compare-link logic. Make the release step idempotent for a successful workflow rerun.
-9. Do not add `--provenance`: trusted publishing supplies provenance automatically.
+2. Three jobs, each with only its own permissions (workflow level `permissions: {}`): `verify` (`contents: read`), `publish` (`contents: read`, `id-token: write`), `release` (`contents: write`). Do not grant broader permissions.
+3. Split so no third-party code runs where the OIDC token exists: `verify` runs `npm ci` and `npm test`; `publish` installs no dependency and only runs `npm publish` from the tagged checkout (the package has no install, prepare or prepack script).
+4. `verify` asserts `package.json` version equals `${GITHUB_REF_NAME}`, that the tag's `CHANGELOG.md` has the matching heading, then installs the packed tarball into a temp directory and checks that `akimcp --stdio` answers `initialize` with the tag as `serverInfo.version`.
+5. `publish` uses GitHub-hosted runners, Node `22.14.0`, and installs npm `11.21.0` (trusted publishing needs `>=11.5.1`; Node 22.14.0 ships an older npm). Third-party actions are pinned by commit SHA.
+6. `npm publish` runs with no `NPM_TOKEN`, `--otp` or interactive input, and is skipped when the registry already has the version (rerun-safe). `publishConfig.access: public` stays; no `--provenance` flag, trusted publishing supplies it.
+7. After publishing, `npm view @akinet/akimcp@${GITHUB_REF_NAME} version` is polled up to five times and must equal the tag.
+8. `release` runs only after `publish` succeeds, with the existing tagged-CHANGELOG notes and compare-link logic, and stays idempotent.
 
 ## Release process
 

@@ -103,6 +103,6 @@
 
 Each item starts only when the owner names it or its trigger fires.
 
-- [plan/npm-trusted-publishing.md](plan/npm-trusted-publishing.md) — wishlist, deferred by the owner 2026-10-24: publish `@akinet/akimcp` from the tag workflow through npm OIDC instead of a workstation OTP; until then `npm publish` stays the one manual release step
+- [plan/npm-trusted-publishing.md](plan/npm-trusted-publishing.md) — active since 2026-10-29: `release.yml` publishes `@akinet/akimcp` through npm Trusted Publishing (no token, no OTP); waits for the trusted publisher to be saved on npmjs.com and the first tag release to prove it, until then `npm publish` by hand
 - [plan/per-client-tool-surface.md](plan/per-client-tool-surface.md) — a `native` tool profile for coding clients on the AkiMCP host (fewer duplicate tools, no rule handshake). Waits because those clients made 0 calls and Claude Code pays ~0.7k tokens per session; moves up if `tool-calls.jsonl` shows one calling regularly
 - [plan/done/rule-presence-check.md](plan/done/rule-presence-check.md) § Stage B — every 15 minutes a gated call asks the AI for 8 words of its rules and re-sends them on a wrong answer, so a chat whose memory was compressed gets its rules back. Decided by measurement: on or after 2026-11-22 rerun the research § R9 [WRAP] count (baseline 31 of 143 files); built if it has not dropped

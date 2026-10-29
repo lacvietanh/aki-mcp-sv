@@ -2,6 +2,11 @@
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning per [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- **A tag push now publishes the npm package before it creates the GitHub Release** (`.github/workflows/release.yml`, `docs/plan/npm-trusted-publishing.md`): three jobs, `verify` (tests, tag matches manifest and CHANGELOG, the packed tarball answers `initialize` with the tag version), `publish` (`npm publish` through npm Trusted Publishing, no token or OTP, the only job with `id-token: write`, no dependency installed) and `release`; actions are pinned by commit SHA. Not run yet: it needs the trusted publisher saved on npmjs.com, then the next tag proves it; until then publish by hand with `npm publish`.
+
 ## [3.3.1] - 2026-10-29
 
 ### Fixed
