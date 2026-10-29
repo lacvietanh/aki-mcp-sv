@@ -34,8 +34,8 @@ jobs:
 
       - name: Packed tarball starts and reports the tag version
         run: |
+          mkdir "$RUNNER_TEMP/pack" "$RUNNER_TEMP/consumer" "$RUNNER_TEMP/home"
           npm pack --silent --pack-destination "$RUNNER_TEMP/pack" > /dev/null
-          mkdir "$RUNNER_TEMP/consumer" "$RUNNER_TEMP/home"
           cd "$RUNNER_TEMP/consumer"
           npm init -y > /dev/null
           npm install --no-audit --no-fund "$RUNNER_TEMP"/pack/*.tgz
