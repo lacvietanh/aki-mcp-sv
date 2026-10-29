@@ -16,6 +16,7 @@ fs.writeFileSync(path.join(tmp, 'data', 'setting.json'), JSON.stringify({ folder
 process.env.AKI_MCP_DATA_DIR = path.join(tmp, 'data');
 const { createToolsServer } = await import('../scripts/tools-server.js');
 const { PROVIDERS, listProviders, setEnabled, redetect } = await import('../scripts/provider-registry.js');
+const { TOOL_BUDGET, DEFAULT_PREFIX } = await import('../scripts/mcp-name.js');
 // What's installed decides what's served, so every probe here says installed — the full surface, on every machine; the real probes return after the PATH check below.
 const realDetect = new Map(PROVIDERS.map((p) => [p, p.detect]));
 const pretendInstalled = () => { for (const p of PROVIDERS) if (p.detect) p.detect = () => ({ available: true }); };
@@ -110,6 +111,9 @@ for (const [owner, text] of texts) {
 
 // Every registered tool belongs to exactly one provider.
 assert.deepEqual(providers.flatMap((p) => p.tools).sort(), [...names].sort());
+
+// Every bare tool name fits the tool budget, so any Server ID and Tool prefix inside the name budget keeps the full name under the client ceiling.
+for (const toolName of names) assert.ok(toolName.slice(DEFAULT_PREFIX.length).length <= TOOL_BUDGET, `${toolName} is over the ${TOOL_BUDGET}-character tool budget`);
 
 // Switching a provider off hides its tools on the next tools/list and refuses calls; switching back restores them. git is always available (any machine); postman only where installed.
 for (const id of ['git', 'postman']) {
