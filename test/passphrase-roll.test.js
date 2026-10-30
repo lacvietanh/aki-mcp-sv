@@ -23,6 +23,9 @@ assert.ok(html.includes('data-eye') && html.includes('data-act="rollPassphrase"'
 
 const live = renderPanel({ origin: 'https://example.test', client: {}, passphrase: after, token: 't', accessToken: 'SECRETTOK', repoRoot: '/', rulesDir: '/', userDir: '/' });
 assert.ok(live.includes('data-tab="buda"') && live.includes('id="tab-buda"'), 'Buda tab and pane are rendered');
+const firstTab = (tier) => live.split(`id="tabs-${tier}"`)[1].match(/<button class="tab( active)?" data-tab="([^"]+)"/);
+assert.deepEqual([firstTab('local')[2], firstTab('local')[1]], ['anymcp', ' active'], 'the generic MCP JSON tab opens first in the local tier');
+assert.equal(firstTab('web')[2], 'httpchat', 'Any HTTP chat is the first web tab');
 const budaPane = live.split('id="tab-buda"')[1].split('class="tabpane"')[0];
 assert.ok(budaPane.includes('>https://example.test/mcp<'), 'Buda pane carries the public MCP URL');
 assert.ok(budaPane.includes('data-v="Bearer SECRETTOK"'), 'Buda pane carries the Bearer header value');
@@ -35,14 +38,14 @@ const outsideCopyAttr = secretPage.replace(/data-v="[^"]*"/g, '');
 for (const [name, secret] of [['passphrase', after], ['access token', 'SECRETTOK']]) {
   assert.ok(!outsideCopyAttr.includes(secret), `the ${name} appears only inside the copy attribute`);
 }
-for (const id of ['postmanJson', 'cursorJson', 'claudeCodeCmd', 'codexToml']) {
+for (const id of ['anyMcpJson', 'postmanJson', 'cursorJson', 'claudeCodeCmd', 'codexToml']) {
   const snippet = secretPage.split(`id="${id}"`)[1].split('</code>')[0];
   assert.ok(snippet.includes('data-v="') && snippet.includes('SECRETTOK'), `${id} copies the real token`);
   assert.ok(snippet.split('</span>')[0].split('>').pop().includes('•'.repeat(12)), `${id} shows the mask`);
 }
 
 const maskedSpans = [...secretPage.matchAll(/<span class="txt" data-v="[^"]*" data-mask="([^"]*)">([^<]*)<\/span>/g)];
-assert.equal(maskedSpans.length, 10, 'passphrase, access token, Buda header, the four snippets and the three from-another-computer snippets carry a data-mask');
+assert.equal(maskedSpans.length, 12, 'passphrase, access token, Buda header, the five snippets and the four from-another-computer snippets carry a data-mask');
 for (const [, mask, shown] of maskedSpans) {
   assert.equal(shown, mask, 'the visible text is the data-mask, so hiding again restores it');
   assert.ok(!mask.includes('SECRETTOK') && !mask.includes(after), 'the masked text holds no secret');
@@ -75,6 +78,10 @@ const socials = [...html.matchAll(/<a class="social" href="([^"]*)"/g)].map((m) 
 assert.equal(socials.length, 6, 'five socials plus the mailto');
 assert.ok(socials.every((href) => !href.includes('utm_')) && socials.includes('https://m.me/akinet?t=fromakimcp'), 'social links carry no UTM');
 
+const aioboxStrip = (page) => page.split('<section id="s1"')[1].split('</section>')[0].split('class="aiobox-strip"')[1];
+const strip = aioboxStrip(html);
+assert.ok(strip.includes('href="https://aiobox.app/?from=akimcp-connect" target="_blank" rel="noopener noreferrer"'), 'the connect section ends with the AIObox strip and its own link');
+assert.ok(!/<img|<script|src=|\b(Mac|macOS|Windows|Linux)\b/.test(strip), 'the strip loads no remote asset and names no OS');
 const aioboxSection = (page) => page.split('<section id="s8">')[1].split('</section>')[0];
 const pitch = aioboxSection(html);
 assert.ok(pitch.includes('All your AI. Working together.') && pitch.includes('href="https://aiobox.app/?from=akimcp-panel" target="_blank" rel="noopener noreferrer"'), 'AIObox pitch and its link-button');
@@ -84,6 +91,8 @@ const aioboxHome = path.join(os.homedir(), '.aki', 'aiobox');
 fs.mkdirSync(aioboxHome, { recursive: true });
 const installed = aioboxSection(renderPanel({ origin: null, client: {}, passphrase: after, token: 't', accessToken: 'SECRETTOK', repoRoot: '/', rulesDir: '/', userDir: '/' }));
 assert.ok(installed.includes('AIObox is installed on this computer') && !installed.includes('aiobox.app') && !installed.includes('<a '), 'the installed variant is one line with no link');
+const installedStrip = aioboxStrip(renderPanel({ origin: null, client: {}, passphrase: after, token: 't', accessToken: 'SECRETTOK', repoRoot: '/', rulesDir: '/', userDir: '/' }));
+assert.ok(installedStrip.includes('AIObox is installed on this computer') && !installedStrip.includes('<a '), 'once installed, the strip is the same one line with no link');
 fs.rmSync(aioboxHome, { recursive: true, force: true });
 
 fs.rmSync(process.env.AKI_MCP_DATA_DIR, { recursive: true, force: true });

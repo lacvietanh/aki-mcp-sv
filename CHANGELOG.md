@@ -6,6 +6,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 
 ### Added
 - **Name the server without editing code** (`setting.json` `identity`, panel section 1): the Display name you type also sets the Server ID and Tool prefix (`MacMCP` gives `macmcp` and `mac__run_cmd`), and each can be set on its own. Keep the default and nothing changes: no reconnect, no new Always allow. A new name needs a restart and a reconnect in every client; set the default back before installing a 3.x version. Not yet checked against live clients (V1 and V2, `docs/plan/v4-custom-name.md` § P8).
+- **One tab for every app that takes an MCP JSON** (`scripts/config-page.js`, panel section 1 → Local): **Any MCP app** opens first and holds the loopback `mcpServers` JSON that Postman, Cursor and any other such app accept as is, plus the same JSON for another computer. The Postman tab stays for Launch and the overlay.
+- **Extend a temporary token by 30 minutes from the panel, and see what used it** (`scripts/oauth.js` `extendTempTokenById`, `noteTempTokenUse`; `POST /api/temp-token/extend`): each live row in **Any HTTP chat** has **+30 min** (no cap; an expired or revoked token stays dead) and a *Last used* cell with the time, address and user-agent the callers list already records, or *not used yet*. Rendering of the row checked by syntax only (`docs/plan/panel-connect-polish.md` V1).
+- **AIObox strip at the bottom of panel section 1** (`AIOBOX_CONNECT` in `scripts/aiobox-guide.js`): one-click connection of each AI account, closed beta for AkiDev members, a *See AIObox* link to `aiobox.app/?from=akimcp-connect`; one line with no link once AIObox is installed.
 
 ### Changed
 - **A rename makes every client see new tools** (`scripts/mcp-name.js`, `scripts/tools-server.js`): after any change of the Server ID or Tool prefix, Reset to AkiMCP from another name included, web connectors list the tools again, Claude asks to Always allow each tool again, and Notion reads `tools_stale` once.
@@ -15,6 +18,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 - **Log lines record the tool's own name** (`scripts/tool-call-log.js`, `scripts/tool-calls-report.js`): each line of `tool-calls.jsonl` gains `bare`, so the report counts a tool once across a rename. Lines written before 4.0.0 are read with `aki__` stripped until {release date + 40 days}.
 - **A stdio client can serve the new name before the restart**: the Claude app, AGY and Postman start their own copy, so one started between Save and restart gets the new name while URL clients still get the old one; the panel says so.
 - **A tag push now publishes the npm package before it creates the GitHub Release** (`.github/workflows/release.yml`, `docs/plan/npm-trusted-publishing.md`): three jobs, `verify` (tests, tag matches manifest and CHANGELOG, the packed tarball answers `initialize` with the tag version), `publish` (`npm publish` through npm Trusted Publishing, no token or OTP, the only job with `id-token: write`, no dependency installed) and `release`; actions are pinned by commit SHA. Not run yet: it needs the trusted publisher saved on npmjs.com, then the next tag proves it; until then publish by hand with `npm publish`.
+- **Any HTTP chat is the first web tab, and every connector tab has a logo** (`public/img/providers/`): Cursor, AGY, Codex, Buda and ClickUp get their brand marks, Any MCP app the MCP mark and Any HTTP chat a globe.
+
+### Fixed
+- **The Postman tab no longer says Apply removes an old `aki-mcp` entry**: it has no Apply button, so the hint now only asks you to delete it.
 
 ## [3.3.1] - 2026-10-29
 

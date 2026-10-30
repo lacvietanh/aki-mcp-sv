@@ -2,7 +2,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { esc } from './html.js';
-import { aioboxInstalled, AIOBOX_PANEL } from './aiobox-guide.js';
+import { aioboxInstalled, AIOBOX_PANEL, AIOBOX_CONNECT } from './aiobox-guide.js';
 import { IDENTITY, appliedKeys } from './mcp-name.js';
 import { renderIdentityField } from './identity-panel.js';
 
@@ -152,7 +152,11 @@ function fromAnotherComputer({ origin, accessToken, label, id, snippetFor }) {
 }
 // Shown under every snippet a person pastes by hand: Apply removes the retired key itself, a paste cannot.
 const otherAppliedKeys = () => appliedKeys().filter((key) => key !== IDENTITY.key).map((key) => `<span class="mono">${esc(key)}</span>`).join(', ');
-const legacyNameHint = () => (otherAppliedKeys() ? `<p class="helptext legacy-hint">Your config may still have entries named ${otherAppliedKeys()}; delete them. Apply does this for you.</p>` : '');
+const aioboxConnectStrip = () => (aioboxInstalled()
+  ? `<aside class="aiobox-strip"><p class="aiobox-strip-line">${esc(AIOBOX_PANEL.installed)}</p></aside>`
+  : `<aside class="aiobox-strip" aria-label="AIObox"><div class="aiobox-strip-body"><p class="aiobox-strip-eyebrow">${esc(AIOBOX_CONNECT.eyebrow)}</p><p class="aiobox-strip-head">${esc(AIOBOX_CONNECT.headline)}</p><p class="aiobox-strip-line">${esc(AIOBOX_CONNECT.line)}</p></div><a class="btnlink primary" href="${esc(AIOBOX_CONNECT.url)}" target="_blank" rel="noopener noreferrer">${esc(AIOBOX_PANEL.cta)} ↗</a></aside>`);
+
+const legacyNameHint = (hasApply = true) => (otherAppliedKeys() ? `<p class="helptext legacy-hint">Your config may still have entries named ${otherAppliedKeys()}; delete them.${hasApply ? ' Apply does this for you.' : ''}</p>` : '');
 // The guide's public address lives here once; the four labels are the ones its section 0 reads (docs/plan/done/web-chat-client.md).
 export const GUIDE_URL = 'https://akimcp.top/guide/mcp-http/v1.md';
 export const tempTokenKickoff = ({ mcpUrl, token, expires }) => [
@@ -314,22 +318,23 @@ ${secretField('Access token', accessToken)}
 </div>
 
 <nav class="tabs active" id="tabs-local" data-tier-tabs="local" aria-label="Local connectors">
-  <button class="tab active" data-tab="postman"><img src="/img/providers/postman.png" class="provider-icon" alt="">Postman</button>
-  <button class="tab" data-tab="cursor">Cursor</button>
+  <button class="tab active" data-tab="anymcp"><img src="/img/providers/mcp.svg" class="provider-icon" alt="">Any MCP app</button>
+  <button class="tab" data-tab="postman"><img src="/img/providers/postman.png" class="provider-icon" alt="">Postman</button>
+  <button class="tab" data-tab="cursor"><img src="/img/providers/cursor.svg" class="provider-icon" alt="">Cursor</button>
   <button class="tab" data-tab="claudelocal"><img src="/img/providers/claude.png" class="provider-icon" alt="">Claude Code &amp; app</button>
-  <button class="tab" data-tab="agy">AGY</button>
-  <button class="tab" data-tab="codex">Codex</button>
+  <button class="tab" data-tab="agy"><img src="/img/providers/antigravity.svg" class="provider-icon" alt="">AGY</button>
+  <button class="tab" data-tab="codex"><img src="/img/providers/codex.svg" class="provider-icon" alt="">Codex</button>
 </nav>
 
 <nav class="tabs" id="tabs-web" data-tier-tabs="web" aria-label="Web connectors">
+  <button class="tab" data-tab="httpchat"><img src="/img/providers/http.svg" class="provider-icon" alt="">Any HTTP chat</button>
   <button class="tab" data-tab="claude"><img src="/img/providers/claude.png" class="provider-icon" alt="">Claude</button>
   <button class="tab" data-tab="grok"><img src="/img/providers/grok.png" class="provider-icon" alt="">Grok</button>
   <button class="tab" data-tab="chatgpt"><img src="/img/providers/gpt.png" class="provider-icon" alt="">ChatGPT</button>
   <button class="tab" data-tab="gemini"><img src="/img/providers/gemini.png" class="provider-icon" alt="">Gemini</button>
   <button class="tab" data-tab="notion"><img src="/img/providers/notion.png" class="provider-icon" alt="">Notion</button>
-  <button class="tab" data-tab="buda">Buda</button>
-  <button class="tab" data-tab="clickup">ClickUp</button>
-  <button class="tab" data-tab="httpchat">Any HTTP chat</button>
+  <button class="tab" data-tab="buda"><img src="/img/providers/buda.svg" class="provider-icon" alt="">Buda</button>
+  <button class="tab" data-tab="clickup"><img src="/img/providers/clickup.svg" class="provider-icon" alt="">ClickUp</button>
 </nav>
 
 <div class="tabpane" id="tab-claude">
@@ -416,7 +421,7 @@ ${secretField('Access token', accessToken)}
 </div>
 
 <div class="tabpane" id="tab-httpchat">
-  <p class="helptext">For web chats with no custom MCP connector that can still send HTTPS requests (WorkBuddy, CodeBuddy, Postman Agent, a chat with a code sandbox). Mint a temporary token that lasts 4 hours and paste the kickoff block into the chat. When the task is done, tell the AI to revoke its token, or click Revoke below. Your shared token and every connected AI are untouched. Restarting AkiMCP also revokes every temporary token.</p>
+  <p class="helptext">For web chats with no custom MCP connector that can still send HTTPS requests (WorkBuddy, CodeBuddy, Postman Agent, a chat with a code sandbox). Mint a temporary token that lasts 4 hours and paste the kickoff block into the chat. The list below shows when and from what each token was last used; <strong>+30 min</strong> extends a live one. When the task is done, tell the AI to revoke its token, or click Revoke below. Your shared token and every connected AI are untouched. Restarting AkiMCP also revokes every temporary token.</p>
   <div class="acts"><button class="primary" data-act="mintTemp"${origin ? '' : ' disabled'}>Mint temp token &amp; copy kickoff</button><span class="msg" id="msgTemp"></span></div>
   ${origin ? '' : noOriginNotice('so the web chat can reach this computer')}
   <textarea id="tempKickoff" class="mono" rows="6" readonly hidden style="width:100%"></textarea>
@@ -425,7 +430,15 @@ ${secretField('Access token', accessToken)}
   <div class="acts"><button data-act="revokeAllTemp" id="revokeAllTemp" hidden>Revoke all temporary tokens</button></div>
 </div>
 
-<div class="tabpane active" id="tab-postman">
+<div class="tabpane active" id="tab-anymcp">
+  <h3 class="subh">Any app that takes an MCP JSON</h3>
+  <p class="helptext">This is the usual JSON for adding an MCP server: Postman and Cursor take it as is, and so does any other app whose MCP settings accept an <span class="mono">mcpServers</span> entry with a <span class="mono">url</span> and <span class="mono">headers</span>. Click the JSON to copy it, then paste it where the app adds an MCP server, keeping any servers already there. It reaches this computer over <span class="mono">127.0.0.1</span>, with no tunnel. After <strong>Roll token</strong>, paste it again. An app that can only start a command (stdio), like the Claude app or AGY, uses its own tab.</p>
+  ${secretSnippet('MCP JSON', localBearerJson, [accessToken], 'anyMcpJson')}
+  ${legacyNameHint(false)}
+  ${fromAnotherComputer({ origin, accessToken, label: 'MCP JSON', id: 'anyMcpJsonRemote', snippetFor: httpBearerJson })}
+</div>
+
+<div class="tabpane" id="tab-postman">
   <h3 class="subh">Control the Postman app</h3>
   <p class="helptext">This launch attaches control that opening Postman from the Dock/Spotlight does not: it auto-clicks Approve / Continue / Run / Try again and toggles Thinking / Auto-run inside the Postman window. If Postman is already open, this attaches to it — it does not open a second instance.</p>
   <div class="acts">
@@ -439,7 +452,7 @@ ${secretField('Access token', accessToken)}
   <p class="helptext">Postman runs on this machine, so it connects straight to the local engine on <span class="mono">127.0.0.1</span>, with no tunnel. Click the JSON to copy, then paste it in Postman Connected Accounts.</p>
   <p class="lnk"><a href="${esc(POSTMAN_SETTINGS_URL)}" target="_blank" rel="noopener">↗ Open Connected Accounts</a></p>
   ${secretSnippet('Postman JSON', localBearerJson, [accessToken], 'postmanJson')}
-  ${legacyNameHint()}
+  ${legacyNameHint(false)}
   <p class="helptext" style="margin-top:12px">Setup screenshot:</p>
   <figure><img src="/img/aki-mcp-instruct-postman.png" alt="Postman MCP setup walkthrough" loading="lazy" style="max-width:100%;border-radius:6px"></figure>
 </div>
@@ -491,6 +504,7 @@ ${secretField('Access token', accessToken)}
   ${legacyNameHint()}
   ${fromAnotherComputer({ origin, accessToken, label: 'Codex config', id: 'codexTomlRemote', snippetFor: codexBlock })}
 </div>
+${aioboxConnectStrip()}
 </section>
 
 <section id="s2"><h2>2 · Install AkiDevRule (optional)</h2>

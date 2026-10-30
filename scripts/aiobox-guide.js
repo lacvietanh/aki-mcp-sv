@@ -27,6 +27,14 @@ export const AIOBOX_PANEL = {
   installed: 'AIObox is installed on this computer. Open it to connect each AI account to this AkiMCP in one click.',
 };
 
+// Panel section 1 strip under the connector steps (owner 2026-10-31); from=akimcp-connect counts it apart from section 8. Installed: AIOBOX_PANEL.installed instead.
+export const AIOBOX_CONNECT = {
+  eyebrow: 'AIObox · free closed beta for AkiDev members',
+  headline: 'Skip the steps above. Connect each AI account in one click.',
+  line: 'AIObox keeps every AI account you pay for open and signed in, and connects this AkiMCP to each one by itself: no URL, no passphrase, no settings page. Then your accounts work as one team.',
+  url: 'https://aiobox.app/?from=akimcp-connect',
+};
+
 export const aioboxInstalled = () => fs.existsSync(aioboxDir());
 export const windowsFile = () => path.join(aioboxDir(), 'cdp', 'windows.json');
 
