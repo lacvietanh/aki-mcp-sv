@@ -52,9 +52,11 @@ try {
   assert.equal(revokeTempToken(bearer(shared)), false);
   assert.equal(revokeTempToken('Bearer ' + 'f'.repeat(64)), false);
 
-  // Expiry: past its lifetime a temp token is retired, not valid.
+  // Expiry: past its lifetime a temp token is retired, not valid, and +30 min cannot bring it back before it is pruned.
+  const [{ id: secondId }] = listTempTokens();
   Date.now = () => realNow() + 5 * 3600_000;
   assert.equal(bearerStatus(bearer(second.token)), 'retired');
+  assert.equal(extendTempTokenById(secondId), false, 'an expired token stays dead');
   Date.now = realNow;
 
   // Soft roll keeps temp tokens; hard roll ends them.

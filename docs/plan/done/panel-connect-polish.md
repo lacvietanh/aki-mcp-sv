@@ -1,6 +1,6 @@
 # Panel section 1 polish: one MCP JSON tab, logos, temp-token renewal, AIObox strip
 
-Built 2026-10-31; open: V1, the temp-token row seen in a running panel.
+Done 2026-10-31.
 
 ## Ask
 
@@ -40,4 +40,4 @@ The renewal note (`.akidevsync/notes.json` task-1793301360386): "thêm tính nă
 - [x] P4 Temp-token renewal and *Last used* (`scripts/oauth.js`, `scripts/gatekeeper.js`, `scripts/panel.js`, `public/panel-client.js`), `test/temp-token.test.js`, `docs/feat/security.md`, `public/guide/mcp-http/v1.md`.
 - [x] P5 AIObox strip (`AIOBOX_CONNECT`, `aioboxConnectStrip()`, `.aiobox-strip` in `public/panel.css`), screenshot checked in the dark theme.
 - [x] P6 README, `docs/feat/tools.md` § AIObox in the panel, CHANGELOG `[Unreleased]`, `docs/index.md`.
-- [ ] V1 After the next restart, mint a temp token in *Any HTTP chat*, call `/mcp` with it, and see the row show *Last used* with the address and user-agent; click **+30 min** and see *Expires in* grow by 30 minutes. Not run here: the row is drawn by the panel's script from `GET /api/temp-tokens`, which only a running panel answers, and the owner's running AkiMCP is never restarted from a session.
+- [x] V1 The temp-token row in a running panel. Checked 2026-10-31 on a scratch instance (`test/fixtures/start-scratch.js`, ports 19998/19999, headless Chrome), not the owner's running AkiMCP: fed a `GET /api/temp-tokens` reply in the shape `test/temp-token.test.js` asserts, the list showed `3 min ago` over `203.0.113.7 · python-httpx/0.27` for a used token and `not used yet` for a new one, each with **+30 min** and Revoke; **+30 min** on an id the server does not hold reached `POST /api/temp-token/extend` and showed `no live temporary token to extend: refresh the list`. The scratch instance has no public address, so it cannot mint; mint, use through `/mcp` and extend are covered through the public entries by `test/temp-token.test.js`.

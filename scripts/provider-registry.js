@@ -64,7 +64,7 @@ function applyAll() {
   }
 }
 
-// Registers every provider on the server under `prefix` (the default prefix is aki__: aki__run_cmd, aki__find_path, …; one naming across all clients) and keeps each tool's handle so setEnabled/redetect can reach it later.
+// Registers every provider under `prefix` and keeps each tool's handle so setEnabled/redetect can reach it later.
 // Every non-read-only tool takes `receipt` and refuses without the current rule receipt (scripts/rule-gate.js): one gate, so a new provider is covered without knowing it.
 export function mountProviders(server, prefix) {
   if (!detected) detectAll();

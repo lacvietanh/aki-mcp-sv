@@ -5,6 +5,7 @@ import { esc } from './html.js';
 import { aioboxInstalled, AIOBOX_PANEL, AIOBOX_CONNECT } from './aiobox-guide.js';
 import { IDENTITY, appliedKeys } from './mcp-name.js';
 import { renderIdentityField } from './identity-panel.js';
+import { TEMP_TTL_MS, TEMP_EXTEND_MS } from './oauth.js';
 
 const CLAUDE_DIR = path.join(os.homedir(), '.claude');
 const AKI_DIR = path.join(os.homedir(), '.aki');
@@ -153,7 +154,7 @@ function fromAnotherComputer({ origin, accessToken, label, id, snippetFor }) {
 // Shown under every snippet a person pastes by hand: Apply removes the retired key itself, a paste cannot.
 const otherAppliedKeys = () => appliedKeys().filter((key) => key !== IDENTITY.key).map((key) => `<span class="mono">${esc(key)}</span>`).join(', ');
 const aioboxConnectStrip = () => (aioboxInstalled()
-  ? `<aside class="aiobox-strip"><p class="aiobox-strip-line">${esc(AIOBOX_PANEL.installed)}</p></aside>`
+  ? `<aside class="aiobox-strip" aria-label="AIObox"><p class="aiobox-strip-line">${esc(AIOBOX_PANEL.installed)}</p></aside>`
   : `<aside class="aiobox-strip" aria-label="AIObox"><div class="aiobox-strip-body"><p class="aiobox-strip-eyebrow">${esc(AIOBOX_CONNECT.eyebrow)}</p><p class="aiobox-strip-head">${esc(AIOBOX_CONNECT.headline)}</p><p class="aiobox-strip-line">${esc(AIOBOX_CONNECT.line)}</p></div><a class="btnlink primary" href="${esc(AIOBOX_CONNECT.url)}" target="_blank" rel="noopener noreferrer">${esc(AIOBOX_PANEL.cta)} ↗</a></aside>`);
 
 const legacyNameHint = (hasApply = true) => (otherAppliedKeys() ? `<p class="helptext legacy-hint">Your config may still have entries named ${otherAppliedKeys()}; delete them.${hasApply ? ' Apply does this for you.' : ''}</p>` : '');
@@ -421,7 +422,7 @@ ${secretField('Access token', accessToken)}
 </div>
 
 <div class="tabpane" id="tab-httpchat">
-  <p class="helptext">For web chats with no custom MCP connector that can still send HTTPS requests (WorkBuddy, CodeBuddy, Postman Agent, a chat with a code sandbox). Mint a temporary token that lasts 4 hours and paste the kickoff block into the chat. The list below shows when and from what each token was last used; <strong>+30 min</strong> extends a live one. When the task is done, tell the AI to revoke its token, or click Revoke below. Your shared token and every connected AI are untouched. Restarting AkiMCP also revokes every temporary token.</p>
+  <p class="helptext">For web chats with no custom MCP connector that can still send HTTPS requests (WorkBuddy, CodeBuddy, Postman Agent, a chat with a code sandbox). Mint a temporary token that lasts ${TEMP_TTL_MS / 3600_000} hours and paste the kickoff block into the chat. The list below shows when and from what each token was last used; <strong>+${TEMP_EXTEND_MS / 60_000} min</strong> extends a live one. When the task is done, tell the AI to revoke its token, or click Revoke below. Your shared token and every connected AI are untouched. Restarting AkiMCP also revokes every temporary token.</p>
   <div class="acts"><button class="primary" data-act="mintTemp"${origin ? '' : ' disabled'}>Mint temp token &amp; copy kickoff</button><span class="msg" id="msgTemp"></span></div>
   ${origin ? '' : noOriginNotice('so the web chat can reach this computer')}
   <textarea id="tempKickoff" class="mono" rows="6" readonly hidden style="width:100%"></textarea>

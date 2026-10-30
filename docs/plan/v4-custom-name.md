@@ -194,6 +194,7 @@ Before P3 the whole `git grep` lists 58 lines (51 in 25 files under `scripts/`, 
 - V1: with a prefix other than `aki__`, one ClickUp Super Agent and one claude.ai chat, each given a prompt that still calls `aki__akidevrule_context`, from boot to the first receipt-gated write. Pass: both call `<prefix>akidevrule_context` and the write is not refused. Until it passes, C3 reads "designed, not verified".
 - V2: Postman with a non-default prefix, using the safe-flag probe `scripts/postman/debug/postman-probe-instruction-flag.js`. Pass: the flag rate does not rise against the default sentence (the wording of `prompts/postman.md` is what keeps Postman's safety check quiet, `postman-daemon.cjs:29`).
 - V3 (builder, local, no quota): the default-identity diff of P1, run again at release: `node --test --import ./test/setup.js test/identity-served.test.js` case 7.
+- [ ] R1 (after release): at the 4.0.0 release, replace `{release date + 40 days}` in its CHANGELOG entry with the date; on that date remove the old-line branch of `scripts/tool-calls-report.js` (a line without `bare` has `aki__` stripped) and its test row (P4).
 
 ## Panel walkthrough (the P6 spec)
 

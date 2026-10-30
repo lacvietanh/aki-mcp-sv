@@ -605,7 +605,7 @@ async function loadLog() {
   fillLog(settings);
 }
 
-// The name field is a draft: the server says what it means (POST /api/identity-preview, nothing written) and Save is the one commit. A Server ID or Tool prefix input follows the Display name until it is typed in.
+// Draft until Save: the preview route writes nothing. Server ID and Tool prefix follow the Display name until typed in.
 const idEl = (id) => document.getElementById(id);
 const ID_HAND_INPUTS = [['key', 'idKey'], ['prefix', 'idPrefix']];
 function identityDraft() {

@@ -39,7 +39,7 @@ const MAX_LOGGED_TEXT = 64;
 const cut = (text) => String(text ?? '').replace(/[\x00-\x1f\x7f]/g, ' ').slice(0, MAX_LOGGED_TEXT);
 const ACCESS_TTL_S = 365 * 24 * 3600;
 // A temp token serves one chat's job and dies on its own; one constant, no picker (docs/plan/done/web-chat-client.md).
-const TEMP_TTL_MS = 4 * 3600_000;
+export const TEMP_TTL_MS = 4 * 3600_000;
 export const TEMP_EXTEND_MS = 30 * 60_000;
 // no 0/o/1/l/i — avoid visual ambiguity when typing; 31 symbols, drawn with randomInt so none is favoured
 const PASSPHRASE_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
@@ -640,7 +640,7 @@ export function revokeTempToken(authHeader) {
 /** Panel view: the id is the stored hash, which cannot authorize anything. */
 export function listTempTokens() {
   const now = Date.now();
-  return [...tempTokens].filter(([, entry]) => !entry.revoked && entry.expires >= now).map(([id, entry]) => ({ id, ...entry }));
+  return [...tempTokens].filter(([, entry]) => !entry.revoked && entry.expires >= now).map(([id, { created, expires, lastAddress, lastAgent, lastSeen }]) => ({ id, created, expires, lastAddress, lastAgent, lastSeen }));
 }
 
 /** Only a live token is extended: an expired or revoked one stays dead. */
