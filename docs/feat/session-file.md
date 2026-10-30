@@ -1,6 +1,6 @@
 # Session file (ss)
 
-> updated 2026-10-25 · v3.1.0
+> updated 2026-10-31 · v3.3.1
 
 One Markdown file per chat that holds where its work stands, so a successor, another client or the same chat after a compaction resumes without the owner re-explaining. AkiMCP names the file and reports on it; only the chat writes it. Decided in `plan/ss-session-file.md` (v1 and v2).
 
@@ -12,6 +12,8 @@ One Markdown file per chat that holds where its work stands, so a successor, ano
 - Existing names are never renamed: their paths are cited.
 
 ## Mint and keep
+
+Tool names here use the default prefix `aki__`. A server with another Tool prefix serves the same tools under that prefix; panel section 1 shows yours.
 
 `aki__akidevrule_context` hands out the path and creates nothing (`scripts/session-file.js`). No `ss` input mints one; an `ss` input that is an ss path is kept, whether or not the file exists, so a re-call after a compaction or a rule change never starts a second file. The line follows the receipt line, outside the receipt hash, and the same values sit in `structuredContent.ss`:
 

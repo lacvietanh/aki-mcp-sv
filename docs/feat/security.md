@@ -1,6 +1,6 @@
 # Security
 
-> updated 2026-10-29 · v3.3.0
+> updated 2026-10-31 · v3.3.1
 
 The one place for akimcp's whole security picture: stance, every surface and its gate, the connection limits, who holds access and who uses it, what each secret on disk unlocks and how to revoke it, and what is logged. README carries a summary and points here. Design record for client activity and the security-only log: `docs/plan/done/client-activity-and-security-log.md`.
 
@@ -123,6 +123,8 @@ Panel section 7 shows two tables, each with a toolbar (text filter, a status fil
 ## Secrets on disk
 
 All under the data dir (`~/.aki/mcpsv/` by default), mode `0600`, never inside the repo, except the token copies the panel's Apply buttons write into Codex's and Cursor's own config files (the `~/.codex/config.toml` row below), also mode `0600`.
+
+Tool names here use the default prefix `aki__`. A server with another Tool prefix serves the same tools under that prefix; panel section 1 shows yours.
 
 | File | Holds | Leaked alone means | Revoke |
 |---|---|---|---|

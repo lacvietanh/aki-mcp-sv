@@ -1,10 +1,12 @@
 # Rule context delivery architecture
 
-> updated 2026-10-25 · v3.1.0
+> updated 2026-10-31 · v3.3.1
 
 ## Decision
 
 Adopt a **Rule Context Handshake** owned by the MCP server: compact static initialize instructions direct the client to call one indexed `aki__akidevrule_context` tool before substantive work, and that tool deterministically assembles the effective global and project context that Claude Code would load.
+
+Tool names here use the default prefix `aki__`. A server with another Tool prefix serves the same tools under that prefix; panel section 1 shows yours.
 
 The Postman control prompt becomes a temporary one-line compatibility trigger only; it must never ask the model to discover paths, traverse imports, search skills, or read bootstrap files individually.
 

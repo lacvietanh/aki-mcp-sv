@@ -1,10 +1,12 @@
 # Tools — the local capability suite (anchored)
 
-> updated 2026-10-25 · v3.1.0
+> updated 2026-10-31 · v3.3.1
 
 The product's single purpose: give a remote web AI (claude.ai / ChatGPT / Grok / Gemini / Postman) a set of **local capabilities** on the owner's machine — a pair of hands reaching from the browser into the local filesystem, shell, and local agents. Every tool below exists to serve that anchor. This doc records **why each one is here** so a later subtraction audit does not mistake an anchored capability for redundant code and propose removing it.
 
 ## The suite
+
+Tool names here use the default prefix `aki__`. A server with another Tool prefix serves the same tools under that prefix; panel section 1 shows yours. The table lists each tool by its own name, without the prefix.
 
 | Tool (MCP `name`) | Tools exposed | What it does | Who drives it |
 |---|---|---|---|

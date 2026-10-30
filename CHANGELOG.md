@@ -4,7 +4,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 
 ## [Unreleased]
 
+### Added
+- **Name the server without editing code** (`setting.json` `identity`, panel section 1): the Display name you type also sets the Server ID and Tool prefix (`MacMCP` gives `macmcp` and `mac__run_cmd`), and each can be set on its own. Keep the default and nothing changes: no reconnect, no new Always allow. A new name needs a restart and a reconnect in every client; set the default back before installing a 3.x version. Not yet checked against live clients (V1 and V2, `docs/plan/v4-custom-name.md` § P8).
+
 ### Changed
+- **A rename makes every client see new tools** (`scripts/mcp-name.js`, `scripts/tools-server.js`): after any change of the Server ID or Tool prefix, Reset to AkiMCP from another name included, web connectors list the tools again, Claude asks to Always allow each tool again, and Notion reads `tools_stale` once.
+- **Prompts that name `aki__` tools still work after a prefix change** (`scripts/rule-context-mcp.js`): the rule-context tool's description and the server instructions add one sentence that maps `aki__<tool>` to the new prefix. Not yet checked live (V1).
+- **Apply moves client entries to the new Server ID** (`scripts/panel.js`): Claude Code, Codex, Cursor and AGY keep the old entry until Apply runs; Apply removes an old entry only when it points at this machine's AkiMCP, and says which entries it kept.
+- **The panel warns when AIObox would miss the connector** (`scripts/identity-panel.js`): AIObox connects claude.ai by itself only when the Display name contains AkiMCP (capitals and spaces ignored). AIObox itself is not updated for other names yet, so its labs ClickUp launcher and its two-machine cleanup still expect `aki__` and `akimcp`.
+- **Log lines record the tool's own name** (`scripts/tool-call-log.js`, `scripts/tool-calls-report.js`): each line of `tool-calls.jsonl` gains `bare`, so the report counts a tool once across a rename. Lines written before 4.0.0 are read with `aki__` stripped until {release date + 40 days}.
+- **A stdio client can serve the new name before the restart**: the Claude app, AGY and Postman start their own copy, so one started between Save and restart gets the new name while URL clients still get the old one; the panel says so.
 - **A tag push now publishes the npm package before it creates the GitHub Release** (`.github/workflows/release.yml`, `docs/plan/npm-trusted-publishing.md`): three jobs, `verify` (tests, tag matches manifest and CHANGELOG, the packed tarball answers `initialize` with the tag version), `publish` (`npm publish` through npm Trusted Publishing, no token or OTP, the only job with `id-token: write`, no dependency installed) and `release`; actions are pinned by commit SHA. Not run yet: it needs the trusted publisher saved on npmjs.com, then the next tag proves it; until then publish by hand with `npm publish`.
 
 ## [3.3.1] - 2026-10-29

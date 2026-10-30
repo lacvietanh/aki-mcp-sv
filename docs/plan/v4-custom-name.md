@@ -1,6 +1,6 @@
 # AkiMCP 4.0.0: a configurable name, tool names that follow it
 
-Status: draft 2026-10-29, not started. Plan only: no code, no release. Starts at P0 when the owner names it. This file is the one home of the name model: nothing in it points at a file outside the repo; the research tables the builders need are copied in as Appendices A to D.
+Status: P1 to P7 built (2026-10-31). P0, the P8 live checks and the P9 release wait for the owner. This file is the one home of the name model: nothing in it points at a file outside the repo; the research tables the builders need are copied in as Appendices A to D.
 
 Conclusion: the owner types one value, the Display name. The Server ID and the Tool prefix follow from it by a written rule (REQ-4), and each can be set by hand instead (REQ-6). Keeping all three defaults changes nothing for anyone: every served byte equals 3.3.1, no reconnect, no new "Always allow".
 
@@ -186,7 +186,7 @@ Before P3 the whole `git grep` lists 58 lines (51 in 25 files under `scripts/`, 
 - The `## [Unreleased]` block of `CHANGELOG.md` carries S18 under `### Added` and the "What breaks" rows under `### Changed`.
 - Verify: `node test/lint/check-docs-note.js` exits 0, i.e. every file that names `aki__` also carries the default-prefix note (R2 or R3), apart from the listed exceptions; on failure it prints each file without the note. The lint lists the files with `git grep -l aki__` over `README.md docs public CLAUDE.md` minus the exceptions below, tests each for `default prefix .aki__|aki__. by default`, runs `git` through `execFileSync('git', ...)` with no shell, and lives beside `check-residue.js`.
 
-  Exceptions, never edited: `docs/plan/ss-session-file.md` (8 lines) and `docs/plan/per-client-tool-surface.md` (1 line), two active plans written at the default names ("No action: written at default names"), `CHANGELOG.md` released blocks, `docs/plan/done/`, `docs/research/` (history, docs.B2), `docs/plan/IMPORTANT-akimcp-aiobox-contract.md` (modified by another session; its twin lives in the AIObox repo; DEFERRED) and this plan. Every doc under docs.A4 stamps shows the new date and version.
+  Exceptions, never edited: `docs/plan/ss-session-file.md` (8 lines) and `docs/plan/per-client-tool-surface.md` (1 line), two active plans written at the default names ("No action: written at default names"), `CHANGELOG.md` released blocks, `docs/plan/done/`, `docs/research/` (history, docs.B2), `docs/plan/IMPORTANT-akimcp-aiobox-contract.md` (modified by another session; its twin lives in the AIObox repo; DEFERRED) and this plan. Every doc that carries a docs.A4 stamp gets `> updated 2026-10-31 · v3.3.1`: the last released version, never 4.0.0 or `[Unreleased]`.
 - Done when: `node test/lint/check-docs-note.js` exits 0 and `node test/lint/check-residue.js` still exits 0 printing nothing.
 
 ### P8 · Live checks (owner-run: they spend session quota)

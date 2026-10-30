@@ -1,8 +1,10 @@
 # Fact: how Antigravity CLI and IDE load MCP servers
 
-> updated 2026-10-25 · v3.1.0
+> updated 2026-10-31 · v3.3.1
 
 Claims about the outside world, macOS only — Windows/Linux layouts were not examined. Current state only; every change lands through a research event ([`research/agy-mcp-config-ide-cli.md`](../research/agy-mcp-config-ide-cli.md)). Headless-run flags of `agy` live in [`harness-fact.md`](harness-fact.md), not here.
+
+Tool names here use the default prefix `aki__`. A server with another Tool prefix serves the same tools under that prefix; panel section 1 shows yours.
 
 2026-10-25 re-check (`docs/plan/done/audit-tool-drift-oct25.md` F8, P0): `agy --version` now reports **1.4.7** (was 1.2.13 when CLI-1…CLI-5 were verified on 2026-09-29; the Antigravity IDE version was not re-read). The config-loading claims below were **not** re-run against 1.4.7 — they stay as last verified 2026-09-29 and keep that read date; the panel's Apply route still writes the paths they name and no breakage is reported. Two observations did change, recorded on their rows: the `akimcp/` cache holds 32 `aki__*.json` tool files plus `instructions.md` (not 40) and still **no `aki__agy_run.json`**. AkiMCP hides that tool only when its agy provider is switched off or `agy` is not on the server's PATH; both were checked and neither holds, so the cause is unknown, and F8 closed on the plan's absent branch with no code change (research `§ Amendments`).
 

@@ -1,10 +1,10 @@
 # aki-mcp-sv (`@akinet/akimcp`)
 
-Turn web AIs (Claude, ChatGPT, Grok, Notion, ClickUp, Buda), Postman and any web chat that can send HTTP requests into secure operators for your local machine. AKIMCP v3 exposes a governed suite of 38 tools for files, shell, search, Git, SQLite, browser automation, DevTools, background tasks, localhost services, clipboard, notifications, ports, Postman control, and AIObox windows through one OAuth-gated MCP endpoint. *(Gemini support remains experimental.)*
+Turn web AIs (Claude, ChatGPT, Grok, Notion, ClickUp, Buda), Postman and any web chat that can send HTTP requests into secure operators for your local machine. AkiMCP v3 exposes a governed suite of 38 tools for files, shell, search, Git, SQLite, browser automation, DevTools, background tasks, localhost services, clipboard, notifications, ports, Postman control, and AIObox windows through one OAuth-gated MCP endpoint. *(Gemini support remains experimental.)*
 
 One command opens a much larger operating surface: build and edit projects from the browser, inspect databases and local APIs, drive browser workflows, manage long-running jobs, debug through DevTools, and control Postman without giving every client unrestricted shell access.
 
-<img width="1672" height="941" alt="AKIMCP v2 control panel" src="public/img/akimcp-v2.jpg" />
+<img width="1672" height="941" alt="AkiMCP v2 control panel" src="public/img/akimcp-v2.jpg" />
 
 [![Version](https://img.shields.io/badge/version-3.3.1-blue.svg)](CHANGELOG.md) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![npm version](https://img.shields.io/npm/v/@akinet/akimcp.svg)](https://www.npmjs.com/package/@akinet/akimcp) [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](#install--run)
 
@@ -87,13 +87,15 @@ Beyond `$MCP_DATA_DIR`, the filesystem tools are also granted `~/.aki` (where ak
 
 1. Go to **claude.ai → Settings → Connectors → Add custom connector**
 2. Enter any **Name**, then paste the **Remote MCP server URL** printed by `npm start`
-3. Click **Connect** and enter the **Passphrase** when AKIMCP opens its confirmation page
+3. Click **Connect** and enter the **Passphrase** when AkiMCP opens its confirmation page
 
 Claude discovers OAuth automatically. No Client ID or Client Secret is needed.
 
-The connector belongs to your Claude account: claude.ai, the Claude app and the mobile app all reach it from Anthropic's cloud, so it needs a public ingress even on the computer running AKIMCP. On that computer, Claude Code and the Claude app can connect locally instead, with no ingress: see [Connecting local IDEs](#connecting-local-ides-cursor-claude-code-claude-app-agy-codex).
+The connector belongs to your Claude account: claude.ai, the Claude app and the mobile app all reach it from Anthropic's cloud, so it needs a public ingress even on the computer running AkiMCP. On that computer, Claude Code and the Claude app can connect locally instead, with no ingress: see [Connecting local IDEs](#connecting-local-ides-cursor-claude-code-claude-app-agy-codex).
 
 Why not token-in-URL: `docs/ref/claude-connector.md`, `docs/research/claude-ai-oauth-connector.md`.
+
+Tool names here use the default prefix `aki__`. A server with another Tool prefix serves the same tools under that prefix; panel section 1 shows yours.
 
 claude.ai connects and calls the in-house `aki__*` tool suite (38 tools). Tools of an app that is not installed (agy, Kiro CLI, Postman, Chrome, AIObox) are not served, and panel section 4 turns any optional provider on or off (agy and Kiro CLI start off); the client sees the change on its next tool list, usually a new chat. Every tool declares MCP annotations, so ChatGPT stops asking to confirm read-only tools:
 - **Chromium Remote & Profiles**: `aki__chrome_profiles`, `aki__chrome_launch`, `aki__chrome_tabs`, `aki__chrome_interact`, `aki__chrome_stop` (opens the shared profile clones AIObox keeps in `~/.aki/cdp/profiles/` on a stealth port-0 launch, or attaches when AIObox already runs the profile; stop kills only a Chrome it launched; React/Vue synthetic typing, scroll-to-center click)
@@ -136,7 +138,7 @@ Notion needs a public ingress and workspace permission to use **custom MCP serve
 
 1. Enable **custom MCP servers** in your Notion workspace settings.
 2. Open [Notion connections](https://www.notion.so/my-connections) and add an approved **Custom MCP server** with the **MCP URL** from the panel.
-3. Enter the **Passphrase** when AKIMCP opens its confirmation page.
+3. Enter the **Passphrase** when AkiMCP opens its confirmation page.
 4. Add the connection inside an **agent**, then **republish the agent** so the published agent can use it.
 
 Notion self-registers through OAuth, so there is no Client ID or Client secret to paste, and it refreshes on its own after Roll token. It uses the same tool suite and folder and shell allowlists as the other connectors. Protocol details and revocation: [docs/feat/security.md](docs/feat/security.md) § Remote auth.
@@ -185,7 +187,7 @@ A temporary token lasts 4 hours, lives only in memory (restarting AkiMCP revokes
 
 ## Connecting local IDEs (Cursor, Claude Code, Claude app, AGY, Codex)
 
-Local tools run on the same machine as AKIMCP, so they need no tunnel and no WAN round-trip: Cursor, Claude Code and Codex connect **straight to the loopback engine** at `http://127.0.0.1:9999/mcp`, and the Claude app and AGY start the tools themselves over stdio (`scripts/stdio.js`), with no token. The Gatekeeper binds `127.0.0.1:9999` from the moment you run `akimcp`, whether or not a public ingress is configured. Bearer-token auth is still enforced on loopback (see [Security](#security)); grab the token from the panel at `http://127.0.0.1:9998` (the Postman tab shows the filled JSON; one access token serves every client, and panel section 1 can roll it if it leaks), or copy a config below and replace `YOUR_LOCAL_ACCESS_TOKEN`. (Ports are defaults; `--dev` mode uses `9997`/`9996` — the panel always shows the live values.) Older AkiMCP versions used the name `aki-mcp`; the Apply buttons remove that entry, and with a hand-pasted config you delete it yourself if it is still there.
+Local tools run on the same machine as AkiMCP, so they need no tunnel and no WAN round-trip: Cursor, Claude Code and Codex connect **straight to the loopback engine** at `http://127.0.0.1:9999/mcp`, and the Claude app and AGY start the tools themselves over stdio (`scripts/stdio.js`), with no token. The Gatekeeper binds `127.0.0.1:9999` from the moment you run `akimcp`, whether or not a public ingress is configured. Bearer-token auth is still enforced on loopback (see [Security](#security)); grab the token from the panel at `http://127.0.0.1:9998` (the Postman tab shows the filled JSON; one access token serves every client, and panel section 1 can roll it if it leaks), or copy a config below and replace `YOUR_LOCAL_ACCESS_TOKEN`. (Ports are defaults; `--dev` mode uses `9997`/`9996` — the panel always shows the live values.) Older AkiMCP versions used the name `aki-mcp`; the Apply buttons remove that entry, and with a hand-pasted config you delete it yourself if it is still there.
 
 **Cursor** — click **Apply to Cursor** in the panel's Cursor tab to write `~/.cursor/mcp.json` with the current token (other servers untouched), or paste this by hand (Settings → MCP Servers). After Roll token, click Apply again:
 
@@ -449,7 +451,7 @@ Use `aki__find_path` to locate a file or directory — it scans the whole tree i
 
 ## Security
 
-**Convenience first, guardrail second.** AKIMCP is not a fortress and adds no permission layer to configure; its guardrail stops weak or overeager models from doing damage without per-call approval prompts. The whole picture (every surface and its gate, connection limits, what each secret unlocks and how to revoke it) is in [`docs/feat/security.md`](docs/feat/security.md).
+**Convenience first, guardrail second.** AkiMCP is not a fortress and adds no permission layer to configure; its guardrail stops weak or overeager models from doing damage without per-call approval prompts. The whole picture (every surface and its gate, connection limits, what each secret unlocks and how to revoke it) is in [`docs/feat/security.md`](docs/feat/security.md).
 
 - **Remote access** goes through minimal OAuth 2.1: an allowlisted redirect, a 50-bit passphrase at `/authorize`, PKCE S256. Every web AI that signs in with OAuth self-registers (DCR); the pre-issued Client ID/Secret serves any client that wants a static pair; a client with only a header field (Buda) sends the access token as a Bearer. Whoever knows the passphrase can get a token, so treat it like the token.
 - **One shared access token** (1 year) for every client, shown and rolled in panel section 1. *Roll & sign out all clients* is the answer to any leak.
