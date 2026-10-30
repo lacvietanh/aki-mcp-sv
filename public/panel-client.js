@@ -583,7 +583,75 @@ async function loadLog() {
   fillLog(settings);
 }
 
+// The name field is a draft: the server says what it means (POST /api/identity-preview, nothing written) and Save is the one commit. A Server ID or Tool prefix input follows the Display name until it is typed in.
+const idEl = (id) => document.getElementById(id);
+const ID_HAND_INPUTS = [['key', 'idKey'], ['prefix', 'idPrefix']];
+function identityDraft() {
+  const draft = { name: idEl('idName').value };
+  for (const [field, id] of ID_HAND_INPUTS) if (idEl(id).dataset.hand === '1') draft[field] = idEl(id).value;
+  return draft;
+}
+let identityTicket = 0;
+let identityCanSave = !idEl('idSave').disabled;
+function showIdentity(reply) {
+  identityCanSave = reply.canSave;
+  idEl('idSave').disabled = !reply.canSave;
+  idEl('idReset').hidden = !reply.showReset;
+  idEl('idStatus').textContent = reply.status;
+  idEl('idNameErr').innerHTML = reply.html.name;
+  idEl('idRows').innerHTML = reply.html.rows;
+  idEl('idNotes').innerHTML = reply.html.notes;
+  for (const [field, id] of ID_HAND_INPUTS) if (idEl(id).dataset.hand !== '1') idEl(id).value = reply.shown[field] ?? '';
+}
+async function previewIdentity() {
+  const ticket = ++identityTicket;
+  try {
+    const reply = await api('POST', '/api/identity-preview', identityDraft());
+    if (ticket === identityTicket) showIdentity(reply);
+  } catch (e) {
+    say('msgIdentity', e.message, false);
+  }
+}
+function setHand(id, on) {
+  idEl(id).dataset.hand = on ? '1' : '0';
+}
+idEl('idName').oninput = previewIdentity;
+for (const [, id] of ID_HAND_INPUTS) idEl(id).oninput = () => { setHand(id, true); previewIdentity(); };
+const IDENTITY_CLICKS = {
+  useDerived: (btn) => setHand(btn.dataset.field === 'key' ? 'idKey' : 'idPrefix', false),
+  keep: (btn) => {
+    idEl('idKey').value = btn.dataset.key; idEl('idPrefix').value = btn.dataset.prefix;
+    setHand('idKey', true); setHand('idPrefix', true);
+  },
+};
+for (const id of ['idRows', 'idNotes']) {
+  idEl(id).addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-idact]');
+    if (!btn) return;
+    IDENTITY_CLICKS[btn.dataset.idact](btn);
+    previewIdentity();
+  });
+}
+
 const ACTIONS = {
+  saveIdentity: async (btn) => {
+    await act(btn, 'msgIdentity', async () => {
+      const reply = await api('POST', '/api/identity', identityDraft());
+      showIdentity(reply);
+      return reply.message;
+    });
+    btn.disabled = !identityCanSave;
+  },
+  resetIdentityFields: () => {
+    idEl('idName').value = 'AkiMCP';
+    setHand('idKey', false); setHand('idPrefix', false);
+    previewIdentity();
+  },
+  resetIdentityNow: (btn) => act(btn, 'msgIdentityReset', async () => {
+    const { message } = await api('POST', '/api/identity-reset');
+    setTimeout(() => location.reload(), 800);
+    return message + ' (reloading)';
+  }),
   redetectProviders: (btn) => act(btn, 'msgProviders', async () => {
     renderProviders(await api('POST', '/api/providers', { redetect: true }));
     return 'detected again';

@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { renderPanel, localMcpUrl, httpBearerEntry, claudeCodeLines, CODEX_TABLE, codexBlock, tempTokenKickoff } from './config-page.js';
 import { IDENTITY, IDENTITY_PROBLEM, quoteValue, appliedKeys } from './mcp-name.js';
+import { previewReply, saveIdentity, resetIdentity } from './identity-panel.js';
 import { getOrIssueAccessToken, rotateAccessToken, mintTempToken, listTempTokens, revokeTempTokenById, rotatePassphrase, loadOrCreatePassphrase, listClients, removeClient } from './oauth.js';
 import { logSecurity, readSecurityLog } from './security-log.js';
 import { LOG_DEFAULTS, loadLogSettings, normalizeLogSettings } from './tool-call-log.js';
@@ -440,6 +441,10 @@ export const ROUTES = {
   'POST /api/claude-code-apply': async () => applyClaudeCode(),
   'POST /api/codex-apply': async () => applyCodex(),
   'POST /api/cursor-apply': async () => applyCursor(),
+  // Read-only: what resolveIdentity makes of the draft being typed (docs/plan/v4-custom-name.md § P6).
+  'POST /api/identity-preview': async (body) => previewReply(body),
+  'POST /api/identity': async (body) => saveIdentity(body),
+  'POST /api/identity-reset': async () => resetIdentity(),
   // No hub restart: setFolders writes setting.json, and roots.js reads it fresh per call — a save takes effect on the next shell/find_path/search_content call, same as the allowlist.
   'POST /api/paths': async (body) => {
     setFolders(validatePaths(body.paths));

@@ -32,6 +32,17 @@ const stem = (x) => {
   return x.endsWith('mcp') && x.length > 'mcp'.length ? x.slice(0, -'mcp'.length) : x;
 };
 
+const candidateOf = (name, handKey, handPrefix) => {
+  const derivedKey = slug(name);
+  return { derivedKey, key: handKey ?? derivedKey, prefix: handPrefix ?? (derivedKey === '' ? null : `${stem(derivedKey)}__`) };
+};
+
+// What a draft would make before any rule refuses it, so the panel can show the values beside the reason.
+export const candidateIdentity = ({ name, key, prefix }) => candidateOf(name.normalize('NFC'), key, prefix);
+
+// AIObox finds its connector by this test (plan D12), never slug(): slug would drop the hyphen of Aki-MCP.
+export const aioboxFindsName = (name) => name.normalize('NFC').toLowerCase().replace(/\s/g, '').includes(DEFAULT_KEY);
+
 const refuse = (field, value, reason) => ({
   identity: { name: DEFAULT_NAME, key: DEFAULT_KEY, prefix: DEFAULT_PREFIX },
   problem: { field, value, reason },
@@ -50,14 +61,54 @@ export function resolveIdentity(stored) {
   if (notText) return refuse(notText[0], notText[1], 'must be text');
   const name = (rawName ?? DEFAULT_NAME).normalize('NFC');
   if (!NAME_RULE.test(name)) return refuse('Display name', rawName, 'use letters, digits, spaces and . _ - only, starting with a letter or digit, 1 to 40 characters, nothing invisible');
-  const derivedKey = slug(name);
-  const key = handKey ?? derivedKey;
+  const { derivedKey, key, prefix } = candidateOf(name, handKey, handPrefix);
   if (!KEY_RULE.test(key)) return refuse('Server ID', key, derivedKey === '' && handKey == null ? 'no letter a to z or digit can be made from the Display name, set it by hand' : 'use lowercase letters a to z and digits, starting with a letter');
-  const prefix = handPrefix ?? (derivedKey === '' ? null : `${stem(derivedKey)}__`);
   if (prefix === null) return refuse('Tool prefix', '', 'no prefix can be made from the Display name, set it by hand');
   if (prefix !== '' && !PREFIX_RULE.test(prefix)) return refuse('Tool prefix', prefix, 'leave it empty, or use lowercase letters and digits ending in two underscores');
   if (key.length + prefix.length > NAME_BUDGET) return refuse('Server ID and Tool prefix', `${key}${prefix}`, `together they are ${key.length + prefix.length} characters, ${NAME_BUDGET} at most`);
   return { identity: { name, key, prefix }, problem: null };
+}
+
+const NAME_ALLOWED = /^[\p{L}\p{M}\p{Nd} ._-]$/u;
+const INVISIBLE = /\p{Default_Ignorable_Code_Point}/u;
+const CHAR_NAMES = { '\n': 'line break', '\r': 'line break', '\t': 'tab', '\u00a0': 'no-break space', '\u200b': 'zero-width space', '\u200c': 'zero-width non-joiner', '\u200d': 'zero-width joiner', '\u202e': 'right-to-left override', '\ufeff': 'zero-width no-break space' };
+const codePoint = (c) => `U+${c.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}`;
+const describeChar = (c) => {
+  if (/[\n\r\t]/.test(c)) return CHAR_NAMES[c];
+  if (CHAR_NAMES[c]) return `${CHAR_NAMES[c]} (${codePoint(c)})`;
+  return INVISIBLE.test(c) || /\p{Cc}/u.test(c) ? `invisible character (${codePoint(c)})` : `"${c}"`;
+};
+const describeChars = (chars) => [...new Set(chars)].map(describeChar).join(', ');
+
+function nameProblemText(raw) {
+  const name = raw.normalize('NFC');
+  if (name === '') return 'Display name is empty. Type a name, for example AkiMCP.';
+  const bad = [...name].filter((c) => !NAME_ALLOWED.test(c) || INVISIBLE.test(c));
+  if (bad.length) return `Display name can use only letters, digits, spaces and . _ -. Remove ${describeChars(bad)}.`;
+  if (!/^[\p{L}\p{Nd}]/u.test(name)) return `Display name must start with a letter or digit. Remove "${[...name][0]}" at the start.`;
+  return `Display name is ${[...name].length} characters, 40 at most. Shorten it.`;
+}
+
+function keyProblemText(value, derivedKey) {
+  if (value === '') return `Server ID is empty. Type one, for example ${derivedKey || 'work'}.`;
+  const lowered = value.toLowerCase();
+  if (value !== lowered && KEY_RULE.test(lowered)) return `Server ID must be lowercase. Use ${lowered}.`;
+  if (!/^[a-z]/.test(lowered)) return `Server ID must start with a letter. Remove "${[...value][0] ?? ''}" at the start.`;
+  return `Server ID can use only letters a to z and digits. Remove ${describeChars([...lowered].filter((c) => !/[a-z0-9]/.test(c)))}.`;
+}
+
+// A refused draft in the panel's words, with the field it belongs under: `slot` is name, key or prefix.
+export function describeProblem({ field, value }, draft) {
+  const name = draft.name.normalize('NFC');
+  if (field === 'Display name') return { slot: 'name', text: nameProblemText(draft.name) };
+  if (field === 'Server ID and Tool prefix') return { slot: 'name', text: `Server ID and Tool prefix together are ${value.length} characters, ${NAME_BUDGET} at most. Shorten the Display name, or set Tool prefix by hand in Customize fields.` };
+  const { derivedKey } = candidateOf(name, draft.key, draft.prefix);
+  if (field === 'Server ID') {
+    return { slot: 'key', text: derivedKey === '' && draft.key == null ? `No Server ID can be made from "${name}": a Server ID uses only a to z and 0 to 9, and this name has no letter a to z. Set Server ID in Customize fields.` : keyProblemText(value, derivedKey) };
+  }
+  if (draft.prefix == null) return { slot: 'prefix', text: `No Tool prefix can be made from "${name}". Set Tool prefix in Customize fields.` };
+  const typed = value.toLowerCase().replace(/[^a-z0-9]/g, '').replace(/^\d+/, '');
+  return { slot: 'prefix', text: `Tool prefix must be empty or end with two underscores, for example ${typed || stem(derivedKey) || 'work'}__.` };
 }
 
 export function problemLine({ field, value, reason }, settingPath) {

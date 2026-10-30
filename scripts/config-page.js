@@ -4,6 +4,7 @@ import path from 'node:path';
 import { esc } from './html.js';
 import { aioboxInstalled, AIOBOX_PANEL } from './aiobox-guide.js';
 import { IDENTITY, appliedKeys } from './mcp-name.js';
+import { renderIdentityField } from './identity-panel.js';
 
 const CLAUDE_DIR = path.join(os.homedir(), '.claude');
 const AKI_DIR = path.join(os.homedir(), '.aki');
@@ -25,7 +26,7 @@ const TAILSCALE_DOWNLOAD_URL = 'https://tailscale.com/download';
 const TAILSCALE_FUNNEL_URL = 'https://tailscale.com/docs/features/tailscale-funnel';
 // Static on purpose: tool details live in tool descriptions and aki__akidevrule_context; only the two musts stay here, as a client-side instruction is the one place that can insist.
 const WEB_PROMPT = [
-  `Always use the ${IDENTITY.key} tools (${IDENTITY.prefix}*) for local files, shell and browser.`,
+  `Always use the ${IDENTITY.key} tools${IDENTITY.prefix ? ` (${IDENTITY.prefix}*)` : ''} for local files, shell and browser.`,
   'You MUST follow /akirule in every chat, in full, from your first action on. Never skip it, even for a small task.',
 ].join('\n');
 
@@ -144,7 +145,7 @@ const noOriginNotice = (reason) => `<p class="helptext">Set up a public address 
 // The same snippet pointed at the public address, for a second computer: Apply would write to this computer's own files, so it is copy-only.
 function fromAnotherComputer({ origin, accessToken, label, id, snippetFor }) {
   const remote = origin ? `${secretSnippet(label, snippetFor(`${origin}/mcp`, accessToken), [accessToken], id)}
-  <p class="helptext">The <span class="mono">${IDENTITY.prefix}</span> tools run on the machine running AkiMCP, not on the computer you paste this on. The token is stored in plain text on that computer. After <strong>Roll token</strong> it stops working there until the new snippet is pasted.</p>` : noOriginNotice('so another computer can reach this one');
+  <p class="helptext">The <span class="mono">${IDENTITY.prefix || IDENTITY.key}</span> tools run on the machine running AkiMCP, not on the computer you paste this on. The token is stored in plain text on that computer. After <strong>Roll token</strong> it stops working there until the new snippet is pasted.</p>` : noOriginNotice('so another computer can reach this one');
   return `<details class="adv"><summary>From another computer (via the section 0 address)</summary>
   ${remote}
   </details>`;
@@ -218,14 +219,14 @@ export function renderPanel({ origin, ingress = 'funnel', client, passphrase, to
     <div class="panel-brand-row">
       <div>
         <div class="panel-eyebrow">Local AI control plane</div>
-        <h1>AKIMCP${isDev ? ' <span class="dev-tag">dev</span>' : ''}</h1>
+        <h1>AkiMCP${isDev ? ' <span class="dev-tag">dev</span>' : ''}</h1>
       </div>
-      <span class="version-badge" aria-label="AKIMCP version ${esc(String(mcpVer))}">v${esc(String(mcpVer))}</span>
+      <span class="version-badge" aria-label="AkiMCP version ${esc(String(mcpVer))}">v${esc(String(mcpVer))}</span>
     </div>
     <p class="sub">Secure access to local files and shell for web AIs and local tools, through one OAuth-gated endpoint.</p>
     <p class="panel-meta"><span>Local panel</span><span>127.0.0.1</span><span>${esc(ingressLabel)}</span><span>PID ${pid}</span><span>Started ${esc(startedLabel)}</span></p>
   </div>
-  <a class="gh-top" href="${MCP_REPO_URL}" target="_blank" rel="noopener" aria-label="View AKIMCP on GitHub" title="View on GitHub"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="${SVG.github}"/></svg></a>
+  <a class="gh-top" href="${MCP_REPO_URL}" target="_blank" rel="noopener" aria-label="View AkiMCP on GitHub" title="View on GitHub"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d="${SVG.github}"/></svg></a>
 </header>
 <p class="helptext panel-paths">Running repo: <span class="mono">${esc(repoRoot)}</span> · Config &amp; keys: <span class="mono">${esc(userDir)}</span></p>
 ${updateBanner}
@@ -242,7 +243,7 @@ ${updateBanner}
 <section id="s0" class="collapsible-card${origin ? ' is-complete' : ''}"><details class="collapsible"${origin ? '' : ' open'}>
 <summary><span class="collapse-heading">0 · Remote ingress (Web &amp; Mobile AI) — optional</span>${origin ? '<span class="done-tag">ingress active</span>' : '<span class="done-tag" style="color:var(--muted);border-color:var(--line)">optional · local is live</span>'}<span class="collapse-icon" aria-hidden="true"></span></summary>
 <div class="collapse-body">
-<p class="helptext">${origin ? `AKIMCP is live at ${copyEl(origin)} through <strong>${esc(ingressLabel)}</strong>. Expand this card only when you need to change ingress.` : `Local clients already work with no setup: the engine is live on <span class="mono">127.0.0.1</span>. Configure ingress here <em>only</em> so web AIs, in a browser or on a phone, can reach this computer over the internet. Restart after switching ingress.`}</p>
+<p class="helptext">${origin ? `AkiMCP is live at ${copyEl(origin)} through <strong>${esc(ingressLabel)}</strong>. Expand this card only when you need to change ingress.` : `Local clients already work with no setup: the engine is live on <span class="mono">127.0.0.1</span>. Configure ingress here <em>only</em> so web AIs, in a browser or on a phone, can reach this computer over the internet. Restart after switching ingress.`}</p>
 ${ingress === 'cloudflared' ? '' : `<p class="helptext"><strong>Cloudflare Tunnel is the recommended ingress</strong> (the "Owned public origin" tab): it holds a steadier connection, carries more bandwidth and answers from a far larger global network than Tailscale Funnel. Funnel needs no domain and <span class="mono">npm start</span> sets it up by itself, so it is what runs until you choose otherwise.</p>`}
 
 <nav class="tabs" role="tablist">
@@ -299,8 +300,8 @@ ${field('Re-sync command', 'tailscale funnel --https=443 off && tailscale serve 
 </section>
 
 <section id="s1"><h2>1 · Connectors: local IDEs + web AIs</h2>
-<p class="helptext">One AKIMCP endpoint, two paths: pick one with the switch below. Each <strong>Local</strong> tab says how that tool connects and carries a ready-to-paste config. <strong>Web AIs</strong> use the MCP URL below and ${origin ? 'are reachable now.' : 'need a public ingress — set it up in <a href="#s0">Section 0</a> first (the MCP URL fills in once ingress is active).'}</p>
-${field('MCP Name', IDENTITY.name)}
+<p class="helptext">One AkiMCP endpoint, two paths: pick one with the switch below. Each <strong>Local</strong> tab says how that tool connects and carries a ready-to-paste config. <strong>Web AIs</strong> use the MCP URL below and ${origin ? 'are reachable now.' : 'need a public ingress — set it up in <a href="#s0">Section 0</a> first (the MCP URL fills in once ingress is active).'}</p>
+${renderIdentityField()}
 ${field('MCP URL', url, true)}
 ${secretField('Passphrase', passphrase)}
 ${secretField('Access token', accessToken)}
@@ -334,18 +335,18 @@ ${secretField('Access token', accessToken)}
 <div class="tabpane" id="tab-claude">
   <p class="lnk"><a href="${CONNECTOR_URL}" target="_blank" rel="noopener">↗ Open Add custom connector</a></p>
   <ol class="steps">
-    <li>Enter <strong>Name</strong> = MCP Name above.</li>
+    <li>Enter <strong>Name</strong> = Display name above.</li>
     <li>Enter <strong>URL</strong> = MCP URL above, then connect.</li>
-    <li>Enter the <strong>Passphrase</strong> when AKIMCP opens the confirmation page.</li>
+    <li>Enter the <strong>Passphrase</strong> when AkiMCP opens the confirmation page.</li>
   </ol>
   <p class="helptext">Claude now discovers OAuth automatically. No Client ID or Client Secret is needed.</p>
-  <p class="helptext">A connector added here belongs to your Claude account: claude.ai, the Claude app and the mobile app all reach it from Anthropic's cloud, so it needs the ingress even on this computer. On the computer running AKIMCP, the <strong>Claude Code &amp; app</strong> tab under <strong>Local</strong> connects without one.</p>
+  <p class="helptext">A connector added here belongs to your Claude account: claude.ai, the Claude app and the mobile app all reach it from Anthropic's cloud, so it needs the ingress even on this computer. On the computer running AkiMCP, the <strong>Claude Code &amp; app</strong> tab under <strong>Local</strong> connects without one.</p>
 </div>
 
 <div class="tabpane" id="tab-grok">
   <ol class="steps">
     <li><a href="${esc(GROK_CONNECTOR_URL)}" target="_blank" rel="noopener">Open Connectors</a> → New Connector → Custom.</li>
-    <li>Set <strong>Name</strong> = MCP Name above, <strong>Server URL</strong> = MCP URL.</li>
+    <li>Set <strong>Name</strong> = Display name above, <strong>Server URL</strong> = MCP URL.</li>
     <li>On connect, enter the <strong>Passphrase</strong>.</li>
   </ol>
   <p class="helptext">Name must match exactly, the paste-in instruction keys off it. Grok self-registers via PKCE, nothing else to paste.</p>
@@ -371,7 +372,7 @@ ${secretField('Access token', accessToken)}
     <li>Open <a href="${esc(GEMINI_CONNECTOR_URL)}" target="_blank" rel="noopener">custom connected apps</a> (Gemini → paid subscriptions → Custom apps) and add a custom connected app.</li>
     <li>Paste the <strong>MCP Server URL</strong> = MCP URL above.</li>
     <li>Click <strong>Next</strong>. Gemini links the account by itself.</li>
-    <li>Enter the <strong>Passphrase</strong> when AKIMCP opens the authorization page.</li>
+    <li>Enter the <strong>Passphrase</strong> when AkiMCP opens the authorization page.</li>
     <li>Click <strong>Approve</strong>.</li>
   </ol>
   <p class="helptext">Gemini registers itself, nothing to paste. The static Client ID / Secret that <span class="mono">akimcp</span> prints at start is an optional fallback for clients that want a fixed pair.</p>
@@ -382,7 +383,7 @@ ${secretField('Access token', accessToken)}
   <ol class="steps">
     <li>Enable <strong>custom MCP servers</strong> in the Notion workspace settings (a workspace admin may have to).</li>
     <li>Add a <strong>Custom MCP server</strong> with the <strong>MCP URL</strong> above.</li>
-    <li>Enter the <strong>Passphrase</strong> when AKIMCP opens the confirmation page.</li>
+    <li>Enter the <strong>Passphrase</strong> when AkiMCP opens the confirmation page.</li>
     <li>Add the connection inside the <strong>agent</strong>, then <strong>republish the agent</strong>.</li>
   </ol>
   <p class="helptext">Notion self-registers, nothing to paste. Connected this way it refreshes on its own after Roll token.</p>
@@ -391,7 +392,7 @@ ${secretField('Access token', accessToken)}
 <div class="tabpane" id="tab-buda">
   <ol class="steps">
     <li>In Buda, open <strong>Agent Settings</strong> → your Agent → <strong>Integrations</strong>, then click <strong>Add MCP server</strong>.</li>
-    <li>Set <strong>Name</strong> = MCP Name above.</li>
+    <li>Set <strong>Name</strong> = Display name above.</li>
     <li>Set <strong>Connection type</strong> = <strong>Remote HTTP</strong>.</li>
     <li>Set <strong>HTTPS endpoint</strong> = ${copyEl(url)}</li>
     <li>Under <strong>Authentication headers</strong>, click <strong>+ Add header</strong>, then set the header name = ${copyEl('Authorization')}</li>
@@ -407,15 +408,15 @@ ${secretField('Access token', accessToken)}
 <div class="tabpane" id="tab-clickup">
   <ol class="steps">
     <li>In ClickUp, open <strong>Settings</strong> → <strong>App Center</strong> → <strong>MCP Servers</strong> → <strong>Connect an MCP Server</strong>.</li>
-    <li>Set <strong>Name</strong> = MCP Name above, <strong>URL</strong> = MCP URL.</li>
+    <li>Set <strong>Name</strong> = Display name above, <strong>URL</strong> = MCP URL.</li>
     <li>Set <strong>Authentication Method</strong> = <strong>OAuth</strong>. Leave <strong>Advanced configuration</strong> closed, then click <strong>Next</strong>.</li>
     <li>In the tab ClickUp opens, enter the <strong>Passphrase</strong> and approve. ClickUp continues on its own.</li>
   </ol>
-  <p class="helptext">ClickUp registers itself, so there is no Client ID, Secret or token to paste. After <strong>Roll token</strong>, reconnect it once in ClickUp if it stops answering. ClickUp Brain then uses AKIMCP's tools when a request needs them, without a mention.</p>
+  <p class="helptext">ClickUp registers itself, so there is no Client ID, Secret or token to paste. After <strong>Roll token</strong>, reconnect it once in ClickUp if it stops answering. ClickUp Brain then uses AkiMCP's tools when a request needs them, without a mention.</p>
 </div>
 
 <div class="tabpane" id="tab-httpchat">
-  <p class="helptext">For web chats with no custom MCP connector that can still send HTTPS requests (WorkBuddy, CodeBuddy, Postman Agent, a chat with a code sandbox). Mint a temporary token that lasts 4 hours and paste the kickoff block into the chat. When the task is done, tell the AI to revoke its token, or click Revoke below. Your shared token and every connected AI are untouched. Restarting AKIMCP also revokes every temporary token.</p>
+  <p class="helptext">For web chats with no custom MCP connector that can still send HTTPS requests (WorkBuddy, CodeBuddy, Postman Agent, a chat with a code sandbox). Mint a temporary token that lasts 4 hours and paste the kickoff block into the chat. When the task is done, tell the AI to revoke its token, or click Revoke below. Your shared token and every connected AI are untouched. Restarting AkiMCP also revokes every temporary token.</p>
   <div class="acts"><button class="primary" data-act="mintTemp"${origin ? '' : ' disabled'}>Mint temp token &amp; copy kickoff</button><span class="msg" id="msgTemp"></span></div>
   ${origin ? '' : noOriginNotice('so the web chat can reach this computer')}
   <textarea id="tempKickoff" class="mono" rows="6" readonly hidden style="width:100%"></textarea>
@@ -453,7 +454,7 @@ ${secretField('Access token', accessToken)}
 </div>
 
 <div class="tabpane" id="tab-claudelocal">
-  <p class="helptext">Claude Code and the Claude app are set up separately: connecting one does not connect the other. Both run on the computer running AKIMCP, with no ingress: Claude Code connects over <span class="mono">127.0.0.1</span>, and the Claude app starts the tools itself over <span class="mono">stdio</span>. For claude.ai, the mobile app or the Claude app on another computer, use the <strong>Claude</strong> tab under <strong>Web</strong>; for the <span class="mono">claude</span> command on another computer, use <em>From another computer</em> below.</p>
+  <p class="helptext">Claude Code and the Claude app are set up separately: connecting one does not connect the other. Both run on the computer running AkiMCP, with no ingress: Claude Code connects over <span class="mono">127.0.0.1</span>, and the Claude app starts the tools itself over <span class="mono">stdio</span>. For claude.ai, the mobile app or the Claude app on another computer, use the <strong>Claude</strong> tab under <strong>Web</strong>; for the <span class="mono">claude</span> command on another computer, use <em>From another computer</em> below.</p>
   <h3 class="subh">Claude Code (terminal) — local</h3>
   <p class="helptext"><strong>Apply</strong> registers ${IDENTITY.key} in <span class="mono">user</span> scope with the current token, replacing any old entry so it works from every project. It also removes the entry an older setup left under its old name, including inside a single project, which would otherwise keep the old token there. After <strong>Roll token</strong>, click Apply again. Or run the two lines below by hand (the <span class="mono">remove</span> first lets a re-paste replace the old token — a bare <span class="mono">add</span> refuses when the entry already exists); </p>
   ${otherAppliedKeys() ? `<p class="helptext legacy-hint">If one project still gets 401 from an entry an older setup left there, run <span class="mono">claude mcp remove &lt;name&gt; -s local</span> inside that project, for each of ${otherAppliedKeys()}.</p>` : ''}
@@ -469,7 +470,7 @@ ${secretField('Access token', accessToken)}
   </ol>
   ${copyEl(claudeAppJson, true, 'claudeAppJson')}
   ${legacyNameHint()}
-  <p class="helptext">The app starts AKIMCP's tools itself over stdio (<span class="mono">scripts/stdio.js</span>) with no token, so <strong>Roll token</strong> changes nothing here. If the app reports the server failed to start, replace <span class="mono">node</span> with the full path printed by <span class="mono">which node</span> (Windows: <span class="mono">where node</span>).</p>
+  <p class="helptext">The app starts AkiMCP's tools itself over stdio (<span class="mono">scripts/stdio.js</span>) with no token, so <strong>Roll token</strong> changes nothing here. If the app reports the server failed to start, replace <span class="mono">node</span> with the full path printed by <span class="mono">which node</span> (Windows: <span class="mono">where node</span>).</p>
 </div>
 
 <div class="tabpane" id="tab-agy">
