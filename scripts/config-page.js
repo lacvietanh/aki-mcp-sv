@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { esc } from './html.js';
 import { aioboxInstalled, AIOBOX_PANEL } from './aiobox-guide.js';
-import { IDENTITY, MCP_NAME, MCP_SERVER_KEY, LEGACY_MCP_SERVER_KEY } from './mcp-name.js';
+import { IDENTITY, appliedKeys } from './mcp-name.js';
 
 const CLAUDE_DIR = path.join(os.homedir(), '.claude');
 const AKI_DIR = path.join(os.homedir(), '.aki');
@@ -139,7 +139,7 @@ function secretSnippet(label, value, secrets, id) {
 export const localMcpUrl = () => `http://127.0.0.1:${process.env.GATEKEEPER_PORT || 9999}/mcp`;
 export const httpBearerEntry = (url, token) => ({ url, headers: { Authorization: `Bearer ${token}` } });
 // Remove-then-add: `claude mcp add` refuses an existing entry and keeps its old token (docs/plan/done/audit-tool-drift-oct25.md F9); `-s user` reaches every project.
-export const claudeCodeLines = (url, token) => `claude mcp remove ${MCP_SERVER_KEY} -s user\nclaude mcp add --transport http -s user ${MCP_SERVER_KEY} ${url} --header "Authorization: Bearer ${token}"`;
+export const claudeCodeLines = (url, token) => `claude mcp remove ${IDENTITY.key} -s user\nclaude mcp add --transport http -s user ${IDENTITY.key} ${url} --header "Authorization: Bearer ${token}"`;
 const noOriginNotice = (reason) => `<p class="helptext">Set up a public address in <a href="#s0">section 0</a> first, ${reason}.</p>`;
 // The same snippet pointed at the public address, for a second computer: Apply would write to this computer's own files, so it is copy-only.
 function fromAnotherComputer({ origin, accessToken, label, id, snippetFor }) {
@@ -150,7 +150,8 @@ function fromAnotherComputer({ origin, accessToken, label, id, snippetFor }) {
   </details>`;
 }
 // Shown under every snippet a person pastes by hand: Apply removes the retired key itself, a paste cannot.
-const legacyNameHint = () => `<p class="helptext legacy-hint">Older AkiMCP versions used the name <span class="mono">${LEGACY_MCP_SERVER_KEY}</span> (Postman: <span class="mono">${LEGACY_MCP_SERVER_KEY}-sv</span>); delete that entry if your config still has it.</p>`;
+const otherAppliedKeys = () => appliedKeys().filter((key) => key !== IDENTITY.key).map((key) => `<span class="mono">${esc(key)}</span>`).join(', ');
+const legacyNameHint = () => (otherAppliedKeys() ? `<p class="helptext legacy-hint">Your config may still have entries named ${otherAppliedKeys()}; delete them. Apply does this for you.</p>` : '');
 // The guide's public address lives here once; the four labels are the ones its section 0 reads (docs/plan/done/web-chat-client.md).
 export const GUIDE_URL = 'https://akimcp.top/guide/mcp-http/v1.md';
 export const tempTokenKickoff = ({ mcpUrl, token, expires }) => [
@@ -161,8 +162,8 @@ export const tempTokenKickoff = ({ mcpUrl, token, expires }) => [
   `EXPIRES: ${new Date(expires).toISOString()}`,
 ].join('\n');
 // The Postman and Cursor config files take the same HTTP+Bearer entry.
-export const httpBearerJson = (url, token) => JSON.stringify({ mcpServers: { [MCP_SERVER_KEY]: httpBearerEntry(url, token) } });
-export const CODEX_TABLE = `[mcp_servers.${MCP_SERVER_KEY}]`;
+export const httpBearerJson = (url, token) => JSON.stringify({ mcpServers: { [IDENTITY.key]: httpBearerEntry(url, token) } });
+export const CODEX_TABLE = `[mcp_servers.${IDENTITY.key}]`;
 // Codex CLI (~/.codex/config.toml): `http_headers` carries a static bearer so the snippet is copy-paste-ready with no env var to export.
 export const codexBlock = (url, token) => `${CODEX_TABLE}\nurl = "${url}"\nhttp_headers = { "Authorization" = "Bearer ${token}" }`;
 
@@ -172,10 +173,10 @@ export function renderPanel({ origin, ingress = 'funnel', client, passphrase, to
   const localBearerJson = httpBearerJson(localUrl, accessToken);
   // stdio, because our /mcp is Bearer-gated and agy's SSE transport has no headers; CLI and IDE read the same file, so one entry serves both — docs/ref/fact-agy-mcp-config.md § CLI-1, CLI-2, IDE-1.
   const stdioPath = path.join(repoRoot, 'scripts', 'stdio.js');
-  const agyJson = JSON.stringify({ mcpServers: { [MCP_SERVER_KEY]: { command: 'node', args: [stdioPath] } } });
+  const agyJson = JSON.stringify({ mcpServers: { [IDENTITY.key]: { command: 'node', args: [stdioPath] } } });
   const claudeCodeCmd = claudeCodeLines(localUrl, accessToken);
   // The Claude app's config file takes only stdio entries (docs/plan/done/connector-setup-ux.md F11), so it spawns the same entry as AGY.
-  const claudeAppJson = JSON.stringify({ mcpServers: { [MCP_SERVER_KEY]: { command: 'node', args: [stdioPath] } } });
+  const claudeAppJson = JSON.stringify({ mcpServers: { [IDENTITY.key]: { command: 'node', args: [stdioPath] } } });
   const codexToml = codexBlock(localUrl, accessToken);
   const ecoHalf = Math.ceil(ECOSYSTEM.length / 2);
   const funnelMode = ingress === 'funnel';
@@ -299,7 +300,7 @@ ${field('Re-sync command', 'tailscale funnel --https=443 off && tailscale serve 
 
 <section id="s1"><h2>1 · Connectors: local IDEs + web AIs</h2>
 <p class="helptext">One AKIMCP endpoint, two paths: pick one with the switch below. Each <strong>Local</strong> tab says how that tool connects and carries a ready-to-paste config. <strong>Web AIs</strong> use the MCP URL below and ${origin ? 'are reachable now.' : 'need a public ingress — set it up in <a href="#s0">Section 0</a> first (the MCP URL fills in once ingress is active).'}</p>
-${field('MCP Name', MCP_NAME)}
+${field('MCP Name', IDENTITY.name)}
 ${field('MCP URL', url, true)}
 ${secretField('Passphrase', passphrase)}
 ${secretField('Access token', accessToken)}
@@ -444,7 +445,7 @@ ${secretField('Access token', accessToken)}
 
 <div class="tabpane" id="tab-cursor">
   <h3 class="subh">Connect Cursor — local</h3>
-  <p class="helptext"><strong>Apply</strong> merges ${MCP_SERVER_KEY} into <span class="mono">~/.cursor/mcp.json</span> with the current token (other servers untouched), then reload Cursor. After <strong>Roll token</strong>, click Apply again. Or paste the JSON by hand (Cursor → Settings → MCP Servers). Connects over <span class="mono">127.0.0.1</span>, with no tunnel.</p>
+  <p class="helptext"><strong>Apply</strong> merges ${IDENTITY.key} into <span class="mono">~/.cursor/mcp.json</span> with the current token (other servers untouched), then reload Cursor. After <strong>Roll token</strong>, click Apply again. Or paste the JSON by hand (Cursor → Settings → MCP Servers). Connects over <span class="mono">127.0.0.1</span>, with no tunnel.</p>
   <div class="acts"><button class="primary" data-act="cursorApply">Apply to Cursor (mcp.json)</button><span class="msg" id="msgCursor"></span></div>
   ${secretSnippet('Cursor JSON', localBearerJson, [accessToken], 'cursorJson')}
   ${legacyNameHint()}
@@ -454,8 +455,8 @@ ${secretField('Access token', accessToken)}
 <div class="tabpane" id="tab-claudelocal">
   <p class="helptext">Claude Code and the Claude app are set up separately: connecting one does not connect the other. Both run on the computer running AKIMCP, with no ingress: Claude Code connects over <span class="mono">127.0.0.1</span>, and the Claude app starts the tools itself over <span class="mono">stdio</span>. For claude.ai, the mobile app or the Claude app on another computer, use the <strong>Claude</strong> tab under <strong>Web</strong>; for the <span class="mono">claude</span> command on another computer, use <em>From another computer</em> below.</p>
   <h3 class="subh">Claude Code (terminal) — local</h3>
-  <p class="helptext"><strong>Apply</strong> registers ${MCP_SERVER_KEY} in <span class="mono">user</span> scope with the current token, replacing any old entry so it works from every project. It also removes the entry an older setup left under its old name, including inside a single project, which would otherwise keep the old token there. After <strong>Roll token</strong>, click Apply again. Or run the two lines below by hand (the <span class="mono">remove</span> first lets a re-paste replace the old token — a bare <span class="mono">add</span> refuses when the entry already exists); </p>
-  <p class="helptext legacy-hint">If one project still gets 401 from an entry an older setup left there, run <span class="mono">claude mcp remove ${LEGACY_MCP_SERVER_KEY} -s local</span> inside that project.</p>
+  <p class="helptext"><strong>Apply</strong> registers ${IDENTITY.key} in <span class="mono">user</span> scope with the current token, replacing any old entry so it works from every project. It also removes the entry an older setup left under its old name, including inside a single project, which would otherwise keep the old token there. After <strong>Roll token</strong>, click Apply again. Or run the two lines below by hand (the <span class="mono">remove</span> first lets a re-paste replace the old token — a bare <span class="mono">add</span> refuses when the entry already exists); </p>
+  ${otherAppliedKeys() ? `<p class="helptext legacy-hint">If one project still gets 401 from an entry an older setup left there, run <span class="mono">claude mcp remove &lt;name&gt; -s local</span> inside that project, for each of ${otherAppliedKeys()}.</p>` : ''}
   <div class="acts"><button class="primary" data-act="claudeCodeApply">Apply to Claude Code (user scope)</button><span class="msg" id="msgClaudeCode"></span></div>
   ${secretSnippet('Claude Code commands', claudeCodeCmd, [accessToken], 'claudeCodeCmd')}
   ${legacyNameHint()}
@@ -674,7 +675,8 @@ const CLAUDE_DIR = ${JSON.stringify(CLAUDE_DIR)};
 const AKI_DIR = ${JSON.stringify(AKI_DIR)};
 const USER_DIR = ${JSON.stringify(userDir)};
 const REPO_ROOT = ${JSON.stringify(repoRoot)};
-const MCP_NAME = ${JSON.stringify(MCP_NAME)};
+const MCP_NAME = ${JSON.stringify(IDENTITY.name)};
+const TOOL_PREFIX = ${JSON.stringify(IDENTITY.prefix)};
 const SAVED_INGRESS = ${JSON.stringify(savedIngress)};
 </script>
 <script src="/table-sort.js"></script>

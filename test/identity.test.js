@@ -118,6 +118,8 @@ const INVALID = [
   [5, 'identity'],
   [true, 'identity'],
   [['Work'], 'identity'],
+  [{ Name: 'Work' }, 'identity'],
+  [{ name: 'Work', colour: 'red' }, 'identity'],
 ];
 
 for (const [stored, field] of INVALID) {

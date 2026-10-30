@@ -4,10 +4,6 @@ import { fileURLToPath } from 'node:url'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
-const EXPECTED = [
-  { file: 'public/panel-client.js', text: "['Tools', (p) => p.tools.map((n) => n.replace(/^aki__/, '')).join(', ')]," },
-]
-
 const EXEMPT_FILES = ['scripts/verify-boundary-b1.sh', 'scripts/mcp-name.js']
 const EXEMPT_DIRS = ['public/guide/']
 
@@ -26,8 +22,7 @@ const left = grep.stdout
 
 for (const entry of left) console.log(`${entry.file}:${entry.line}`)
 
-const keyOf = ({ file, text }) => `${file}\t${text}`
-if (left.map(keyOf).join('\n') !== EXPECTED.map(keyOf).join('\n')) {
-  console.error(`${left.length} lines above still name aki__. This check passes only when exactly these ${EXPECTED.length} are left: ${EXPECTED.map(({ file, text }) => `${file}: ${text}`).join(', ')}.`)
+if (left.length) {
+  console.error(`${left.length} lines above still name aki__; scripts and public serve the tool prefix from the identity.`)
   process.exit(1)
 }

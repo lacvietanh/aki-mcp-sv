@@ -555,7 +555,7 @@ function renderProviders(list) {
   renderTable('providersList', [
     ['Provider', (p) => p.title],
     ['Installed', providerInstalledCell, { sortValue: (p) => Number(p.available) }],
-    ['Tools', (p) => p.tools.map((n) => n.replace(/^aki__/, '')).join(', ')],
+    ['Tools', (p) => p.tools.map((n) => (n.startsWith(TOOL_PREFIX) ? n.slice(TOOL_PREFIX.length) : n)).join(', ')],
     ['Switch', providerSwitch, NOT_SORTABLE],
   ], list, 'No providers.', (p) => (p.available && p.enabled ? '' : 'off'));
   document.querySelectorAll('#providersList td:nth-child(3)').forEach((td) => td.classList.add('wrap'));

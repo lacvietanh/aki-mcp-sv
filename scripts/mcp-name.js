@@ -5,9 +5,7 @@ import { SETTINGS_PATH } from './userdata.js';
 export const DEFAULT_NAME = 'AkiMCP';
 export const DEFAULT_KEY = 'akimcp';
 export const DEFAULT_PREFIX = 'aki__';
-export const MCP_NAME = DEFAULT_NAME;
-export const MCP_SERVER_KEY = DEFAULT_KEY;
-export const LEGACY_MCP_SERVER_KEY = 'aki-mcp';
+export const DEFAULT_APPLIED_KEYS = ['aki-mcp', DEFAULT_KEY];
 
 // ASSUMPTION until P0 sources client limits: 64 characters for mcp__<Server ID>__<tool>.
 export const CEILING = 64;
@@ -39,9 +37,14 @@ const refuse = (field, value, reason) => ({
   problem: { field, value, reason },
 });
 
+// stdout carries the JSON-RPC channel on stdio.js and the line reaches a terminal: JSON.stringify writes C0, the rest of \p{Cc} (DEL, C1) is written out here.
+export const quoteValue = (value) => JSON.stringify(value).replace(/\p{Cc}/gu, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
+
 // The one place the rule lives. A bad value never throws: the defaults are served and `problem` says which field and why.
 export function resolveIdentity(stored) {
   if (stored != null && (typeof stored !== 'object' || Array.isArray(stored))) return refuse('identity', stored, 'must be an object with name, key and prefix');
+  const unread = Object.keys(stored ?? {}).filter((k) => !['name', 'key', 'prefix'].includes(k));
+  if (unread.length) return refuse('identity', stored, `has ${unread.map(quoteValue).join(', ')}, which AkiMCP does not read: keep only name, key and prefix`);
   const { name: rawName, key: handKey, prefix: handPrefix } = stored ?? {};
   const notText = [['Display name', rawName], ['Server ID', handKey], ['Tool prefix', handPrefix]].find(([, value]) => value != null && typeof value !== 'string');
   if (notText) return refuse(notText[0], notText[1], 'must be text');
@@ -57,16 +60,17 @@ export function resolveIdentity(stored) {
   return { identity: { name, key, prefix }, problem: null };
 }
 
-// stdout carries the JSON-RPC channel on stdio.js and the line reaches a terminal: JSON.stringify writes C0, the rest of \p{Cc} (DEL, C1) is written out here.
 export function problemLine({ field, value, reason }, settingPath) {
-  const quoted = JSON.stringify(value).replace(/\p{Cc}/gu, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
-  return `${field} ${quoted} in ${settingPath} is not valid: ${reason}. Serving the default names until it is fixed in panel section 1.`;
+  return `${field} ${quoteValue(value)} in ${settingPath} is not valid: ${reason}. Serving the default names until it is fixed in panel section 1.`;
 }
 
 const resolved = resolveIdentity(readSettings().identity);
 export const IDENTITY = resolved.identity;
 export const IDENTITY_PROBLEM = resolved.problem;
 export const served = (bare) => `${IDENTITY.prefix}${bare}`;
+
+// Written by Apply only: every Server ID it ever wrote, so a later Apply can remove the ones that are ours.
+export const appliedKeys = (settings = readSettings()) => (Array.isArray(settings.applied?.keys) ? settings.applied.keys.filter((k) => typeof k === 'string') : [...DEFAULT_APPLIED_KEYS]);
 
 // console.error only: stdout is the JSON-RPC channel on stdio.js.
 export function announceIdentity() {

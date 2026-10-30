@@ -6,7 +6,7 @@ import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, unlinkS
 import os from 'node:os';
 import path from 'node:path';
 import { renderPanel, localMcpUrl, httpBearerEntry, claudeCodeLines, CODEX_TABLE, codexBlock, tempTokenKickoff } from './config-page.js';
-import { MCP_SERVER_KEY, LEGACY_MCP_SERVER_KEY } from './mcp-name.js';
+import { IDENTITY, IDENTITY_PROBLEM, quoteValue, appliedKeys } from './mcp-name.js';
 import { getOrIssueAccessToken, rotateAccessToken, mintTempToken, listTempTokens, revokeTempTokenById, rotatePassphrase, loadOrCreatePassphrase, listClients, removeClient } from './oauth.js';
 import { logSecurity, readSecurityLog } from './security-log.js';
 import { LOG_DEFAULTS, loadLogSettings, normalizeLogSettings } from './tool-call-log.js';
@@ -49,33 +49,90 @@ function runClaude(args, cwd) {
     });
   });
 }
-// Local scope beats user scope, and only the pre-3.1 snippet (no -s, legacy key) ever wrote a local entry, so the sweep targets the legacy key alone.
-function projectsWithLocalEntry() {
-  const file = path.join(process.env.CLAUDE_CONFIG_DIR || os.homedir(), '.claude.json');
+const LOOPBACK_HOSTS = ['127.0.0.1', 'localhost', '[::1]'];
+const STDIO_JS = path.join(REPO_ROOT, 'scripts', 'stdio.js');
+const CLIENT = { claude: 'Claude Code', codex: 'Codex', cursor: 'Cursor', agy: 'AGY' };
+
+// D11, the one test every client goes through: an entry is ours when it reaches an MCP endpoint on this computer or runs this checkout's stdio.js; anything else the owner put there.
+function isOurs(entry) {
+  if (Array.isArray(entry?.args) && entry.args.includes(STDIO_JS)) return true;
   try {
-    const { projects = {} } = JSON.parse(readFileSync(file, 'utf8'));
-    return Object.keys(projects).filter((dir) => projects[dir]?.mcpServers?.[LEGACY_MCP_SERVER_KEY] && existsSync(dir));
+    const url = new URL(entry?.url);
+    return url.protocol === 'http:' && LOOPBACK_HOSTS.includes(url.hostname) && url.pathname === '/mcp';
   } catch {
-    return [];
+    return false;
   }
+}
+
+const entryTarget = (entry) => entry.url ?? ([entry.command, ...(entry.args ?? [])].filter(Boolean).join(' ') || 'a target AkiMCP could not read');
+const keptNote = (where, key, entry) => `Kept ${key} in ${where}: it points at ${entryTarget(entry)}, not at this AkiMCP.`;
+
+function requireValidIdentity() {
+  if (IDENTITY_PROBLEM) throw new Error(`Apply stopped: ${IDENTITY_PROBLEM.field} ${quoteValue(IDENTITY_PROBLEM.value)} in setting.json is not valid, so AkiMCP is serving the default names. Fix it above or press Reset to AkiMCP, then Apply again.`);
+}
+
+function refuseForeign(client, entry) {
+  if (entry && !isOurs(entry)) throw new Error(`Apply stopped: ${client} already has a server named ${IDENTITY.key} that points at ${entryTarget(entry)}, not at this AkiMCP. Pick another Server ID, or remove that entry in ${client} yourself.`);
+}
+
+const otherKeys = () => appliedKeys().filter((key) => key !== IDENTITY.key);
+
+// Older Server IDs this client still holds: `gone` are ours and are removed, `notes` report the ones kept because they point elsewhere.
+function sortOldKeys(client, entryOf) {
+  const held = otherKeys().map((key) => [key, entryOf(key)]).filter(([, entry]) => entry);
+  return { gone: held.filter(([, entry]) => isOurs(entry)).map(([key]) => key), notes: held.filter(([, entry]) => !isOurs(entry)).map(([key, entry]) => keptNote(client, key, entry)) };
+}
+
+const oldNote = ({ gone, notes }) => (gone.length ? ` Removed ${gone.join(', ')} (older Server ID${gone.length > 1 ? 's' : ''} of this AkiMCP).` : '') + notes.map((note) => ` ${note}`).join('');
+
+// Only after a client was written: a refused or failed Apply leaves the remembered keys as they were.
+function recordAppliedKey() {
+  const settings = readSettings();
+  const keys = appliedKeys(settings);
+  if (keys.includes(IDENTITY.key)) return;
+  settings.applied = { ...settings.applied, keys: [...keys, IDENTITY.key] };
+  writeSettings(settings);
+}
+
+const claudeConfigFile = () => path.join(process.env.CLAUDE_CONFIG_DIR || os.homedir(), '.claude.json');
+function readClaudeConfig() {
+  try {
+    return JSON.parse(readFileSync(claudeConfigFile(), 'utf8')) ?? {};
+  } catch {
+    return {};
+  }
+}
+// Local scope beats user scope, and the pre-3.1 snippet (no -s) wrote one, so older Server IDs are swept inside the projects that hold them.
+function localEntries(config) {
+  const found = Object.entries(config.projects ?? {})
+    .filter(([dir]) => existsSync(dir))
+    .flatMap(([dir, project]) => otherKeys().filter((key) => project?.mcpServers?.[key]).map((key) => ({ dir, key, entry: project.mcpServers[key] })));
+  return { ours: found.filter(({ entry }) => isOurs(entry)), notes: found.filter(({ entry }) => !isOurs(entry)).map(({ dir, key, entry }) => keptNote(`${CLIENT.claude}, project ${dir}`, key, entry)) };
 }
 // Remove-then-add, for the reason on claudeCodeLines in config-page.js.
 async function applyClaudeCode() {
+  requireValidIdentity();
+  const config = readClaudeConfig();
+  refuseForeign(CLIENT.claude, config.mcpServers?.[IDENTITY.key]);
   const url = localMcpUrl();
   const token = getOrIssueAccessToken();
   const byHand = `Run these two lines in a terminal instead:\n${claudeCodeLines(url, token)}`;
   const probe = await runClaude(['--version']);
   if (!probe.ok && probe.code === 'ENOENT') return { ok: false, message: `claude is not on PATH. ${byHand}` };
-  for (const key of [MCP_SERVER_KEY, LEGACY_MCP_SERVER_KEY]) await runClaude(['mcp', 'remove', key, '-s', 'user']); // an absent entry is not an error
-  const added = await runClaude(['mcp', 'add', '--transport', 'http', '-s', 'user', MCP_SERVER_KEY, url, '--header', `Authorization: Bearer ${token}`]);
+  const old = sortOldKeys(CLIENT.claude, (key) => config.mcpServers?.[key]);
+  for (const key of [IDENTITY.key, ...old.gone]) await runClaude(['mcp', 'remove', key, '-s', 'user']); // an absent entry is not an error
+  const added = await runClaude(['mcp', 'add', '--transport', 'http', '-s', 'user', IDENTITY.key, url, '--header', `Authorization: Bearer ${token}`]);
   if (!added.ok) return { ok: false, message: `claude mcp add failed: ${added.out || 'unknown error'}\n${byHand}` };
-  const local = projectsWithLocalEntry();
+  const local = localEntries(config);
   const failed = [];
-  for (const dir of local) if (!(await runClaude(['mcp', 'remove', LEGACY_MCP_SERVER_KEY, '-s', 'local'], dir)).ok) failed.push(dir);
-  const removed = local.length - failed.length;
-  const localNote = (removed ? ` Also removed the old ${LEGACY_MCP_SERVER_KEY} entry kept inside ${removed} project${removed > 1 ? 's' : ''}.` : '')
-    + (failed.length ? ` Could not remove the old entry inside: ${failed.join(', ')}. Run "claude mcp remove ${LEGACY_MCP_SERVER_KEY} -s local" in each.` : '');
-  return { ok: true, message: `Applied — ${MCP_SERVER_KEY} now carries the current token in user scope; an older ${LEGACY_MCP_SERVER_KEY} entry is gone.${localNote} Restart the session or run /mcp in Claude Code.` };
+  for (const { dir, key } of local.ours) if (!(await runClaude(['mcp', 'remove', key, '-s', 'local'], dir)).ok) failed.push(`${key} in ${dir}`);
+  const removed = local.ours.length - failed.length;
+  const projects = new Set(local.ours.map(({ dir }) => dir)).size;
+  const localNote = (removed ? ` Also removed ${removed} older entr${removed > 1 ? 'ies' : 'y'} kept inside ${projects} project${projects > 1 ? 's' : ''}.` : '')
+    + (failed.length ? ` Could not remove: ${failed.join(', ')}. Run "claude mcp remove <key> -s local" inside each project.` : '')
+    + local.notes.map((note) => ` ${note}`).join('');
+  recordAppliedKey();
+  return { ok: true, message: `Applied — ${IDENTITY.key} now carries the current token in user scope.${oldNote(old)}${localNote} Restart the session or run /mcp in Claude Code.` };
 }
 
 // A Codex table = header (bare or quoted key, trailing comment ok) + every `.sub` table: a leftover subtable duplicates the inline http_headers key; a second same-name table is invalid TOML.
@@ -111,7 +168,23 @@ function removeTomlTable(text, header) {
   const rest = splitAround(kept, at).filter(Boolean).join('\n\n').replace(/\n*$/, '');
   return rest ? `${rest}\n` : '';
 }
+// The exact table's `url` only: a Codex stdio table has none, so it reads as foreign, the safe direction.
+function tomlEntry(text, key) {
+  let inside = false;
+  let found;
+  for (const line of text.split('\n')) {
+    if (isTableHeader(line)) {
+      inside = tableName(line) === `mcp_servers.${key}`;
+      if (inside) found = {};
+      continue;
+    }
+    const url = inside && /^\s*url\s*=\s*(?:"([^"]*)"|'([^']*)')/.exec(line);
+    if (url) found.url = url[1] ?? url[2];
+  }
+  return found;
+}
 function applyCodex() {
+  requireValidIdentity();
   const file = path.join(os.homedir(), '.codex', 'config.toml');
   const block = codexBlock(localMcpUrl(), getOrIssueAccessToken());
   let existing = '';
@@ -119,12 +192,17 @@ function applyCodex() {
     existing = readFileSync(file, 'utf8');
     if (existing.includes('\u0000')) throw new Error(`${file} looks corrupt (null byte) — fix or remove it, then retry`);
   }
-  writeTextAtomic(file, replaceTomlTable(removeTomlTable(existing, `[mcp_servers.${LEGACY_MCP_SERVER_KEY}]`), CODEX_TABLE, block));
-  return { ok: true, message: `Applied — ${CODEX_TABLE} in ~/.codex/config.toml now carries the current token and an older [mcp_servers.${LEGACY_MCP_SERVER_KEY}] table is gone (other tables untouched). Restart Codex.` };
+  refuseForeign(CLIENT.codex, tomlEntry(existing, IDENTITY.key));
+  const old = sortOldKeys(CLIENT.codex, (key) => tomlEntry(existing, key));
+  const cleaned = old.gone.reduce((text, key) => removeTomlTable(text, `[mcp_servers.${key}]`), existing);
+  writeTextAtomic(file, replaceTomlTable(cleaned, CODEX_TABLE, block));
+  recordAppliedKey();
+  return { ok: true, message: `Applied — ${CODEX_TABLE} in ~/.codex/config.toml now carries the current token (other tables untouched).${oldNote(old)} Restart Codex.` };
 }
 
-// Cursor (D10): merge mcpServers.akimcp into ~/.cursor/mcp.json; other servers untouched. Unparsable file stops with the path named.
+// Cursor (D10): merge the Server ID's entry into ~/.cursor/mcp.json; other servers untouched. Unparsable file stops with the path named.
 function applyCursor() {
+  requireValidIdentity();
   const file = path.join(os.homedir(), '.cursor', 'mcp.json');
   let config = {};
   if (existsSync(file)) {
@@ -135,10 +213,44 @@ function applyCursor() {
     }
   }
   config.mcpServers = config.mcpServers || {};
-  delete config.mcpServers[LEGACY_MCP_SERVER_KEY];
-  config.mcpServers[MCP_SERVER_KEY] = httpBearerEntry(localMcpUrl(), getOrIssueAccessToken());
+  refuseForeign(CLIENT.cursor, config.mcpServers[IDENTITY.key]);
+  const old = sortOldKeys(CLIENT.cursor, (key) => config.mcpServers[key]);
+  for (const key of old.gone) delete config.mcpServers[key];
+  config.mcpServers[IDENTITY.key] = httpBearerEntry(localMcpUrl(), getOrIssueAccessToken());
   writeJsonAtomic(file, config);
-  return { ok: true, message: `Applied — ${MCP_SERVER_KEY} in ~/.cursor/mcp.json now carries the current token; an older ${LEGACY_MCP_SERVER_KEY} entry is gone. Reload Cursor.` };
+  recordAppliedKey();
+  return { ok: true, message: `Applied — ${IDENTITY.key} in ~/.cursor/mcp.json now carries the current token.${oldNote(old)} Reload Cursor.` };
+}
+
+function readJsonOrThrow(file) {
+  if (!existsSync(file)) return {};
+  try {
+    return JSON.parse(readFileSync(file, 'utf8')) || {};
+  } catch {
+    throw new Error(`${file} is not valid JSON — fix or remove it, then retry`);
+  }
+}
+// Servers go to mcp_config.json, permissions to settings.json — docs/ref/fact-agy-mcp-config.md § CLI-1, CLI-3, CLI-4. Both files are read before either is written.
+function applyAgy() {
+  requireValidIdentity();
+  const mcpConfigPath = path.join(os.homedir(), '.gemini', 'config', 'mcp_config.json');
+  const settingsPath = path.join(os.homedir(), '.gemini', 'antigravity-cli', 'settings.json');
+  const mcpConfig = readJsonOrThrow(mcpConfigPath);
+  const settings = readJsonOrThrow(settingsPath);
+  mcpConfig.mcpServers = mcpConfig.mcpServers || {};
+  refuseForeign(CLIENT.agy, mcpConfig.mcpServers[IDENTITY.key]);
+  const old = sortOldKeys(CLIENT.agy, (key) => mcpConfig.mcpServers[key]);
+  for (const key of old.gone) delete mcpConfig.mcpServers[key];
+  mcpConfig.mcpServers[IDENTITY.key] = { command: 'node', args: [STDIO_JS] };
+  // A previous (wrong) version wrote the server under settings.json mcpServers; agy does not read it there.
+  if (isOurs(settings.mcpServers?.[IDENTITY.key])) delete settings.mcpServers[IDENTITY.key];
+  const retired = new Set(old.gone.map((key) => `mcp(${key}/*)`));
+  settings.permissions = settings.permissions || { allow: [], deny: [] };
+  settings.permissions.allow = [...new Set([...(settings.permissions.allow || []).filter((rule) => !retired.has(rule)), `mcp(${IDENTITY.key}/*)`])];
+  writeJsonAtomic(mcpConfigPath, mcpConfig);
+  writeJsonAtomic(settingsPath, settings);
+  recordAppliedKey();
+  return { ok: true, message: `Applied — ${IDENTITY.key} (stdio) → ~/.gemini/config/mcp_config.json + pre-allow → antigravity-cli/settings.json.${oldNote(old)} Restart agy to pick it up.` };
 }
 
 // Every setting.json write goes through writeSettings (atomic): a partial file reads back as empty, which means defaults, i.e. a wider folder list or allowlist than the owner saved.
@@ -322,42 +434,8 @@ export const ROUTES = {
   'POST /api/postman-quit': async () => killPostmanDaemon(),
   // New window shown only while running — asks the already-running daemon to fire the same mediator trigger its own injected panel button uses (requestNewWindow, scripts/postman/postman-mcp.js).
   'POST /api/postman-new-window': async () => requestNewWindow(),
-  // Servers go to mcp_config.json, permissions to settings.json — docs/ref/fact-agy-mcp-config.md § CLI-1, CLI-3, CLI-4.
   // The panel's instance token is not a /mcp access token (401), hence stdio. Idempotent: merges, never clobbers other entries.
-  'POST /api/agy-apply-mcp': async () => {
-    // (A) MCP server -> ~/.gemini/config/mcp_config.json as a stdio entry.
-    const mcpConfigPath = path.join(os.homedir(), '.gemini', 'config', 'mcp_config.json');
-    let mcpConfig = {};
-    if (existsSync(mcpConfigPath)) {
-      try {
-        mcpConfig = JSON.parse(readFileSync(mcpConfigPath, 'utf8')) || {};
-      } catch {
-        throw new Error(`${mcpConfigPath} is not valid JSON — fix or remove it, then retry`);
-      }
-    }
-    mcpConfig.mcpServers = mcpConfig.mcpServers || {};
-    mcpConfig.mcpServers[MCP_SERVER_KEY] = { command: 'node', args: [path.join(REPO_ROOT, 'scripts', 'stdio.js')] };
-    writeJsonAtomic(mcpConfigPath, mcpConfig);
-
-    // (B) Pre-allow -> ~/.gemini/antigravity-cli/settings.json (permissions only; agy does NOT read MCP servers here).
-    // Also drop any stale akimcp server entry a previous (wrong) version wrote under mcpServers here.
-    const settingsPath = path.join(os.homedir(), '.gemini', 'antigravity-cli', 'settings.json');
-    let settings = {};
-    if (existsSync(settingsPath)) {
-      try {
-        settings = JSON.parse(readFileSync(settingsPath, 'utf8')) || {};
-      } catch {
-        throw new Error(`${settingsPath} is not valid JSON — fix or remove it, then retry`);
-      }
-    }
-    if (settings.mcpServers && settings.mcpServers[MCP_SERVER_KEY]) delete settings.mcpServers[MCP_SERVER_KEY];
-    settings.permissions = settings.permissions || { allow: [], deny: [] };
-    settings.permissions.allow = settings.permissions.allow || [];
-    settings.permissions.allow = [...new Set([...settings.permissions.allow, `mcp(${MCP_SERVER_KEY}/*)`])];
-    writeJsonAtomic(settingsPath, settings);
-
-    return { ok: true, message: 'Applied — akimcp (stdio) → ~/.gemini/config/mcp_config.json + pre-allow → antigravity-cli/settings.json. Restart agy to pick it up.' };
-  },
+  'POST /api/agy-apply-mcp': async () => applyAgy(),
   // One-click Apply with the live token, so Roll token is a re-click (docs/plan/done/audit-tool-drift-oct25.md D10, F9, F10); idempotent: a second Apply replaces the entry.
   'POST /api/claude-code-apply': async () => applyClaudeCode(),
   'POST /api/codex-apply': async () => applyCodex(),

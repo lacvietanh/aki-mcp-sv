@@ -14,7 +14,7 @@ const { writeLock } = await import('../scripts/instance-lock.js');
 const { getOrIssueAccessToken, loadOrCreatePassphrase } = await import('../scripts/oauth.js');
 const { recordCaller } = await import('../scripts/callers.js');
 const { ROUTES } = await import('../scripts/panel.js');
-const { MCP_NAME, MCP_SERVER_KEY } = await import('../scripts/mcp-name.js');
+const { IDENTITY, DEFAULT_NAME, DEFAULT_KEY } = await import('../scripts/mcp-name.js');
 const { renderPanel } = await import('../scripts/config-page.js');
 const { createToolsServer } = await import('../scripts/tools-server.js');
 const { InMemoryTransport } = await import('@modelcontextprotocol/sdk/inMemory.js');
@@ -78,11 +78,12 @@ const serverInfo = mcpClient.getServerVersion();
 assert.deepEqual([serverInfo.title, serverInfo.name], ['AkiMCP', 'akimcp']);
 await mcpClient.close();
 
-// Connector id and name: both must contain "akimcp" by AIObox's matching rule, and the retired key survives in the rendered page only as the one hint line.
-for (const name of [MCP_NAME, MCP_SERVER_KEY]) assert.ok(name.toLowerCase().replace(/\s+/g, '').includes('akimcp'), `${name} satisfies the contract pattern`);
+// Connector id and name: under the default identity both must contain "akimcp" by AIObox's matching rule, and the retired key survives in the rendered page only as the hint lines.
+assert.deepEqual([IDENTITY.name, IDENTITY.key], [DEFAULT_NAME, DEFAULT_KEY], 'this run serves the default identity');
+for (const name of [IDENTITY.name, IDENTITY.key]) assert.ok(name.toLowerCase().replace(/\s+/g, '').includes('akimcp'), `${name} satisfies the contract pattern`);
 const page = renderPanel({ origin: 'https://host.example', client: {}, passphrase: 'p', token: 't', accessToken: 'tok', repoRoot: '/', rulesDir: '/', userDir: '/' });
 const hints = page.match(/<p class="helptext legacy-hint">.*?<\/p>/g) ?? [];
-assert.ok(hints.length > 0 && hints.some((hint) => hint.includes('aki-mcp</span> (Postman: <span class="mono">aki-mcp-sv</span>); delete that entry')), 'the legacy hint line is rendered');
+assert.ok(hints.length > 0 && hints.some((hint) => hint.includes('Your config may still have entries named <span class="mono">aki-mcp</span>; delete them. Apply does this for you.')), 'the legacy hint line is rendered');
 assert.doesNotMatch(page.replace(/<p class="helptext legacy-hint">.*?<\/p>/g, ''), /aki-mcp([^-]|$)/, 'no snippet or prose names the retired key outside the hint');
 
 fs.rmSync(tmp, { recursive: true, force: true });
