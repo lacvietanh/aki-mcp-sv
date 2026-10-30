@@ -12,9 +12,9 @@ AIObox dựng connector AkiMCP trên Claude, Grok và ChatGPT bằng macro, và 
 
 ## Id và tên
 
-- Tên connector/app macro tạo trên provider luôn là **`AkiMCP`**, đúng chữ đó. Macro nhận connector của mình bằng tên, không bằng host hay URL: tên viết thường, bỏ khoảng trắng mà chứa `akimcp` (`AkiMCP`, `Aki MCP Server`, `Aki MCP Server from local Shell & FileSystem`, `AkiMCPSV`), hoặc là tên cũ `Aki Mac MCPSV Shell & Filesystem` (danh sách `LEGACY` trong macro). Mọi tên AkiMCP từng gợi ý đều là của macro.
+- Tên connector/app macro tạo trên provider là tên AkiMCP tự đặt (`serverInfo.title`, không có thì `serverInfo.name` của `/mcp` initialize; **`AkiMCP`** khi AIObox chưa đọc được). Macro nhận connector của mình bằng tên, không bằng host hay URL: tên viết thường, bỏ khoảng trắng mà chứa `akimcp` (`AkiMCP`, `Aki MCP Server`, `Aki MCP Server from local Shell & FileSystem`, `AkiMCPSV`), hoặc là tên cũ `Aki Mac MCPSV Shell & Filesystem` (danh sách `LEGACY`), hoặc là tên AkiMCP tự đặt, nên AkiMCP đổi tên không cần sửa AIObox. Riêng ClickUp: connection macro thêm mang tên `MyComputer`, và tên này cũng là của macro bên cạnh mọi tên trên. Mọi tên AkiMCP từng gợi ý đều là của macro (aiobox `docs/feat/akimcp-connect.md` § C1).
 - Mỗi tài khoản provider chỉ có một `AkiMCP`. Một `AkiMCP` trỏ URL khác (máy khác, domain ingress cũ, path cũ) bị macro xoá không hỏi; máy chạy macro sau cùng thắng. Một tài khoản dùng nhiều máy cùng lúc: không hỗ trợ.
-- Tên ngoài luật trên không bao giờ bị macro đụng tới. Mọi hướng dẫn phía AkiMCP (README, panel, snippet copy cho Claude/ChatGPT/Grok) phải bảo đặt tên `AkiMCP`, không gợi ý tên khác; một tên gợi ý mới không chứa `akimcp` thì phải thêm vào `LEGACY` của cả ba macro trong cùng phiên.
+- Tên ngoài luật trên không bao giờ bị macro đụng tới. Mọi hướng dẫn phía AkiMCP (README, panel, snippet copy cho Claude/ChatGPT/Grok) phải bảo đặt tên `AkiMCP`, không gợi ý tên khác; một tên gợi ý mới không chứa `akimcp` thì phải thêm vào mọi danh sách `LEGACY` của AIObox trong cùng phiên (hiện là macro `connect-akimcp` của Claude, ChatGPT, Grok, ClickUp, macro `aio-roster` của ClickUp và `provider/claude/tools.js`; tìm bằng `akimacmcpsv`).
 - URL connector = `origin` của `instance.json` + `/mcp`. Đổi domain ingress nghĩa là `AkiMCP` cũ thành sai URL và bị thay.
 
 ## Hợp đồng AIObox đọc từ AkiMCP
@@ -106,7 +106,7 @@ REVERSE FROZEN, AIObox đọc từ AkiMCP:
 - `akimcp` / `akimcp --no-browser [--port <n>]` chạy gateway ở tiền cảnh; `--port` thắng `GATEKEEPER_PORT` và `.env`; một AkiMCP cùng phiên bản đang sống thì được dùng lại (thoát 0, bỏ qua `--port`), nên cổng gateway luôn là `gatePort` của `instance.json`. SIGTERM/SIGINT kết thúc êm: xoá `instance.json`, dừng `cloudflared` và daemon Postman.
 - Panel phục vụ trang ở `GET /?t=<panel token>` trên `panelPort`.
 - `GET /api/security`; `GET /api/access-token` (mục trên đầu hợp đồng); `POST /api/clients/remove`; `/mcp` initialize (`serverInfo.title`/`name`) và tools/list; `akimcp --version`; gói npm `@akinet/akimcp`.
-- Tên connector `AkiMCP`; DOM trang đồng ý OAuth (`input[name=passphrase]` và nút khớp `/Approve/`, macro `connect-akimcp` điền vào).
+- Tên connector theo § Id và tên (tên AkiMCP tự đặt, `AkiMCP` khi chưa đọc được); DOM trang đồng ý OAuth (`input[name=passphrase]` và nút khớp `/Approve/`, macro `connect-akimcp` điền vào).
 - `~/.aki/cdp/profiles`; cờ `--aki-launcher=akimcp`.
 - Tên tool `aki__aiobox`, `aki__aiobox_write`, `aki__chrome_launch`; tên op `state`.
 
@@ -115,7 +115,7 @@ REPLACED:
 
 ## Identity — đã bỏ
 
-AkiMCP giữ **một access token chung** cho mọi client và chỉ phân biệt client theo redirect host (`aki-mcp-sv/docs/plan/done/single-access-token.md`). Hệ quả đã biết: `signedIn` theo provider chứ không theo tài khoản (hai tài khoản ChatGPT trên hai profile đọc như nhau), nên macro chỉ dùng tín hiệu này để reconnect một lần, không bao giờ để xoá; Roll token làm bearer Notion đã dán nhận `401` cho tới khi AIObox chạy lại Notion connect.
+AkiMCP giữ **một access token chung** cho mọi client và chỉ phân biệt client theo redirect host (`aki-mcp-sv/docs/plan/done/single-access-token.md`). Hệ quả đã biết: `signedIn` theo provider chứ không theo tài khoản (hai tài khoản ChatGPT trên hai profile đọc như nhau), nên macro chỉ dùng tín hiệu này để reconnect một lần, không bao giờ để xoá. Notion nối bằng OAuth + passphrase như Claude, ChatGPT, Grok (§ Việc phía AkiMCP, dòng Macro Notion connect), không còn bearer dán nào để Roll token làm gãy.
 
 Decided (chủ, 2026-10-03): bỏ token theo client, `/api/identity`, bearer có tên và việc AIObox ghi `client_id` theo profile · because một người dùng, các token cùng quyền, và cái giá (đổi hình dạng `tokens.json` ở hai repo, lật `aki-mcp-sv/single-access-token.md`, viết lại `aki-mcp-sv/security.md`) lớn hơn lợi ích macro nhận đúng tài khoản · rejected token theo client + `GET /api/identity` (đề xuất 2026-10-01–03) · reopen nếu connector được chia cho người khác, hoặc macro xoá/giữ nhầm connector vì không phân biệt được tài khoản.
 
