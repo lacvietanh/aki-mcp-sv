@@ -8,7 +8,7 @@ import path from 'node:path';
 import { renderPanel, localMcpUrl, httpBearerEntry, claudeCodeLines, CODEX_TABLE, codexBlock, tempTokenKickoff } from './config-page.js';
 import { IDENTITY, IDENTITY_PROBLEM, quoteValue, appliedKeys } from './mcp-name.js';
 import { previewReply, saveIdentity, resetIdentity } from './identity-panel.js';
-import { getOrIssueAccessToken, rotateAccessToken, mintTempToken, listTempTokens, revokeTempTokenById, rotatePassphrase, loadOrCreatePassphrase, listClients, removeClient } from './oauth.js';
+import { getOrIssueAccessToken, rotateAccessToken, mintTempToken, listTempTokens, revokeTempTokenById, extendTempTokenById, TEMP_EXTEND_MS, rotatePassphrase, loadOrCreatePassphrase, listClients, removeClient } from './oauth.js';
 import { logSecurity, readSecurityLog } from './security-log.js';
 import { LOG_DEFAULTS, loadLogSettings, normalizeLogSettings } from './tool-call-log.js';
 import { listCallers } from './callers.js';
@@ -483,7 +483,11 @@ export const ROUTES = {
     const { token, expires } = mintTempToken();
     return { ok: true, expires, kickoff: tempTokenKickoff({ mcpUrl: `${ctx.origin}/mcp`, token, expires }) };
   },
-  'GET /api/temp-tokens': async () => ({ tokens: listTempTokens() }),
+  'GET /api/temp-tokens': async () => ({ tokens: listTempTokens(), extendMinutes: TEMP_EXTEND_MS / 60_000 }),
+  'POST /api/temp-token/extend': async (body) => {
+    if (!extendTempTokenById(body.id)) throw new Error('no live temporary token to extend: refresh the list');
+    return { ok: true, message: `extended by ${TEMP_EXTEND_MS / 60_000} min` };
+  },
   'POST /api/temp-token/revoke': async (body) => {
     const ids = body.all === true ? listTempTokens().map((t) => t.id) : [body.id];
     const ended = ids.filter(revokeTempTokenById).length;

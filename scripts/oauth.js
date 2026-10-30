@@ -40,6 +40,7 @@ const cut = (text) => String(text ?? '').replace(/[\x00-\x1f\x7f]/g, ' ').slice(
 const ACCESS_TTL_S = 365 * 24 * 3600;
 // A temp token serves one chat's job and dies on its own; one constant, no picker (docs/plan/done/web-chat-client.md).
 const TEMP_TTL_MS = 4 * 3600_000;
+export const TEMP_EXTEND_MS = 30 * 60_000;
 // no 0/o/1/l/i — avoid visual ambiguity when typing; 31 symbols, drawn with randomInt so none is favoured
 const PASSPHRASE_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
 const PASSPHRASE_LENGTH = 10; // 31^10 ≈ 2^49.5 — brute-force still infeasible over network
@@ -54,7 +55,7 @@ const RETIRED_TOKEN_LIMIT = 16;
 const tokenHash = (token) => createHash('sha256').update(token).digest('hex');
 const retiredTokens = loadRetiredTokens();
 // Memory only, by decision: a restart ends every temp token, and tokens.json (its shape is pinned by the AIObox contract) never holds one.
-const tempTokens = new Map(); // sha256 -> { created, expires, revoked }
+const tempTokens = new Map(); // sha256 -> { created, expires, revoked, lastAddress, lastAgent, lastSeen }
 
 function loadRetiredTokens() {
   try {
@@ -618,7 +619,7 @@ export function mintTempToken() {
   const token = randomBytes(32).toString('hex');
   const hash = tokenHash(token);
   const expires = now + TEMP_TTL_MS;
-  tempTokens.set(hash, { created: now, expires, revoked: false });
+  tempTokens.set(hash, { created: now, expires, revoked: false, lastAddress: null, lastAgent: null, lastSeen: null });
   logSecurity(`temp token ${hash.slice(0, 8)} minted, lives until ${new Date(expires).toISOString()}`);
   return { token, expires };
 }
@@ -639,7 +640,22 @@ export function revokeTempToken(authHeader) {
 /** Panel view: the id is the stored hash, which cannot authorize anything. */
 export function listTempTokens() {
   const now = Date.now();
-  return [...tempTokens].filter(([, entry]) => !entry.revoked && entry.expires >= now).map(([id, entry]) => ({ id, created: entry.created, expires: entry.expires }));
+  return [...tempTokens].filter(([, entry]) => !entry.revoked && entry.expires >= now).map(([id, entry]) => ({ id, ...entry }));
+}
+
+/** Only a live token is extended: an expired or revoked one stays dead. */
+export function extendTempTokenById(id) {
+  const entry = tempTokens.get(id);
+  if (!entry || entry.revoked || entry.expires < Date.now()) return false;
+  entry.expires += TEMP_EXTEND_MS;
+  logSecurity(`temp token ${id.slice(0, 8)} extended from the panel, lives until ${new Date(entry.expires).toISOString()}`);
+  return true;
+}
+
+/** Called with the same address and user-agent the callers list records, after the Bearer check passed; the shared token matches no entry. */
+export function noteTempTokenUse(authHeader, address, agent) {
+  const entry = authHeader?.startsWith('Bearer ') ? tempTokens.get(tokenHash(authHeader.slice(7))) : null;
+  if (entry) Object.assign(entry, { lastAddress: cut(address), lastAgent: cut(agent), lastSeen: Date.now() });
 }
 
 export const revokeTempTokenById = (id) => endTempToken(id, 'from the panel');

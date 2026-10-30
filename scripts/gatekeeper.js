@@ -1,7 +1,7 @@
 // Public entry: OAuth AS (pre-issued client + DCR connectors) + Streamable HTTP /mcp via streamable-bridge.
 // Runs in-process inside start.js (docs/plan/done/consolidate-mcp-tool-processes.md, Part B): startGatekeeper() returns the http.Server so the orchestrator can close it on shutdown.
 import http from 'node:http';
-import { loadOrCreatePassphrase, metadataHandlers, handleAuthorize, handleToken, handleRegister, handleRevoke, bearerStatus, revokeTempToken } from './oauth.js';
+import { loadOrCreatePassphrase, metadataHandlers, handleAuthorize, handleToken, handleRegister, handleRevoke, bearerStatus, revokeTempToken, noteTempTokenUse } from './oauth.js';
 import { handleStreamableMcp, terminateSession } from './streamable-bridge.js';
 import { log, logErr } from './log.js';
 import { serveStatic } from './http.js';
@@ -111,6 +111,7 @@ export function startGatekeeper(origin = null, onFatal) {
       }
       const agent = req.headers['user-agent'] || 'no user-agent';
       if (recordCaller(key, agent)) logSecurity(`token used by new caller ${key} (${agent.slice(0, 64)})`);
+      noteTempTokenUse(req.headers.authorization, key, agent);
       if (req.method === 'POST') return handleStreamableMcp(req, res);
       if (req.method === 'DELETE') {
         revokeTempToken(req.headers.authorization);

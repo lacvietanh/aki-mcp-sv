@@ -326,12 +326,34 @@ function revokeTempButton({ id }) {
   });
   return btn;
 }
+function extendTempButton({ id }, minutes) {
+  const btn = document.createElement('button');
+  btn.textContent = `+${minutes} min`;
+  btn.onclick = () => act(btn, 'msgTemp', async () => {
+    const { message } = await api('POST', '/api/temp-token/extend', { id });
+    await loadTempTokens();
+    return message;
+  });
+  return btn;
+}
+function tempUsedCell({ lastSeen, lastAddress, lastAgent }) {
+  if (!lastSeen) return 'not used yet';
+  const box = document.createElement('div');
+  box.append(timeCell(lastSeen), mutedNote([lastAddress, lastAgent].filter(Boolean).join(' · ')));
+  return box;
+}
+function tempActions(token, minutes) {
+  const box = document.createDocumentFragment();
+  box.append(extendTempButton(token, minutes), revokeTempButton(token));
+  return box;
+}
 async function loadTempTokens() {
-  const { tokens } = await api('GET', '/api/temp-tokens');
+  const { tokens, extendMinutes } = await api('GET', '/api/temp-tokens');
   renderTable('tempList', [
     ['Created', (t) => timeCell(t.created), { sortValue: (t) => t.created }],
     ['Expires in', (t) => untilText(t.expires), { sortValue: (t) => t.expires }],
-    ['', revokeTempButton, NOT_SORTABLE],
+    ['Last used', tempUsedCell, { sortValue: (t) => t.lastSeen }],
+    ['', (t) => tempActions(t, extendMinutes), NOT_SORTABLE],
   ], tokens, 'No active temporary tokens. Mint one above when you start a web chat.');
   document.getElementById('revokeAllTemp').hidden = tokens.length < 2;
   if (!tokens.length) for (const id of ['tempKickoff', 'tempKickoffNote']) document.getElementById(id).hidden = true;

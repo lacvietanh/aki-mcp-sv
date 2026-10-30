@@ -16,7 +16,7 @@ process.env.GATEKEEPER_PORT = String(probe.address().port);
 probe.close();
 await once(probe, 'close');
 
-const { getOrIssueAccessToken, rotateAccessToken, bearerStatus, mintTempToken, revokeTempToken } = await import('../scripts/oauth.js');
+const { getOrIssueAccessToken, rotateAccessToken, bearerStatus, mintTempToken, revokeTempToken, listTempTokens, extendTempTokenById } = await import('../scripts/oauth.js');
 const { startGatekeeper } = await import('../scripts/gatekeeper.js');
 const { ROUTES } = await import('../scripts/panel.js');
 
@@ -63,6 +63,35 @@ try {
   assert.equal(bearerStatus(bearer(kept.token)), 'valid');
   rotateAccessToken({ revokeRefresh: true });
   assert.equal(bearerStatus(bearer(kept.token)), 'retired');
+
+  // Extend: each call adds exactly 30 min to a live token; a revoked or unknown id changes nothing.
+  const extendable = mintTempToken();
+  const [{ id: extendId }] = listTempTokens();
+  const extendedOnce = extendable.expires + 30 * 60_000;
+  assert.equal(extendTempTokenById(extendId), true);
+  assert.equal(listTempTokens()[0].expires, extendedOnce);
+  assert.equal(extendTempTokenById(extendId), true);
+  assert.equal(listTempTokens()[0].expires, extendedOnce + 30 * 60_000);
+  assert.equal(extendTempTokenById('f'.repeat(64)), false);
+  assert.equal(listTempTokens().length, 1);
+  assert.equal(listTempTokens()[0].expires, extendedOnce + 30 * 60_000, 'an unknown id extends nothing');
+  assert.equal((await ROUTES['POST /api/temp-token/extend']({ id: extendId })).message, 'extended by 30 min');
+  assert.equal(listTempTokens()[0].expires, extendedOnce + 60 * 60_000);
+
+  // Use is recorded through the public /mcp entry with the caller facts the callers list derives: address and user-agent.
+  assert.deepEqual([listTempTokens()[0].lastAddress, listTempTokens()[0].lastAgent, listTempTokens()[0].lastSeen], [null, null, null], 'not used yet');
+  const usedAt = Date.now();
+  assert.equal((await fetch(base, { headers: { Authorization: bearer(extendable.token), 'User-Agent': 'temp-test/1' } })).status, 405);
+  const used = listTempTokens()[0];
+  assert.equal(used.lastAddress, 'loopback');
+  assert.equal(used.lastAgent, 'temp-test/1');
+  assert.ok(used.lastSeen >= usedAt && used.lastSeen <= Date.now());
+
+  assert.equal(revokeTempToken(bearer(extendable.token)), true);
+  assert.equal(extendTempTokenById(extendId), false, 'a revoked token stays dead');
+  assert.equal(bearerStatus(bearer(extendable.token)), 'retired');
+  assert.deepEqual(listTempTokens(), []);
+  await assert.rejects(() => ROUTES['POST /api/temp-token/extend']({ id: extendId }), /no live temporary token/);
 
   // Panel mint: needs a public origin, returns the labelled block once, and the token it carries works.
   await assert.rejects(() => ROUTES['POST /api/temp-token']({}, {}), /public address/);
