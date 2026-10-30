@@ -6,6 +6,9 @@ for (const method of ['log', 'info', 'debug']) console[method] = (...args) => co
 
 const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
 const { createToolsServer } = await import('./tools-server.js');
+const { announceIdentity } = await import('./mcp-name.js');
+
+announceIdentity();
 
 const server = createToolsServer();
 await server.connect(new StdioServerTransport());

@@ -5,24 +5,26 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { datedLogFiles } from './tool-call-log.js';
+import { DEFAULT_PREFIX } from './mcp-name.js';
 
-const WRITE_TOOL = 'aki__aiobox_write';
+// A line written before 4.0.0 has no `bare`: its tool name carries the constant prefix.
+const bareOf = (e) => e.bare ?? (typeof e.tool === 'string' && e.tool.startsWith(DEFAULT_PREFIX) ? e.tool.slice(DEFAULT_PREFIX.length) : e.tool);
 const REFUSAL = /\((\w+); next: /;
 const pct = (n, d) => (d ? `${Math.round((n / d) * 1000) / 10}%` : '-');
 const errText = (e) => (typeof e.error === 'string' ? e.error : typeof e.errorCode === 'string' ? e.errorCode : '');
 
 export function report(entries, { aioboxPorts = new Set(), version } = {}) {
-  const aiobox = entries.filter((e) => e.tool === 'aki__aiobox' || e.tool === WRITE_TOOL);
-  const writes = aiobox.filter((e) => e.tool === WRITE_TOOL);
-  const bypass = entries.filter((e) => /^aki__(chrome|devtools)_/.test(e.tool) && aioboxPorts.has(Number(e.port)));
+  const aiobox = entries.filter((e) => ['aiobox', 'aiobox_write'].includes(bareOf(e)));
+  const writes = aiobox.filter((e) => bareOf(e) === 'aiobox_write');
+  const bypass = entries.filter((e) => /^(chrome|devtools)_/.test(bareOf(e)) && aioboxPorts.has(Number(e.port)));
   const evalKinds = {};
   for (const e of bypass) for (const k of e.evalKind || []) evalKinds[k] = (evalKinds[k] || 0) + 1;
   // C3: per client, a write call before that client's first op=state.
   const oriented = new Set();
   let unoriented = 0;
   for (const e of aiobox) {
-    if (e.tool === 'aki__aiobox' && e.op === 'state') oriented.add(e.client);
-    else if (e.tool === WRITE_TOOL && !oriented.has(e.client)) unoriented += 1;
+    if (bareOf(e) === 'aiobox' && e.op === 'state') oriented.add(e.client);
+    else if (bareOf(e) === 'aiobox_write' && !oriented.has(e.client)) unoriented += 1;
   }
   const stale = entries.filter((e) => errText(e).includes('-32602'));
   const older = version ? entries.filter((e) => e.version && e.version !== version) : [];
@@ -36,7 +38,7 @@ export function report(entries, { aioboxPorts = new Set(), version } = {}) {
     aioboxCalls: aiobox.length,
     clients: new Set(aiobox.map((e) => e.client)).size,
     aioboxSuccess: pct(aiobox.filter((e) => e.ok).length, aiobox.length),
-    C2_bypass: { calls: bypass.length, tools: [...new Set(bypass.map((e) => e.tool))], evalKinds },
+    C2_bypass: { calls: bypass.length, tools: [...new Set(bypass.map(bareOf))], evalKinds },
     C3_writeBeforeState: { calls: unoriented, share: pct(unoriented, writes.length) },
     C4_staleSchema: stale.length,
     C5_olderVersion: older.length,

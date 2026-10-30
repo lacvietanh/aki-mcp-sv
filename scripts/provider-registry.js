@@ -104,6 +104,8 @@ export function mountProviders(server, prefix) {
   return server;
 }
 
+export const isServed = (name) => [...toolNames.values()].some((names) => names.includes(name));
+
 export function listProviders() {
   if (!detected) detectAll();
   const settings = readSettings();

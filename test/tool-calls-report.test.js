@@ -33,13 +33,22 @@ const r = report(all, { aioboxPorts: new Set([9222]), version: VERSION });
 assert.equal(r.aioboxCalls, 6);
 assert.equal(r.clients, 3);
 assert.equal(r.C1_evalShare, undefined, 'AkiMCP counts no AIObox op since B1');
-assert.deepEqual(r.C2_bypass, { calls: 1, tools: ['aki__devtools_eval'], evalKinds: { click: 1 } });
+assert.deepEqual(r.C2_bypass, { calls: 1, tools: ['devtools_eval'], evalKinds: { click: 1 } });
 assert.deepEqual(r.C3_writeBeforeState, { calls: 3, share: '75%' }, 'old eval, a compose before state, b without state');
 assert.equal(r.C4_staleSchema, 1, 'errorCode -32602 counts like the old error text');
 assert.equal(r.C5_olderVersion, 1);
 assert.deepEqual(r.C6_refusals, { no_window: 1, busy: 1 }, 'refusal code from errorCode and from detail error text');
 assert.equal(r.aioboxSuccess, '66.7%', 'old eval, compose, state, eval ok; read, bogus failed');
 assert.equal(readEntries(file, { sinceMs: now - 7 * 86_400_000 }).length, 7, '--days drops older lines');
+
+// A log across a rename: pre-4.0 lines carry only the aki__ name, 4.0 lines carry bare, and both count as the same tool.
+const mixed = report([
+  { ts: at(3000), client: 'a', tool: 'aki__aiobox', op: 'state', ok: true },
+  { ts: at(2000), client: 'a', tool: 'mac__aiobox', bare: 'aiobox', op: 'read', ok: true },
+  { ts: at(1000), client: 'a', tool: 'mac__devtools_eval', bare: 'devtools_eval', port: 9222, ok: true },
+], { aioboxPorts: new Set([9222]) });
+assert.equal(mixed.aioboxCalls, 2, 'one pre-4.0 and one 4.0 AIObox line make one total');
+assert.deepEqual(mixed.C2_bypass.tools, ['devtools_eval']);
 
 // A dated sidecar (the D9 keep-days layout) is read together with the current file.
 const datedDir = fs.mkdtempSync(path.join(os.tmpdir(), 'tool-calls-report-dated-'));

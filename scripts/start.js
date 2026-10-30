@@ -24,6 +24,7 @@ import { startGatekeeper } from './gatekeeper.js';
 import { useIngress } from './rate-limit.js';
 import { startPanel } from './panel.js';
 import { warmToolsServer } from './streamable-bridge.js';
+import { announceIdentity } from './mcp-name.js';
 import { checkForUpdate, writeStatusFile, cmpSemver } from './update-check.js';
 import { USER_DIR, IS_DEV, readIngressConfig } from './userdata.js';
 import { killPostmanDaemon } from './postman/postman-mcp.js';
@@ -71,6 +72,7 @@ if (isDev) {
 } else {
   console.log(`[start] config & keys: ${USER_DIR}`);
 }
+announceIdentity();
 
 const client = loadOrCreateClient();
 const passphrase = loadOrCreatePassphrase();

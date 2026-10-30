@@ -5,8 +5,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { traceFields, errorCodeOf, isLoggedTool, normalizeLogSettings, buildLogEntry, appendLogEntry, datedLogFiles, LOG_DEFAULTS } from '../scripts/tool-call-log.js';
 import { SS_DIR } from '../scripts/session-file.js';
+import { SETTINGS_PATH } from '../scripts/userdata.js';
+
+fs.mkdirSync(path.dirname(SETTINGS_PATH), { recursive: true });
+fs.writeFileSync(SETTINGS_PATH, JSON.stringify({ identity: { name: 'MacMCP' } }));
+const { traceFields, errorCodeOf, isLoggedTool, normalizeLogSettings, buildLogEntry, appendLogEntry, datedLogFiles, LOG_DEFAULTS } = await import('../scripts/tool-call-log.js');
+const { createToolsServer } = await import('../scripts/tools-server.js');
 
 const dayBefore = (n) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
 const linesOf = (f) => fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).length;
@@ -39,11 +44,24 @@ test('normalizeLogSettings keeps good values and falls back (or throws in strict
   assert.throws(() => normalizeLogSettings({ maxMB: 0 }, { strict: true }), /maxMB/);
 });
 
-test('isLoggedTool logs every aki__ tool and skips non-tool names', () => {
-  assert.equal(isLoggedTool('aki__git'), true);
-  assert.equal(isLoggedTool('aki__anything_else'), true);
+test('isLoggedTool logs a served name at the active prefix and skips anything else', () => {
+  createToolsServer();
+  assert.equal(isLoggedTool('mac__git'), true);
+  assert.equal(isLoggedTool('mac__run_cmd'), true);
+  assert.equal(isLoggedTool('mac__not_a_tool'), false);
+  assert.equal(isLoggedTool('aki__git'), false);
   assert.equal(isLoggedTool(undefined), false);
   assert.equal(isLoggedTool(''), false);
+});
+
+test('a logged call at prefix mac__ writes the served name and the bare name, and a 56-character served name whole', () => {
+  const entryFor = (name) => buildLogEntry({ sessionId: 's', agent: 'A', params: { name, arguments: {} }, response: {}, ms: 1 }, { level: 'basic' }, new Set());
+  const run = entryFor('mac__run_cmd');
+  assert.equal(run.tool, 'mac__run_cmd');
+  assert.equal(run.bare, 'run_cmd');
+  const long = `mac__${'x'.repeat(51)}`;
+  assert.equal(long.length, 56);
+  assert.equal(entryFor(long).tool, long);
 });
 
 test('errorCodeOf extracts a refusal code and -32602, nothing otherwise', () => {

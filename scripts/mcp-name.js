@@ -1,5 +1,6 @@
 // Naming SSoT for the MCP server identity: docs/plan/v4-custom-name.md § The identity (no hyphen in the key: docs/ref/fact-agy-mcp-config.md § CLI-5).
 import { readSettings } from './allowlist.js';
+import { SETTINGS_PATH } from './userdata.js';
 
 export const DEFAULT_NAME = 'AkiMCP';
 export const DEFAULT_KEY = 'akimcp';
@@ -66,3 +67,9 @@ const resolved = resolveIdentity(readSettings().identity);
 export const IDENTITY = resolved.identity;
 export const IDENTITY_PROBLEM = resolved.problem;
 export const served = (bare) => `${IDENTITY.prefix}${bare}`;
+
+// console.error only: stdout is the JSON-RPC channel on stdio.js.
+export function announceIdentity() {
+  if (IDENTITY_PROBLEM) console.error(problemLine(IDENTITY_PROBLEM, SETTINGS_PATH));
+  console.error(`Serving as ${IDENTITY.name} · Server ID ${IDENTITY.key} · tools ${IDENTITY.prefix}*`);
+}

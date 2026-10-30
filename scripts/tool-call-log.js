@@ -8,14 +8,18 @@ import { readSettings } from './allowlist.js';
 import { USER_DIR } from './userdata.js';
 import { VERSION } from './version.js';
 import { acceptSessionPath, ssAgeMinutes, shapeFromResult } from './session-file.js';
+import { IDENTITY, CEILING } from './mcp-name.js';
+import { isServed } from './provider-registry.js';
 
 export const TOOL_CALLS_PATH = path.join(USER_DIR, 'tool-calls.jsonl');
 
 // Owner-decided defaults (D9): keep-days is the real retention; maxMB only rolls the current file to a dated sidecar when it grows large, so report/tail reads never load one giant file.
 export const LOG_DEFAULTS = Object.freeze({ enabled: true, level: 'basic', days: 40, maxMB: 16 });
 
-// D9 logs every tool, so the only filter left is that the name is a tool: every `aki__` tool passes, non-string names (non-tool messages) do not.
-export const isLoggedTool = (name) => typeof name === 'string' && name.startsWith('aki__');
+// D9 logs every tool, so the only filter left is that the name is one this server serves: any prefix passes, non-string names (non-tool messages) do not.
+export const isLoggedTool = (name) => typeof name === 'string' && isServed(name);
+
+const bareOf = (name) => (typeof name === 'string' && name.startsWith(IDENTITY.prefix) ? name.slice(IDENTITY.prefix.length) : undefined);
 
 const DATED_NAME = /^tool-calls-(\d{4}-\d{2}-\d{2})(?:-\d+)?\.jsonl$/;
 const REFUSAL = /\((\w+); next: /;
@@ -83,7 +87,8 @@ export function buildLogEntry({ sessionId, agent, headerNames, trace, params, re
     ts: new Date().toISOString(),
     client: short(sessionId, 8),
     agent: short(agent, 32),
-    tool: short(params?.name, 40),
+    tool: short(params?.name, CEILING),
+    bare: short(bareOf(params?.name), CEILING),
     op: short(args.op, 24),
     window: short(args.window, 48),
     port: short(args.port, 6),

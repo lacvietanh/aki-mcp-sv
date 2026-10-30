@@ -2,7 +2,7 @@
 import './setup.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveIdentity, problemLine, served, IDENTITY, IDENTITY_PROBLEM } from '../scripts/mcp-name.js';
+import { resolveIdentity, problemLine, served, announceIdentity, IDENTITY, IDENTITY_PROBLEM } from '../scripts/mcp-name.js';
 import { readSettings } from '../scripts/allowlist.js';
 
 const DEFAULTS = { name: 'AkiMCP', key: 'akimcp', prefix: 'aki__' };
@@ -138,4 +138,11 @@ test('a refused value holding ESC, BEL and U+009B prints none of them raw in the
   assert.doesNotMatch(line, /\p{Cc}/u);
   for (const escaped of ['\\u001b', '\\u0007', '\\u009b']) assert.ok(line.includes(escaped), `${escaped} written out`);
   assert.match(line, /^Server ID ".*" in setting\.json is not valid: /);
+});
+
+test('the boot line goes to console.error and states the serving identity', (t) => {
+  const lines = [];
+  t.mock.method(console, 'error', (line) => lines.push(line));
+  announceIdentity();
+  assert.deepEqual(lines, ['Serving as AkiMCP · Server ID akimcp · tools aki__*']);
 });

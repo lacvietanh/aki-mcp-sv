@@ -5,12 +5,7 @@ import { fileURLToPath } from 'node:url'
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
 const EXPECTED = [
-  'public/panel-client.js:558',
-  'scripts/tool-call-log.js:18',
-  'scripts/tool-calls-report.js:9',
-  'scripts/tool-calls-report.js:15',
-  'scripts/tool-calls-report.js:17',
-  'scripts/tool-calls-report.js:24',
+  { file: 'public/panel-client.js', text: "['Tools', (p) => p.tools.map((n) => n.replace(/^aki__/, '')).join(', ')]," },
 ]
 
 const EXEMPT_FILES = ['scripts/verify-boundary-b1.sh', 'scripts/mcp-name.js']
@@ -27,11 +22,12 @@ const left = grep.stdout
   .map((line) => line.match(/^([^:]+):(\d+):(.*)$/))
   .filter(Boolean)
   .filter(([, file, , text]) => !EXEMPT_FILES.includes(file) && !EXEMPT_DIRS.some((dir) => file.startsWith(dir)) && !text.trimStart().startsWith('//'))
-  .map(([, file, line]) => `${file}:${line}`)
+  .map(([, file, line, text]) => ({ file, line, text: text.trim() }))
 
-for (const entry of left) console.log(entry)
+for (const entry of left) console.log(`${entry.file}:${entry.line}`)
 
-if (left.join('\n') !== EXPECTED.join('\n')) {
-  console.error(`residue differs from the expected list (${left.length} left, ${EXPECTED.length} expected)`)
+const keyOf = ({ file, text }) => `${file}\t${text}`
+if (left.map(keyOf).join('\n') !== EXPECTED.map(keyOf).join('\n')) {
+  console.error(`${left.length} lines above still name aki__. This check passes only when exactly these ${EXPECTED.length} are left: ${EXPECTED.map(({ file, text }) => `${file}: ${text}`).join(', ')}.`)
   process.exit(1)
 }
