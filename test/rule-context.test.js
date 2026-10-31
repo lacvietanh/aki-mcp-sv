@@ -60,6 +60,9 @@ try {
   assert.ok(audit.audit.importGraph.length >= 2);
   assert.ok(audit.audit.candidates.some((candidate) => candidate.endsWith(path.join('src', 'CLAUDE.local.md'))));
 
+  const unborn = await assembleRuleContext({ workingPath: path.join(project, 'new', 'deeper') }, { ...deps, cache: new Map() });
+  assert.equal(unborn.receipt, changed.receipt, 'a folder not created yet takes the rules of its nearest existing parent');
+
   await fs.rm(path.join(home, '.claude', 'skills', 'akirule', 'SKILL.md'));
   const degraded = await assembleRuleContext({}, { ...deps, cache: new Map() });
   assert.equal(degraded.status, 'degraded');
@@ -68,6 +71,7 @@ try {
 
   await assert.rejects(() => assembleRuleContext({ workingPath: 'relative/path' }, deps), (error) => error instanceof RuleContextError && error.code === 'INVALID_WORKING_PATH');
   await assert.rejects(() => assembleRuleContext({ workingPath: home }, deps), (error) => error instanceof RuleContextError && error.code === 'OUTSIDE_ALLOWED_ROOTS');
+  await assert.rejects(() => assembleRuleContext({ workingPath: path.join(home, 'new', 'deeper') }, deps), (error) => error instanceof RuleContextError && error.code === 'OUTSIDE_ALLOWED_ROOTS');
 
   console.log('PASS: rule context import expansion, routing source, provenance, cache invalidation, precedence, and safe degradation');
 } finally {

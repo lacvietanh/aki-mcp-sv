@@ -68,9 +68,14 @@ export async function assembleRuleContext(input = {}, suppliedDeps = {}) {
     if (typeof input.workingPath !== 'string' || !pathApi.isAbsolute(input.workingPath)) {
       throw new RuleContextError('INVALID_WORKING_PATH', 'workingPath must be an absolute local path');
     }
+    // A folder not created yet takes the rules of its nearest existing parent; its missing segments cannot be symlinks.
     let real;
-    try { real = await fsp.realpath(pathApi.resolve(input.workingPath)); }
-    catch (error) { throw new RuleContextError('WORKING_PATH_UNAVAILABLE', `workingPath cannot be resolved (${error.code || 'unknown'})`); }
+    for (let cursor = pathApi.resolve(input.workingPath); !real; cursor = pathApi.dirname(cursor)) {
+      try { real = await fsp.realpath(cursor); }
+      catch (error) {
+        if (!['ENOENT', 'ENOTDIR'].includes(error.code) || pathApi.dirname(cursor) === cursor) throw new RuleContextError('WORKING_PATH_UNAVAILABLE', `workingPath cannot be resolved (${error.code || 'unknown'})`);
+      }
+    }
     const stat = await fsp.stat(real);
     workingDir = stat.isDirectory() ? real : pathApi.dirname(real);
     const resolvedRoots = [];

@@ -20,6 +20,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versio
 - **A tag push now publishes the npm package before it creates the GitHub Release** (`.github/workflows/release.yml`, `docs/plan/npm-trusted-publishing.md`): three jobs, `verify` (tests, tag matches manifest and CHANGELOG, the packed tarball answers `initialize` with the tag version), `publish` (`npm publish` through npm Trusted Publishing, no token or OTP, the only job with `id-token: write`, no dependency installed) and `release`; actions are pinned by commit SHA. Not run yet: it needs the trusted publisher saved on npmjs.com, then the next tag proves it; until then publish by hand with `npm publish`.
 - **Any HTTP chat is the first web tab, and every connector tab has a logo** (`public/img/providers/`): Cursor, AGY, Codex, Buda and ClickUp get their brand marks, Any MCP app the MCP mark and Any HTTP chat a globe.
 
+### Fixed
+- **The rule-context tool accepts a folder that does not exist yet** (`scripts/rule-context.js`): a `workingPath` not created yet takes the rules of its nearest existing parent instead of failing with `WORKING_PATH_UNAVAILABLE`, so a task in a new folder no longer needs a second call.
+
 ## [3.3.1] - 2026-10-29
 
 ### Fixed
