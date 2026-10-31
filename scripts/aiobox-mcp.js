@@ -1,5 +1,5 @@
 // AIObox windows: aki__aiobox reads, aki__aiobox_write acts. AkiMCP owns only the envelope, window identification and four transports; every op, its arguments and its refusals are AIObox's, published in ~/.aki/aiobox/akimcp-state.json.
-// Frozen rows both ways: docs/plan/IMPORTANT-akimcp-aiobox-contract.md. Decisions: docs/plan/done/akimcp-aiobox-boundary-plan.md § 4.
+// Frozen rows both ways: docs/plan/done/IMPORTANT-akimcp-aiobox-contract.md. Decisions: docs/plan/done/akimcp-aiobox-boundary-plan.md § 4.
 import { AsyncLocalStorage } from 'node:async_hooks';
 import fs from 'node:fs';
 import path from 'node:path';

@@ -339,7 +339,7 @@ function validateIngressOrigin(origin) {
 function saveCloudflaredIngress(credContent, origin) {
   writeFileSync(CLOUDFLARED_CRED_PATH, validateCloudflaredCred(credContent), { mode: 0o600 });
   const saved = { mode: 'cloudflared', credPath: CLOUDFLARED_CRED_PATH, origin: validateIngressOrigin(origin) };
-  // Only the saved pick: Funnel never lands here, so AIObox takes the running origin from instance.json (docs/plan/IMPORTANT-akimcp-aiobox-contract.md).
+  // Only the saved pick: Funnel never lands here, so AIObox takes the running origin from instance.json (docs/plan/done/IMPORTANT-akimcp-aiobox-contract.md).
   writeFileSync(INGRESS_CONFIG_PATH, `${JSON.stringify(saved, null, 2)}\n`);
   return saved;
 }
@@ -466,7 +466,7 @@ export const ROUTES = {
     setEnabled(body.id, body.enabled);
     return listProviders();
   },
-  // AIObox reads clients[] and callers[] here with x-panel-token (docs/plan/IMPORTANT-akimcp-aiobox-contract.md).
+  // AIObox reads clients[] and callers[] here with x-panel-token (docs/plan/done/IMPORTANT-akimcp-aiobox-contract.md).
   'GET /api/log': async () => ({ settings: loadLogSettings(), defaults: LOG_DEFAULTS }),
   'POST /api/log': async (body) => {
     const settings = readSettings();
@@ -493,7 +493,7 @@ export const ROUTES = {
     const ended = ids.filter(revokeTempTokenById).length;
     return { ok: true, message: `revoked ${ended} temporary token${ended === 1 ? '' : 's'}` };
   },
-  // Only roll === true rolls: a removed client still holds the shared token, so cutting it rolls it for every Bearer holder. AIObox calls this (docs/plan/IMPORTANT-akimcp-aiobox-contract.md).
+  // Only roll === true rolls: a removed client still holds the shared token, so cutting it rolls it for every Bearer holder. AIObox calls this (docs/plan/done/IMPORTANT-akimcp-aiobox-contract.md).
   'POST /api/clients/remove': async (body) => {
     const outcome = removeClient(typeof body.clientId === 'string' ? body.clientId : '');
     if (body.roll !== true) return { ok: true, message: outcome };

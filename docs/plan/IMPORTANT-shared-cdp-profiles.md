@@ -1,6 +1,6 @@
 # IMPORTANT — Một thư mục CDP chung cho aiobox và akimcp
 
-> **IMPORTANT, ràng buộc cả hai repo.** File này có bản sinh đôi ở `aiobox: docs/plan/IMPORTANT-shared-cdp-profiles.md`; hai bản giống nhau trừ dòng này, sửa một bản thì sửa luôn bản kia trong cùng phiên. Nguồn: working plan `~/.aki/mcpsv/task/cdp-unified-clone/plan.md` (port vào hai repo ngày 2026-10-01). Cùng nhóm ràng buộc: `docs/plan/IMPORTANT-akimcp-aiobox-contract.md` (id, tên, file và endpoint AkiMCP mà AIObox dùng).
+> **IMPORTANT, ràng buộc cả hai repo.** File này có bản sinh đôi ở `aiobox: docs/plan/IMPORTANT-shared-cdp-profiles.md`; hai bản giống nhau trừ dòng này, sửa một bản thì sửa luôn bản kia trong cùng phiên. Nguồn: working plan `~/.aki/mcpsv/task/cdp-unified-clone/plan.md` (port vào hai repo ngày 2026-10-01). Cùng nhóm ràng buộc: `docs/plan/done/IMPORTANT-akimcp-aiobox-contract.md` (id, tên, file và endpoint AkiMCP mà AIObox dùng).
 
 Bắt đầu: 2026-09-28 · Hợp nhất + deep-think/audit: 2026-10-01 · Chat nguồn: claude.ai/chat/5c884fec-963e-4866-b416-3592d8515cfc (tab `aki-cdp`) · Trạng thái: patch aiobox và akimcp đã có trong code (§ Tiến độ aiobox, § Tiến độ akimcp; akimcp commit 2026-10-03, ra trong 3.0.0), đã dời dữ liệu 26/26 profile (2026-10-03), test chéo phía akimcp đạt trên gốc mới (§ Tiến độ akimcp), còn ca aiobox mở profile do akimcp giữ và profile 9 · Hai bản IMPORTANT trong hai repo là source of truth cho việc gom CDP (working plan cũ chỉ còn trỏ về đây); các số liệu runtime bên dưới là snapshot kiểm chứng ngày 2026-09-28 và phải được dò lại trước khi thực thi.
 

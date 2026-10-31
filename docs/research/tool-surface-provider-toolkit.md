@@ -130,7 +130,7 @@ Bối cảnh: single-process, một `McpServer` dùng chung mọi client qua m�
 
 - `docs/feat/tools.md` § When a tool earns its place, § Anchor
 - `docs/plan/done/bridge-session-churn.md` (phiên chung)
-- `docs/plan/IMPORTANT-shared-cdp-profiles.md`, `docs/plan/IMPORTANT-akimcp-aiobox-contract.md`
+- `docs/plan/IMPORTANT-shared-cdp-profiles.md`, `docs/plan/done/IMPORTANT-akimcp-aiobox-contract.md`
 - aiobox `docs/plan/done/gpt-akimcp-connect-macro.md` dòng 120 (ChatGPT gắn cờ `Suspicious Instruction` cho `akidevrule_context`)
 
 ## Decision

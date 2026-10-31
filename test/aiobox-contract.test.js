@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Shapes AIObox reads from AkiMCP (docs/plan/IMPORTANT-akimcp-aiobox-contract.md § Hợp đồng AIObox đọc từ AkiMCP): a change that breaks one fails here before it breaks the macro.
+// Shapes AIObox reads from AkiMCP (docs/plan/done/IMPORTANT-akimcp-aiobox-contract.md § Hợp đồng AIObox đọc từ AkiMCP): a change that breaks one fails here before it breaks the macro.
 import './setup.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

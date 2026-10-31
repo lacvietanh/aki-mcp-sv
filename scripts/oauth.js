@@ -183,7 +183,7 @@ function redirectHostOf(uris) {
   }
 }
 
-// AIObox reads every field of this view through GET /api/security (docs/plan/IMPORTANT-akimcp-aiobox-contract.md).
+// AIObox reads every field of this view through GET /api/security (docs/plan/done/IMPORTANT-akimcp-aiobox-contract.md).
 function activityView(record, kind, signedInIds) {
   const isStatic = kind === 'static';
   return {
@@ -274,7 +274,7 @@ function resolveClient(clientId) {
 export function loadOrCreatePassphrase() {
   if (existsSync(PASSPHRASE_FILE)) return readFileSync(PASSPHRASE_FILE, 'utf8').trim();
   const p = Array.from({ length: PASSPHRASE_LENGTH }, () => PASSPHRASE_ALPHABET[randomInt(PASSPHRASE_ALPHABET.length)]).join('');
-  // AIObox reads this one-line file to fill the authorize page (docs/plan/IMPORTANT-akimcp-aiobox-contract.md).
+  // AIObox reads this one-line file to fill the authorize page (docs/plan/done/IMPORTANT-akimcp-aiobox-contract.md).
   writeFileSync(PASSPHRASE_FILE, p, { mode: 0o600 });
   return p;
 }

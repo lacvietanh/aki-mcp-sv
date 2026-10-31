@@ -58,7 +58,7 @@ if (existingLock && existingLock.pid !== process.pid && isPidAlive(existingLock.
   }
 }
 
-// AIObox spawns `akimcp --no-browser --port <n>`: --port winning is frozen in docs/plan/IMPORTANT-akimcp-aiobox-contract.md.
+// AIObox spawns `akimcp --no-browser --port <n>`: --port winning is frozen in docs/plan/done/IMPORTANT-akimcp-aiobox-contract.md.
 const gatePort = customGatePort || process.env.GATEKEEPER_PORT || (isDev ? '9997' : '9999');
 const panelPort = customPanelPort || process.env.PANEL_PORT || (isDev ? '9996' : '9998');
 

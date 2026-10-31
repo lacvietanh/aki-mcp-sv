@@ -8,7 +8,6 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const EXEMPT_FILES = [
   'docs/plan/ss-session-file.md',
   'docs/plan/per-client-tool-surface.md',
-  'docs/plan/IMPORTANT-akimcp-aiobox-contract.md',
   'docs/plan/v4-custom-name.md',
 ]
 const EXEMPT_DIRS = ['docs/plan/done/', 'docs/research/']

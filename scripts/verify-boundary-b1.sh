@@ -4,7 +4,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 AIOBOX_REPO="${AIOBOX_REPO:-$REPO_ROOT/../aiobox}"
-CONTRACT="docs/plan/IMPORTANT-akimcp-aiobox-contract.md"
+CONTRACT="docs/plan/done/IMPORTANT-akimcp-aiobox-contract.md"
 
 fail() {
   echo "ERROR: $1" >&2
