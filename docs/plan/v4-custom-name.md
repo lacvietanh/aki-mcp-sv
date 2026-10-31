@@ -99,7 +99,7 @@ Keeping all three defaults: nothing. No reconnect, no re-allow, AIObox untouched
 | When | What breaks | Who acts |
 |---|---|---|
 | Any rename, including Reset to AkiMCP from a non-default name | web connectors list tools again; Claude asks "Always allow" again; Notion workspaces read `tools_stale` once | user, once |
-| Tool prefix changes | prompts and guides that call `aki__akidevrule_context` (council templates, AIObox prompt, akimcp.top guide) name a tool that no longer exists; one bridge sentence in the rule-context tool's description and in `instructions` covers it (untested until V1, P8) | AkiMCP (P3); owner runs V1 |
+| Tool prefix changes | prompts and guides that call `aki__akidevrule_context` (council templates, AIObox prompt, akimcp.top guide) name a tool that no longer exists; one bridge sentence in the rule-context tool's description and in `instructions` covers it (verified by flow, `research/client-tool-name-limits.md` § R6) | AkiMCP (P3) |
 | Tool prefix changes | the AIObox labs ClickUp launcher checks the exact name `aki_mcp__aki__akidevrule_context` and a count of 36; 15 Super Agents would need re-binding | AIObox side, DEFERRED |
 | Display name lacks `akimcp` (AIObox's own test, D12) | the AIObox Claude connector finder misses the connector it created | panel warns; fix is AIObox-side, DEFERRED |
 | Server ID changes | entries stay under the old key in Claude Code, Codex, Cursor, agy until Apply removes them | Apply (P5) |
@@ -117,6 +117,7 @@ Each phase lists files, tests (file + case), a verify command that can be pasted
 - Action: for each Appendix B row the code relies on (64 and 60 character caps, charset, `mcp__` composition), find a vendor page or run a live screen, and record it with a date. Unsourced rows stay ASSUMPTION and the constants keep 28 and 29.
 - Verify: `grep -c "ASSUMPTION" docs/ref/fact-client-tool-names.md` prints the number of rows still unsourced; `grep -nE "^\| .*\| (20[0-9]{2}-[0-9]{2}-[0-9]{2}) \|" docs/ref/fact-client-tool-names.md` shows a read date on every sourced row.
 - Done when: `CEILING` in P2 equals the sourced figure, or the doc records that none was found and the 64 stays an ASSUMPTION in `scripts/mcp-name.js`'s comment.
+- Done 2026-10-31: `docs/ref/fact-client-tool-names.md` N1 to N6; the 64 is OpenAI's cap that Codex's `mcp__<key>__<tool>` must fit (N3, N4), so `CEILING` stays 64 and 28 + 29 stay; Claude's API allows 128 (N1), Cursor warns past 60 and truncates (N5). Research: `research/client-tool-name-limits.md` § R1 to R5.
 
 ### P1 · Freeze the 3.3.1 surface (before the first code edit)
 
@@ -191,8 +192,8 @@ Before P3 the whole `git grep` lists 58 lines (51 in 25 files under `scripts/`, 
 
 ### P8 · Live checks (owner-run: they spend session quota)
 
-- V1: with a prefix other than `aki__`, one ClickUp Super Agent and one claude.ai chat, each given a prompt that still calls `aki__akidevrule_context`, from boot to the first receipt-gated write. Pass: both call `<prefix>akidevrule_context` and the write is not refused. Until it passes, C3 reads "designed, not verified".
-- V2: Postman with a non-default prefix, using the safe-flag probe `scripts/postman/debug/postman-probe-instruction-flag.js`. Pass: the flag rate does not rise against the default sentence (the wording of `prompts/postman.md` is what keeps Postman's safety check quiet, `postman-daemon.cjs:29`).
+- V1: with a prefix other than `aki__`, one ClickUp Super Agent and one claude.ai chat, each given a prompt that still calls `aki__akidevrule_context`, from boot to the first receipt-gated write. Pass: both call `<prefix>akidevrule_context` and the write is not refused. Until it passes, C3 reads "designed, not verified". Closed 2026-10-31 by reading the flow, no live run: every channel that names the rule tool is built from `served()` and the receipt is not keyed by name, so a model that ignores the bridge loses one refused call (`research/client-tool-name-limits.md` § R6).
+- V2: Postman with a non-default prefix, using the safe-flag probe `scripts/postman/debug/postman-probe-instruction-flag.js`. Pass: the flag rate does not rise against the default sentence (the wording of `prompts/postman.md` is what keeps Postman's safety check quiet, `postman-daemon.cjs:29`). Closed 2026-10-31 by reading the flow, no live run: a rename swaps one `[a-z0-9]` word and one identifier, the flag follows framing, which does not change, and a probe at affordable n cannot separate the rates (§ R7).
 - V3 (builder, local, no quota): the default-identity diff of P1, run again at release: `node --test --import ./test/setup.js test/identity-served.test.js` case 7.
 - [ ] R1 (after release): at the 4.0.0 release, replace `{release date + 40 days}` in its CHANGELOG entry with the date; on that date remove the old-line branch of `scripts/tool-calls-report.js` (a line without `bare` has `aki__` stripped) and its test row (P4).
 
@@ -223,7 +224,7 @@ Strings are in Appendix D (S-numbers); this order is what the builder walks, fro
 
 - AIObox repo: find the connector by the name AkiMCP reports instead of `/akimcp/` (`provider/claude/tools.js:27`); delete a competing connector only when the name matches; the labs ClickUp launcher compares the bare tool suffix and counts from `tools/list` (`core.cjs:25,130,141,152`).
 - `docs/plan/IMPORTANT-akimcp-aiobox-contract.md` (modified in the working tree by another session, twin in the AIObox repo): its § Id và tên says the name is always `AkiMCP`, and `connect.rs:17` shows AkiMCP's own name is used; whoever owns that file decides the wording.
-- Owner: V1 and V2; the P0 web verification (no seat had web search); the release of 4.0.0 (version bump, tag, publish; `RULE-release`), run only on the owner's go after P8; `release.yml` checks that `serverInfo.name` is `akimcp` under an empty HOME, which D4 keeps true at the defaults; the commit of this plan.
+- Owner: the release of 4.0.0 (version bump, tag, publish; `RULE-release`), run only on the owner's go after P8; `release.yml` checks that `serverInfo.name` is `akimcp` under an empty HOME, which D4 keeps true at the defaults; the commit of this plan.
 - Not inspected by any grep: user prompts outside the machine (council templates in other workspaces, ClickUp Super Agent prompts, claude.ai project instructions); the migration note tells users to check.
 
 ---
@@ -373,7 +374,7 @@ What the rows force:
 4. For clients that drop `instructions` (row 10), only tool descriptions carry tool names to the AI, so every name inside a description follows the served prefix and the bridge sentence lives in a description.
 5. A prefix lengthens all 38 tools; the ceiling applies to the longest served name, which depends on whether Postman is installed (27 vs 24).
 
-Unknown until a live screen or a dated vendor source: the shown name and cap for rows 2, 3, 7, 8, 9, 11, 12, the charset for rows 1, 4, 5, agy 1.4.7 key handling, and the 64 and 60 figures themselves. That is P0.
+Unknown until a live screen or a dated vendor source: the shown name and cap for rows 2, 3, 7, 8, 9, 11, 12, the charset for rows 1, 4, 5, agy 1.4.7 key handling, and the 64 and 60 figures themselves. That is P0. P0 result (2026-10-31, `docs/ref/fact-client-tool-names.md`): the 64 is OpenAI's, binding through Codex; Claude allows 128; Cursor's 60 warns and truncates; the rest stays ASSUMPTION there.
 
 ## Appendix C · Contracts C1 to C12, migration, why 4.0.0
 
@@ -383,25 +384,25 @@ Unknown until a live screen or a dated vendor source: the shown name and cap for
 |---|---|---|---|---|
 | C1 | AIObox creates and finds the connector. The ClickUp macro and `readiness.rs` follow the name AkiMCP reports; the Claude finder (`provider/claude/tools.js:26-27`) matches the name lowercased with whitespace removed against `akimcp` plus the URL | holds | breaks for the Claude finder when the Display name lacks `akimcp` by that exact test (`Aki-MCP`, `WorkMCP` break; `Aki MCP`, `AkiMCP Work` hold) | AkiMCP: the panel warns with that test (D12). AIObox: find by reported name, DEFERRED |
 | C2 | AIObox compares tool lists by name (`notion/tools.js:3`, `automation/request.rs:2101-2113`); Claude's "Always allow" is keyed by server, tool and definition hash | holds | Notion `tools_stale` until reconnect once; Claude asks again per tool; correct, since the tool really changed | user, once |
-| C3 | Prompts and guides that call tools by hard-coded name: AIObox `akimcp-instruction.md`, `shared/guide/aiobox.md`, council templates, `public/guide/mcp-http/v1.md` | holds | an AI told to call `aki__akidevrule_context` finds no such tool, gets no receipt, every write is refused | AkiMCP: served text renders from the served prefix, and the bridge sentence sits in the rule-context description (ClickUp does not receive `instructions`). V1 proves it (P8) |
+| C3 | Prompts and guides that call tools by hard-coded name: AIObox `akimcp-instruction.md`, `shared/guide/aiobox.md`, council templates, `public/guide/mcp-http/v1.md` | holds | an AI told to call `aki__akidevrule_context` finds no such tool, gets no receipt, every write is refused | AkiMCP: served text renders from the served prefix, and the bridge sentence sits in the rule-context description (ClickUp does not receive `instructions`). verified by flow (`research/client-tool-name-limits.md` § R6) |
 | C4 | The labs ClickUp launcher checks the exact name `aki_mcp__aki__akidevrule_context` and a count of 36 (`core.cjs:152`; the count is already stale against 38 served) | holds | `FINAL_VERIFICATION_FAILED`; 15 Super Agents lose their tools until re-bound | labs (owner's, AIObox side): compare the bare suffix, count from `tools/list`. DEFERRED |
 | C5 | akidevrule receipt: `rule-gate.js:3`, a hash of the rule files, not the name. `aki__` in the AkiDevRule payload: 0 | holds | the receipt holds; only the refusal text and descriptions render the served name | AkiMCP (P3) |
 | C6 | Local clients store by Server ID: Claude Code user scope and allow `mcp__akimcp__*` (`panel.js:69-70`), Codex `[mcp_servers.akimcp]` (`:122`), Cursor `mcpServers.akimcp` (`:139`), agy `mcp(akimcp/*)` and cache `~/.gemini/antigravity-cli/mcp/akimcp/` | holds | the old entry stays, the allow rule must be granted again, and a same-named foreign entry could be overwritten | Apply (P5, D11) |
 | C7 | Web connectors (claude.ai, ChatGPT, Grok, Gemini, Notion, ClickUp, Buda, Postman): the first half of the shown name is typed by the user; OAuth DCR is keyed by client ID (`oauth.js` `resolveClient`), not by name | holds | auth holds; a new prefix means the client lists tools again and asks for approval; ClickUp agents must be re-bound | user, from the panel checklist |
 | C8 | Product: npm `@akinet/akimcp`, `mcpName io.github.lacvietanh/akimcp`, domain akimcp.top | holds | holds (D2) | nobody |
 | C9 | Tool-call log history: the report reads old `tool-calls-YYYY-MM-DD.jsonl` files | holds | holds if the report counts by `bare` and strips `aki__` from old lines; otherwise before/after counts split silently | AkiMCP (P4) |
-| C10 | Postman first message: `prompts/postman.md:1` names `aki__*`, and its exact wording is what keeps Postman's safety check quiet (`postman-daemon.cjs:29`) | holds, byte for byte | another prefix changes a checked sentence: ASSUMPTION it may be flagged | AkiMCP renders the prefix; V2 probes it (P8) |
+| C10 | Postman first message: `prompts/postman.md:1` names `aki__*`, and its exact wording is what keeps Postman's safety check quiet (`postman-daemon.cjs:29`) | holds, byte for byte | another prefix changes a checked sentence: ASSUMPTION it may be flagged | AkiMCP renders the prefix; verified by flow (§ R7) |
 | C11 | Downgrade 4.x to 3.x while renamed | holds | breaks: 3.x ignores the setting and serves `aki__*`/`akimcp` while clients are connected under the new names | user: set the defaults back first; one CHANGELOG line says it |
 | C12 | Two machines in one AI account (`IMPORTANT-akimcp-aiobox-contract.md:16`: an `AkiMCP` pointing at another URL is deleted by the macro; `config-page.js:147` has a snippet to paste on another machine) | holds (one machine, one `AkiMCP`) | second-order effect: renaming is the natural way to attach two machines (different keys). If both Display names contain `akimcp`, the AIObox macro on one machine deletes the other's connector (configuration only; reconnect fixes it) | AkiMCP: panel warning for AIObox auto-connect users. DEFERRED: AIObox deletes only a same-named connector. D3 stays (one instance per machine) |
 
-Result: with the defaults 12 of 12 contracts hold. With a rename, C1 (Display name lacks `akimcp`), C3 and C4 (prefix changes), C11 (downgrade) and C12 (two machines) break; C2, C6, C7 cost the user one redo; C9 and C10 hold if P4 is done right and V2 passes. No contract needs AkiMCP to change because of AIObox.
+Result: with the defaults 12 of 12 contracts hold. With a rename, C1 (Display name lacks `akimcp`), C3 and C4 (prefix changes), C11 (downgrade) and C12 (two machines) break; C2, C6, C7 cost the user one redo; C9 and C10 hold (P4 done; V2 closed by flow). No contract needs AkiMCP to change because of AIObox.
 
 Migration.
 
 - A rename is something the user does on purpose, once. There is no automatic migration for web clients, because the server cannot write into them (C7). Rejected: reconnecting for the user.
 - Someone who keeps the defaults does nothing: upgrading 3.x to 4.0.0 asks no reconnect and no new "Always allow", because every served byte is unchanged (D4). The mechanism (Claude keys "Always allow" by definition hash) is an ASSUMPTION from an AIObox comment (`claude/tools.js:2`); a live observation supports it (AIObox `desktop/CHANGELOG.md:401`, 2026-10-05: tools rewritten in place were asked again).
 - At every rename the panel shows, at the field and before Save, what to do per client: Apply fixes C6 itself, C7 is by hand, C1 and C4 say "not yet supported when renamed".
-- V1 and V2 spend session quota, so the owner runs them (`agent.B3`); V3 is local and the builder's.
+- V1 and V2 would spend session quota; both were closed by reading the flow instead (`research/client-tool-name-limits.md` § R6, R7); V3 is local and the builder's.
 - No alias (D6). No `identity` field in `instance.json` (D7).
 - Why 4.0.0: see D1. The CHANGELOG line (S18) says it plainly: "Keep the default and nothing changes: no reconnect, no new Always allow."
 
@@ -468,7 +469,7 @@ Writing rule: lowercase `akimcp` appears only as a literal (command, package, Se
 | S17 | panel prose: h1 and the "AKIMCP" mentions | AkiMCP | always |
 | S18 | CHANGELOG 4.0.0 headline | **Name the server without editing code** (`setting.json` `identity`, panel section 1): the Display name you type also sets the Server ID and Tool prefix (`MacMCP` gives `macmcp` and `mac__run_cmd`), and each can be set on its own. Keep the default and nothing changes: no reconnect, no new Always allow. A new name needs a restart and a reconnect in every client; set the default back before installing a 3.x version. | release |
 
-Every other served text that names a tool (descriptions, `next` hints, `rule-context-mcp.js` steps, the `project-rules.js` line, `postman.md`, result text) renders the same words with the served prefix in place of `aki__`; no other wording changes. `postman.md` is safety-tested: its rendered text at a non-default prefix needs the V2 live check, not a rewrite.
+Every other served text that names a tool (descriptions, `next` hints, `rule-context-mcp.js` steps, the `project-rules.js` line, `postman.md`, result text) renders the same words with the served prefix in place of `aki__`; no other wording changes. `postman.md` is safety-tested: its rendered text at a non-default prefix keeps the checked framing (V2, settled by flow), not a rewrite.
 
 ### Rules for static docs
 

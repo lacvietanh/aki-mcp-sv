@@ -7,7 +7,7 @@ export const DEFAULT_KEY = 'akimcp';
 export const DEFAULT_PREFIX = 'aki__';
 export const DEFAULT_APPLIED_KEYS = ['aki-mcp', DEFAULT_KEY];
 
-// ASSUMPTION until P0 sources client limits: 64 characters for mcp__<Server ID>__<tool>.
+// 64: OpenAI's cap, which Codex's mcp__<Server ID>__<tool> must fit (docs/ref/fact-client-tool-names.md N3, N4).
 export const CEILING = 64;
 export const NAME_BUDGET = 28;
 export const TOOL_BUDGET = CEILING - 'mcp____'.length - NAME_BUDGET;
