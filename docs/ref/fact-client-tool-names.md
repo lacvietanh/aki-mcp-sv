@@ -1,6 +1,6 @@
 # Fact: how clients name and limit MCP tool names
 
-> updated 2026-10-31 · v3.3.1
+> updated 2026-10-31 · v4.0.0
 
 Claims about the outside world that `scripts/mcp-name.js` (`CEILING`, `NAME_BUDGET`, `TOOL_BUDGET`, `KEY_RULE`, `PREFIX_RULE`) relies on. Current state only; every change lands through a research event ([`research/client-tool-name-limits.md`](../research/client-tool-name-limits.md)). agy's own facts live in [`fact-agy-mcp-config.md`](fact-agy-mcp-config.md).
 

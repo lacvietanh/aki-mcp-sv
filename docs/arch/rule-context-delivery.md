@@ -1,6 +1,6 @@
 # Rule context delivery architecture
 
-> updated 2026-10-31 · v3.3.1
+> updated 2026-10-31 · v4.0.0
 
 ## Decision
 

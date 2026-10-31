@@ -1,6 +1,6 @@
 # Fact: how Antigravity CLI and IDE load MCP servers
 
-> updated 2026-10-31 · v3.3.1
+> updated 2026-10-31 · v4.0.0
 
 Claims about the outside world, macOS only — Windows/Linux layouts were not examined. Current state only; every change lands through a research event ([`research/agy-mcp-config-ide-cli.md`](../research/agy-mcp-config-ide-cli.md)). Headless-run flags of `agy` live in [`harness-fact.md`](harness-fact.md), not here.
 

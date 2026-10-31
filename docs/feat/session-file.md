@@ -1,6 +1,6 @@
 # Session file (ss)
 
-> updated 2026-10-31 · v3.3.1
+> updated 2026-10-31 · v4.0.0
 
 One Markdown file per chat that holds where its work stands, so a successor, another client or the same chat after a compaction resumes without the owner re-explaining. AkiMCP names the file and reports on it; only the chat writes it. Decided in `plan/ss-session-file.md` (v1 and v2).
 

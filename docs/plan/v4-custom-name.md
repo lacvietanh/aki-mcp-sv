@@ -1,6 +1,6 @@
 # AkiMCP 4.0.0: a configurable name, tool names that follow it
 
-Status: P1 to P7 built (2026-10-31). P0, the P8 live checks and the P9 release wait for the owner. This file is the one home of the name model: nothing in it points at a file outside the repo; the research tables the builders need are copied in as Appendices A to D.
+Status: P1 to P7 built and released as 4.0.0 (2026-10-31). Open: R1, the dated removal of the old log-line branch on 2026-12-10. This file is the one home of the name model: nothing in it points at a file outside the repo; the research tables the builders need are copied in as Appendices A to D.
 
 Conclusion: the owner types one value, the Display name. The Server ID and the Tool prefix follow from it by a written rule (REQ-4), and each can be set by hand instead (REQ-6). Keeping all three defaults changes nothing for anyone: every served byte equals 3.3.1, no reconnect, no new "Always allow".
 
@@ -187,7 +187,7 @@ Before P3 the whole `git grep` lists 58 lines (51 in 25 files under `scripts/`, 
 - The `## [Unreleased]` block of `CHANGELOG.md` carries S18 under `### Added` and the "What breaks" rows under `### Changed`.
 - Verify: `node test/lint/check-docs-note.js` exits 0, i.e. every file that names `aki__` also carries the default-prefix note (R2 or R3), apart from the listed exceptions; on failure it prints each file without the note. The lint lists the files with `git grep -l aki__` over `README.md docs public CLAUDE.md` minus the exceptions below, tests each for `default prefix .aki__|aki__. by default`, runs `git` through `execFileSync('git', ...)` with no shell, and lives beside `check-residue.js`.
 
-  Exceptions, never edited: `docs/plan/ss-session-file.md` (8 lines) and `docs/plan/per-client-tool-surface.md` (1 line), two active plans written at the default names ("No action: written at default names"), `CHANGELOG.md` released blocks, `docs/plan/done/`, `docs/research/` (history, docs.B2), `docs/plan/IMPORTANT-akimcp-aiobox-contract.md` (modified by another session; its twin lives in the AIObox repo; DEFERRED) and this plan. Every doc that carries a docs.A4 stamp gets `> updated 2026-10-31 · v3.3.1`: the last released version, never 4.0.0 or `[Unreleased]`.
+  Exceptions, never edited: `docs/plan/ss-session-file.md` (8 lines) and `docs/plan/per-client-tool-surface.md` (1 line), two active plans written at the default names ("No action: written at default names"), `CHANGELOG.md` released blocks, `docs/plan/done/`, `docs/research/` (history, docs.B2), `docs/plan/done/IMPORTANT-akimcp-aiobox-contract.md` (modified by another session; its twin lives in the AIObox repo; DEFERRED) and this plan. Every doc that carries a docs.A4 stamp gets `> updated 2026-10-31 · v3.3.1`: the last released version, never 4.0.0 or `[Unreleased]`.
 - Done when: `node test/lint/check-docs-note.js` exits 0 and `node test/lint/check-residue.js` still exits 0 printing nothing.
 
 ### P8 · Live checks (owner-run: they spend session quota)
@@ -195,7 +195,7 @@ Before P3 the whole `git grep` lists 58 lines (51 in 25 files under `scripts/`, 
 - V1: with a prefix other than `aki__`, one ClickUp Super Agent and one claude.ai chat, each given a prompt that still calls `aki__akidevrule_context`, from boot to the first receipt-gated write. Pass: both call `<prefix>akidevrule_context` and the write is not refused. Until it passes, C3 reads "designed, not verified". Closed 2026-10-31 by reading the flow, no live run: every channel that names the rule tool is built from `served()` and the receipt is not keyed by name, so a model that ignores the bridge loses one refused call (`research/client-tool-name-limits.md` § R6).
 - V2: Postman with a non-default prefix, using the safe-flag probe `scripts/postman/debug/postman-probe-instruction-flag.js`. Pass: the flag rate does not rise against the default sentence (the wording of `prompts/postman.md` is what keeps Postman's safety check quiet, `postman-daemon.cjs:29`). Closed 2026-10-31 by reading the flow, no live run: a rename swaps one `[a-z0-9]` word and one identifier, the flag follows framing, which does not change, and a probe at affordable n cannot separate the rates (§ R7).
 - V3 (builder, local, no quota): the default-identity diff of P1, run again at release: `node --test --import ./test/setup.js test/identity-served.test.js` case 7.
-- [ ] R1 (after release): at the 4.0.0 release, replace `{release date + 40 days}` in its CHANGELOG entry with the date; on that date remove the old-line branch of `scripts/tool-calls-report.js` (a line without `bare` has `aki__` stripped) and its test row (P4).
+- [ ] R1 (due 2026-12-10; the CHANGELOG date is already written): on 2026-12-10 remove the old-line branch of `scripts/tool-calls-report.js` (a line without `bare` has `aki__` stripped) and its test row (P4).
 
 ## Panel walkthrough (the P6 spec)
 
@@ -223,7 +223,7 @@ Strings are in Appendix D (S-numbers); this order is what the builder walks, fro
 ## DEFERRED (not this repo, or not this session)
 
 - AIObox repo: find the connector by the name AkiMCP reports instead of `/akimcp/` (`provider/claude/tools.js:27`); delete a competing connector only when the name matches; the labs ClickUp launcher compares the bare tool suffix and counts from `tools/list` (`core.cjs:25,130,141,152`).
-- `docs/plan/IMPORTANT-akimcp-aiobox-contract.md` (modified in the working tree by another session, twin in the AIObox repo): its § Id và tên says the name is always `AkiMCP`, and `connect.rs:17` shows AkiMCP's own name is used; whoever owns that file decides the wording.
+- `docs/plan/done/IMPORTANT-akimcp-aiobox-contract.md` (modified in the working tree by another session, twin in the AIObox repo): its § Id và tên says the name is always `AkiMCP`, and `connect.rs:17` shows AkiMCP's own name is used; whoever owns that file decides the wording.
 - Owner: the release of 4.0.0 (version bump, tag, publish; `RULE-release`), run only on the owner's go after P8; `release.yml` checks that `serverInfo.name` is `akimcp` under an empty HOME, which D4 keeps true at the defaults; the commit of this plan.
 - Not inspected by any grep: user prompts outside the machine (council templates in other workspaces, ClickUp Super Agent prompts, claude.ai project instructions); the migration note tells users to check.
 
@@ -310,7 +310,7 @@ Only `//` comment lines, the whole of `scripts/verify-boundary-b1.sh` (its only 
 | CLAUDE.md | 1 (§ Process topology) | edit |
 | docs/plan/ss-session-file.md | 8 | No action: written at default names (named exception of the P7 lint) |
 | docs/plan/per-client-tool-surface.md | 1 | No action: written at default names (same) |
-| docs/plan/IMPORTANT-akimcp-aiobox-contract.md | 21 | not this plan: another session's edit, twin in AIObox; DEFERRED |
+| docs/plan/done/IMPORTANT-akimcp-aiobox-contract.md | 21 | not this plan: another session's edit, twin in AIObox; DEFERRED |
 | CHANGELOG.md 41 · docs/plan/done/* · docs/research/* | history | never edited (docs.B2) |
 
 Count command: `git grep -c "aki__" -- . ":!scripts" ":!public" ":!test"`.
