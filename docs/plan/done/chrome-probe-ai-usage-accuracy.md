@@ -52,12 +52,12 @@ Status: dropped 2026-09-30 by owner decision, not executed. `aki__chrome_probe_a
 
 ## Verification checklist
 
-- [ ] After step 1, a live probe on the free-plan tab resolves the right org with no `undefined` in the request path.
-- [ ] Live: the returned session percentage equals the bucket read directly with `devtools_eval` at the same moment, and rises after one more message in that chat (the person sends that message by hand; the probe never does).
-- [ ] Live: a multi-tab session (one non-AI tab first) returns the AI tab, not `unknown`.
-- [ ] Fixture tests for step 7 pass and are part of `npm test`.
-- [ ] A paid-plan account is probed once to confirm the endpoint-window path and the weekly window; until then that path is unverified live.
-- [ ] `docs/feat/tools.md`, the tool description and `CHANGELOG.md` `[Unreleased]` describe the new shape.
+- [-] (dropped with the tool, 2026-09-30) After step 1, a live probe on the free-plan tab resolves the right org with no `undefined` in the request path.
+- [-] (dropped with the tool, 2026-09-30) Live: the returned session percentage equals the bucket read directly with `devtools_eval` at the same moment, and rises after one more message in that chat (the person sends that message by hand; the probe never does).
+- [-] (dropped with the tool, 2026-09-30) Live: a multi-tab session (one non-AI tab first) returns the AI tab, not `unknown`.
+- [-] (dropped with the tool, 2026-09-30) Fixture tests for step 7 pass and are part of `npm test`.
+- [-] (dropped with the tool, 2026-09-30) A paid-plan account is probed once to confirm the endpoint-window path and the weekly window; until then that path is unverified live.
+- [-] (dropped with the tool, 2026-09-30) `docs/feat/tools.md`, the tool description and `CHANGELOG.md` `[Unreleased]` describe the new shape.
 
 ## Scope
 

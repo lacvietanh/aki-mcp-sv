@@ -62,11 +62,11 @@ Reopen when a hosted multi-tenant or narrow-scope remote variant of akimcp exist
 
 ## Verification checklist
 
-- [ ] `package.json` `mcpName` equals `server.json` `name`; `server.json` versions equal the published npm version.
-- [ ] `npm view @akinet/akimcp@<version> mcpName` returns the chosen name.
-- [ ] The `curl` search against the Registry API returns the record.
+- [x] `package.json` `mcpName` equals `server.json` `name`; `server.json` versions equal the published npm version.
+- [x] `npm view @akinet/akimcp@<version> mcpName` returns the chosen name.
+- [-] The `curl` search against the Registry API returns the record. Not met (2026-10-31): `registry.modelcontextprotocol.io/v0/servers?search=akimcp` and `?search=lacvietanh` return 0 servers; the publish to the Registry is release work, not part of the repo part this plan closed.
 - [x] Transport open question resolved and `server.json` matches what `npx @akinet/akimcp --stdio` actually starts (`test/registry-listing.test.js` spawns it and reads `initialize`).
-- [ ] One week later: PulseMCP, Smithery, Glama listing state recorded in this doc or its successor.
+- [-] One week later: PulseMCP, Smithery, Glama listing state recorded in this doc or its successor. Waits on the Registry publish above.
 
 ## Scope
 

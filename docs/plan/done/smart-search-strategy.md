@@ -135,7 +135,7 @@ Complex pipelines (count + list + head in one shot, multi-root, exclude globs gr
 - [x] Manual verify: `funnel|ingress` under `docs/` returned 70 lines incl. case variants (`Funnel`) — no `run_cmd`.
 - [x] Update `docs/feat/tools.md` with the ladder (D1/D3).
 - [x] Re-measure: `buildPrompt()` uses a static residual string (config-page.js:363), not tool descriptions — no char change.
-- [ ] Optional: sample 2–3 more jsonl sessions for failure modes; append to research only if new shape appears.
+- [-] Optional: sample 2–3 more jsonl sessions for failure modes; append to research only if new shape appears. Not run: optional, and no new failure shape has been reported since the ladder shipped (2026-08-10).
 - [x] Move this plan → `docs/plan/done/` + one-line index entry.
 
 ---

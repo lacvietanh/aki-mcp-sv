@@ -50,12 +50,12 @@ Bổ sung khả năng chạy tiến trình tương tác dài hạn (Node.js/Pyth
 ---
 
 ## 4. Checklist triển khai
-- [ ] Xây dựng `scripts/process-mcp.js` với các tools: `get_env_info`, `start_process`, `interact_process`, `read_process_output`, `kill_process`
-- [ ] Cài đặt cơ chế kiểm soát bộ đệm (1MB cap) và giới hạn tiến trình (max 3)
-- [ ] Đăng ký module vào server runtime (`register(server)` interface)
-- [ ] Viết test nội bộ: mở `python3 -i`, gửi biểu thức tính toán, đọc kết quả; kiểm tra chặn tiến trình thứ 4; kiểm tra `kill_process`
-- [ ] Kiểm thử qua client thực tế (claude.ai / ChatGPT) xác nhận tools hiển thị đúng
-- [ ] Cập nhật tài liệu `README.md` & `docs/feat/tools.md`
+- [-] (plan bỏ 2026-10-04, `task_start`/`task_manage` thay thế) Xây dựng `scripts/process-mcp.js` với các tools: `get_env_info`, `start_process`, `interact_process`, `read_process_output`, `kill_process`
+- [-] (plan bỏ 2026-10-04) Cài đặt cơ chế kiểm soát bộ đệm (1MB cap) và giới hạn tiến trình (max 3)
+- [-] (plan bỏ 2026-10-04) Đăng ký module vào server runtime (`register(server)` interface)
+- [-] (plan bỏ 2026-10-04) Viết test nội bộ: mở `python3 -i`, gửi biểu thức tính toán, đọc kết quả; kiểm tra chặn tiến trình thứ 4; kiểm tra `kill_process`
+- [-] (plan bỏ 2026-10-04) Kiểm thử qua client thực tế (claude.ai / ChatGPT) xác nhận tools hiển thị đúng
+- [-] (plan bỏ 2026-10-04) Cập nhật tài liệu `README.md` & `docs/feat/tools.md`
 
 ---
 

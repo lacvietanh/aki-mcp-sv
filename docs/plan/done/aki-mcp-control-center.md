@@ -83,12 +83,12 @@ Instead of Electron or Tauri's system WebView, we could use Tauri as a control a
 
 ## Execution checklist (phased, not started)
 
-- [ ] **Phase 0 — spike, answers the unverified blockers.** (a) Bare window loading claude.ai on the chosen shell — Electron `BrowserWindow` and/or Tauri webview — log in by hand, confirm no bot challenge and that `/usage` + SSE respond from that context. (b) If evaluating Tauri: prove real per-profile cookie/storage isolation on ship OS (or document a working workaround). (c) If evaluating Tauri + External Chrome CDP: verify if claude.ai blocks the debug-enabled instance (via `navigator.webdriver` check) with Cloudflare CAPTCHA challenges. Stop and rethink if any fail for the shell under test.
-- [ ] **Phase 1 — profile registry.** JSON store + partition-per-profile create/rename/delete, no UI yet (CLI or panel-style temp UI for testing).
-- [ ] **Phase 2 — claude.ai window.** Preload script: widen-pane injection (ported from the Tampermonkey draft) + fetch/EventSource patch for `message_limit` + `/usage` poll, IPC the parsed numbers to main.
-- [ ] **Phase 3 — control center window.** Lists all profiles + live status pushed from main; start/open/close actions per profile.
-- [ ] **Phase 4 — custom chrome.** `frame:false` + drag region + minimal window styling.
-- [ ] **Phase 5 (stretch, not required for v1).** Investigate whether an Electron-embedded window can register as this repo's MCP custom connector via `localhost`, removing the Funnel/OAuth hop for this specific app.
+- [-] (superseded by AIObox) **Phase 0 — spike, answers the unverified blockers.** (a) Bare window loading claude.ai on the chosen shell — Electron `BrowserWindow` and/or Tauri webview — log in by hand, confirm no bot challenge and that `/usage` + SSE respond from that context. (b) If evaluating Tauri: prove real per-profile cookie/storage isolation on ship OS (or document a working workaround). (c) If evaluating Tauri + External Chrome CDP: verify if claude.ai blocks the debug-enabled instance (via `navigator.webdriver` check) with Cloudflare CAPTCHA challenges. Stop and rethink if any fail for the shell under test.
+- [-] (superseded by AIObox) **Phase 1 — profile registry.** JSON store + partition-per-profile create/rename/delete, no UI yet (CLI or panel-style temp UI for testing).
+- [-] (superseded by AIObox) **Phase 2 — claude.ai window.** Preload script: widen-pane injection (ported from the Tampermonkey draft) + fetch/EventSource patch for `message_limit` + `/usage` poll, IPC the parsed numbers to main.
+- [-] (superseded by AIObox) **Phase 3 — control center window.** Lists all profiles + live status pushed from main; start/open/close actions per profile.
+- [-] (superseded by AIObox) **Phase 4 — custom chrome.** `frame:false` + drag region + minimal window styling.
+- [-] (superseded by AIObox) **Phase 5 (stretch, not required for v1).** Investigate whether an Electron-embedded window can register as this repo's MCP custom connector via `localhost`, removing the Funnel/OAuth hop for this specific app.
 
 ## Out of scope (this note)
 

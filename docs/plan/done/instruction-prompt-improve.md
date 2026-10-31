@@ -32,10 +32,10 @@ Order, each a line in `lines`:
 The subagent tunes exact wording to land the *default* (4 rules ticked) case comfortably under 1500 and to keep lines 1, 3–7 within budget even before rules are added.
 
 ## Execution checklist
-- [ ] `config-page.js` `buildPrompt()` — hoist the rules-dir prefix; rewrite lines 1,4,5,6,7 to the dense form; add the always-on task-workflow line (line 3).
-- [ ] `config-page.js` section 6 UI — add a live char counter beside the copy button and a warning state when `> 1500`.
-- [ ] Verify the default (4 default rules ticked) prompt is `< 1500` chars; verify the all-rules-ticked case still copies (warning shown, not silently truncated).
-- [ ] `node --check scripts/config-page.js`.
+- [-] (the prompt became static, CHANGELOG 2.2.0 Removed) `config-page.js` `buildPrompt()` — hoist the rules-dir prefix; rewrite lines 1,4,5,6,7 to the dense form; add the always-on task-workflow line (line 3).
+- [-] (the prompt became static, CHANGELOG 2.2.0 Removed) `config-page.js` section 6 UI — add a live char counter beside the copy button and a warning state when `> 1500`.
+- [-] (the prompt became static, CHANGELOG 2.2.0 Removed) Verify the default (4 default rules ticked) prompt is `< 1500` chars; verify the all-rules-ticked case still copies (warning shown, not silently truncated).
+- [x] `node --check scripts/config-page.js`.
 
 ## Cross-references
 - `scripts/config-page.js` — `buildPrompt()` (§`:304`), section 6 markup (§`:218`), `DEFAULT_RULES` (§`:19`)

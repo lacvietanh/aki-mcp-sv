@@ -45,11 +45,11 @@ When this plan was written, `kiro-cli` was **not installed** and every Kiro fact
 - Exposing more of agy's flags (`--json-schema` beyond current, `--add-dir`) — not requested.
 
 ## Execution checklist
-- [ ] New `scripts/kiro-mcp.js` — `kiro_read` + `kiro_write` tools, model hard-locked `claude-sonnet-4.5`, `--require-mcp-startup`, optional `effort`, `resolveUnderRoot(cwd)`, shared `ok`/`err`/`fail` from `mcp-tool.js`, empty-output guard.
-- [ ] `mcp-hub.config.json` — add a `kiro` server entry mirroring the `agy` entry's env (`MCP_DATA_DIR` + `~/.aki`,`~/.claude`).
-- [ ] `scripts/agy-mcp.js:53` — restrict effort enum to `['low','medium','high']`; add valid model ids to the `model` param description.
-- [ ] `node --check scripts/kiro-mcp.js scripts/agy-mcp.js`.
-- [ ] README — one line noting the Kiro arm (read + write tools, sonnet-4.5, requires `kiro-cli` on PATH) beside the agy tool.
+- [x] (`kiro_write` removed later, CHANGELOG 1.4.0) New `scripts/kiro-mcp.js` — `kiro_read` + `kiro_write` tools, model hard-locked `claude-sonnet-4.5`, `--require-mcp-startup`, optional `effort`, `resolveUnderRoot(cwd)`, shared `ok`/`err`/`fail` from `mcp-tool.js`, empty-output guard.
+- [-] (mcp-hub removed; `tools-server.js` mounts kiro in-process) `mcp-hub.config.json` — add a `kiro` server entry mirroring the `agy` entry's env (`MCP_DATA_DIR` + `~/.aki`,`~/.claude`).
+- [-] (agy now reads its models and efforts live, `agy-capabilities.js`) `scripts/agy-mcp.js:53` — restrict effort enum to `['low','medium','high']`; add valid model ids to the `model` param description.
+- [x] `node --check scripts/kiro-mcp.js scripts/agy-mcp.js`.
+- [x] README — one line noting the Kiro arm (read + write tools, sonnet-4.5, requires `kiro-cli` on PATH) beside the agy tool.
 
 ## Cross-references
 - `scripts/agy-mcp.js` — the wrapper pattern this mirrors, and the file being tuned

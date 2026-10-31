@@ -32,12 +32,12 @@ Let Gemini and Grok reach the same MCP server over the same Funnel URL and OAuth
 - Verifying the live OAuth round-trip on Gemini/Grok — user-triggered runtime (`coding.B3`); this plan lands the code path and the provisional allowlist, marked unverified.
 
 ## Execution checklist
-- [ ] `scripts/oauth.js` — add `GROK_CALLBACK_PREFIX` + `GEMINI_CALLBACK_PREFIX` (provisional, commented) and extend `isAllowedRedirect`.
-- [ ] `scripts/oauth.js:231` — generalize the redirect-host log line.
-- [ ] `scripts/config-page.js` — Gemini + Grok subsections in section 2, each emitting `<origin>/register` as a copy field.
-- [ ] `README.md` — connector-list row for Gemini + Grok.
-- [ ] `node --check` the changed scripts.
-- [ ] Record the redirect-uri discovery command in the code comment so the provisional constants can be confirmed on first real connect.
+- [x] `scripts/oauth.js` — add `GROK_CALLBACK_PREFIX` + `GEMINI_CALLBACK_PREFIX` (provisional, commented) and extend `isAllowedRedirect`.
+- [x] `scripts/oauth.js:231` — generalize the redirect-host log line.
+- [x] `scripts/config-page.js` — Gemini + Grok subsections in section 2, each emitting `<origin>/register` as a copy field.
+- [x] `README.md` — connector-list row for Gemini + Grok.
+- [x] `node --check` the changed scripts.
+- [-] Record the redirect-uri discovery command in the code comment so the provisional constants can be confirmed on first real connect. Not needed: the constants were confirmed from live connects (Status RESOLVED 2026-08-09).
 
 ## Cross-references
 - `scripts/oauth.js` — `isAllowedRedirect` (§`:30`), the `CHATGPT_*`/`CLAUDE_CALLBACK` constants (§`:17`), `handleRegister` (§`:140`)

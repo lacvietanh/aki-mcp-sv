@@ -31,7 +31,7 @@ Update residual-only prompt: rename `working.md` → `plan.md`, make plan creati
 - [x] `node --check scripts/config-page.js`
 - [x] CHANGELOG `[Unreleased]`
 - [x] Move to `docs/plan/done/`
-- [ ] Measure default char count in panel (runtime)
+- [-] Measure default char count in panel (runtime). Not needed: the prompt became static (CHANGELOG 2.2.0 Removed).
 
 ## Non-goals
 - No Grok/browser rule in shared prompt
