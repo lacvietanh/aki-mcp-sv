@@ -1,6 +1,6 @@
 # Rule context delivery architecture
 
-> updated 2026-11-02 · v4.0.0
+> updated 2026-11-03 · v4.0.0
 
 ## Decision
 
@@ -8,21 +8,21 @@ Adopt a **Rule Context Handshake** owned by the MCP server: compact static initi
 
 Tool names here use the default prefix `aki__`. A server with another Tool prefix serves the same tools under that prefix; panel section 1 shows yours.
 
-The Postman control prompt becomes a temporary one-line compatibility trigger only; it must never ask the model to discover paths, traverse imports, search skills, or read bootstrap files individually.
+No client prompt carries the bootstrap (the Postman control-prompt trigger was never needed, layer 3 below); a prompt must never ask the model to discover paths, traverse imports, search skills, or read bootstrap files individually.
 
 An optional MCP resource may expose assembled context for inspection, but it is not the startup mechanism; no MCP prompt is added in v1.
 
 ## Non-negotiable invariant
 
-**Postman acquires Claude Code-equivalent effective default context across Windows, macOS, and Linux in one model-visible tool call, with context discovery and assembly performed by the MCP server rather than by the model.**
+**Every web chat (a client with no harness hook: Notion, ChatGPT, Claude.ai, Postman, …) acquires Claude Code-equivalent effective default context across Windows, macOS, and Linux in one model-visible tool call, with context discovery and assembly performed by the MCP server rather than by the model.**
 
 ## Goal and parity boundary
 
-Immediate goal → remove repeated bootstrap prompts and multi-step file reads → make context loading deterministic, fast, observable, and cross-platform → give Postman the same practical working context Claude Code receives by default.
+Immediate goal → remove repeated bootstrap prompts and multi-step file reads → make context loading deterministic, fast, observable, and cross-platform → give every web chat the same practical working context Claude Code receives by default.
 
 **Exact Claude Code parity** would require the client to guarantee the same pre-model injection timing, import semantics, precedence, and applicable ancestor-file behavior as the Claude Code harness; an MCP server alone cannot guarantee this because the client owns what enters model context before the first decision.
 
-**Practical effective parity** is the deliverable: before substantive work, Postman receives the same load-bearing global guidance and applicable project guidance in deterministic order, with provenance and a receipt, through one indexed tool call and no model-orchestrated bootstrap reads.
+**Practical effective parity** is the deliverable: before substantive work, a web chat receives the same load-bearing global guidance and applicable project guidance in deterministic order, with provenance and a receipt, through one indexed tool call and no model-orchestrated bootstrap reads.
 
 ## Current failure shape
 
@@ -35,7 +35,7 @@ Prompt refinement cannot fully solve this ownership error because the prompt sti
 ## Ten-pass findings
 
 1. **Flow:** context assembly belongs before reasoning and must be one native operation, not a workflow reconstructed by the model.
-2. **Claude baseline:** Claude Code mechanically loads global guidance and imports; Postman needs the same effective content, not merely a reminder that the files exist.
+2. **Claude baseline:** Claude Code mechanically loads global guidance and imports; a web chat needs the same effective content, not merely a reminder that the files exist.
 3. **Prompt:** the recurring bootstrap prompt is compensating machinery whose procedural detail increases failure modes.
 4. **Indexed tool:** a dedicated tool name, title, schema, and description are discoverable through `tools/list` and provide the strongest portable action surface.
 5. **Initialize instructions:** static server instructions are suitable for a compact call trigger but not for dynamic project context or the entire corpus.
@@ -173,7 +173,7 @@ Any dependency change invalidates the assembled result on the next call; no pers
 
 The target is one model-visible round trip instead of search plus multiple reads, with no duplicate full corpus in the compatibility prompt or initialize instructions.
 
-Full effective context may remain token-heavy because parity requires load-bearing content; optimization removes orchestration overhead and duplication, not required rules.
+Full effective context may remain token-heavy because parity requires load-bearing content; optimization removes orchestration overhead and duplication, not required rules. A reduced-rules or receipt-only mode is rejected for this reason (owner 2026-11-01: "rule context là bắt buộc"; `plan/v4-first-improve.md` D5).
 
 ## Failure and degraded modes
 

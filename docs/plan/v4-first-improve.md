@@ -44,7 +44,8 @@ Each item names its S-1 gain (aiobox `docs/arch/akimcp-boundary.md` § 0a: AkiMC
 
 - **Change:** Decision, Non-negotiable invariant and Goal say "every web chat (a client with no harness hook: Notion, ChatGPT, Claude.ai, Postman, …)" instead of "Postman"; the Postman-only step 3 (fallback, replaced) stays as history in one line. Add one sentence under Caching and performance stating why a reduced-rules mode is rejected: the corpus is load-bearing, only duplication and orchestration may be cut (already the rule there: "optimization removes orchestration overhead and duplication, not required rules"). Stamp rewritten (docs.A4).
 - **S-1:** not an AIObox item; core doc. Gain: the design lock matches the clients that actually use it (Notion 121 k calls vs Postman 23), so no later plan optimizes for the wrong client.
-- **Check:** `grep -n "Postman" docs/arch/rule-context-delivery.md` shows only the history line and client lists; stamp = the release it ships with.
+- **Check:** `grep -n "Postman" docs/arch/rule-context-delivery.md` shows Postman only in the client list, the replaced layer 3 and text about Postman's own mechanism (PM control, its smoke tests, rejected CDP injection, its reopen trigger); stamp rewritten.
+- **Done:** 2026-11-03 (Decision, invariant, goal, finding 2, Caching sentence).
 - **Decided:** D5.
 
 ### I2 · Receipts lost without a restart: verify, then fix `scripts/rule-gate.js` (old Q2 a)
@@ -84,8 +85,8 @@ Each item names its S-1 gain (aiobox `docs/arch/akimcp-boundary.md` § 0a: AkiMC
 
 0. N7 — done, `da9f736`.
 1. I2 V1 (read-only) → decide V2 / fix.
-2. D4 helper (`0a79f0d`) → B1 (`7057600`) → B2 (platform gate D12) → aiobox cross-repo lines (BR-1/BR-3 cites for B1: aiobox `2831e31f`).
-3. I1.
+2. D4 helper (`0a79f0d`) → B1 (`7057600`) → B2 (`c32522a`, platform gate D12) → aiobox cross-repo lines (aiobox `2831e31f` for B1, `ae52b002` for B2).
+3. I1 (done 2026-11-03).
 4. `npm test` once, CHANGELOG `[Unreleased]`, then stop: the owner releases (`RULE-release.md`); release note: reconnect and "Always allow" again (D1).
 
 ## DEFERRED (AIObox repo)
