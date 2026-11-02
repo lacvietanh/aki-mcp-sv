@@ -4,7 +4,7 @@ Tool names use the default prefix `aki__`; a custom prefix may differ.
 
 Status: **approved by lead P3·W184, 2026-11-02** (owner: "Before you ask anything, settle it yourself … bạn là lead"); release, tag and publish stay the owner's. Base: 4.0.0 (2026-10-31). Session file: `~/.aki/mcpsv/ss/aki-mcp-sv/2026.11.02-2255-review-ssh-config-itb-v4.md` (parent `…/2026.11.01-1743-ssh-config-itb-v4-first.md`).
 
-Conclusion: one release, target **4.1.0**, carrying N7 + B1 + B2 + I2; I1 and N5 are closed. The owner decides the BR-6 conflict before release (Open).
+Conclusion: one release, target **4.1.0**, carrying N7 + B1 + B2 + I2; I1 and N5 are closed. BR-6: all definition changes ship bundled in 4.1.0 (D1).
 
 ## Goal and requests
 
@@ -25,7 +25,7 @@ Conclusion: one release, target **4.1.0**, carrying N7 + B1 + B2 + I2; I1 and N5
 
 ## Decisions
 
-- D1 · B1 and B2 ship together (REQ-4). N7 (`da9f736`) changes the tool definition and triggers BR-6; the owner must decide whether to keep the changes bundled (Open, S6 #2).
+- D1 · B1 and B2 ship together (REQ-4). N7 (`da9f736`) changes the tool definition and triggers BR-6, so 4.1.0 needs one reconnect anyway; the audit's description cuts (p2, p10) ship in the same release, one re-ask instead of two (lead 2026-11-03, S6 #2; rejected: split them to a later release, which moves the same re-ask there and needs unpicking committed code).
 - D2 · old Q2 b (guide once per chat) and c (smaller `op=windows`) are **moved to AIObox** · because CLAUDE.md § Stable core and S-1: the guide and `op` results are AIObox output (`desktop/panel/akimcp-ops.json`, `akipanel`); `knownVersion`/`op=guide` stays rejected (aiobox `docs/research/akimcp-aiobox-output-split.md` R5) · reopen if a seat breaks because of `op=state`.
 - D3 · The historical eviction cause is a hypothesis; p3 adds a diagnostic and p4 LRU without asserting past causes (N2).
 - D4 · One `providerServed` helper answers whether AIObox is served; `aiobox-guide.js` imports the registry at call time to avoid the cycle.
@@ -87,7 +87,7 @@ Each item names its S-1 gain (aiobox `docs/arch/akimcp-boundary.md` § 0a: AkiMC
 
 - [-] N5 Option B · subtract: A′ supplies discovery from AIObox without adding discovery keywords to the AkiMCP tool definition.
 - [ ] N5 verification · a chat with only file tools can open `~/.aki/aiobox/AGENTS.md` and no longer says it cannot.
-- [ ] S6 #2 · BR-6 conflicts with the owner’s no-definition-change premise; owner decides, default is one bundled re-ask.
+- [x] S6 #2 · BR-6: decided one bundled re-ask in 4.1.0 (D1).
 - [ ] S6 #5 · Windows `open_url` on a stopped profile: the `I` platform column has not been run.
 - [ ] S3 #8 · `chrome_tabs` / `chrome_interact` accept an AIObox port; investigate outside 4.1.0.
 
