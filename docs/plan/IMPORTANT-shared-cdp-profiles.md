@@ -2,7 +2,7 @@
 
 > **IMPORTANT, ràng buộc cả hai repo.** File này có bản sinh đôi ở `aiobox: docs/plan/IMPORTANT-shared-cdp-profiles.md`; hai bản giống nhau trừ dòng này, sửa một bản thì sửa luôn bản kia trong cùng phiên. Nguồn: working plan `~/.aki/mcpsv/task/cdp-unified-clone/plan.md` (port vào hai repo ngày 2026-10-01). Cùng nhóm ràng buộc: `docs/plan/done/IMPORTANT-akimcp-aiobox-contract.md` (id, tên, file và endpoint AkiMCP mà AIObox dùng).
 
-Bắt đầu: 2026-09-28 · Hợp nhất + deep-think/audit: 2026-10-01 · Chat nguồn: claude.ai/chat/5c884fec-963e-4866-b416-3592d8515cfc (tab `aki-cdp`) · Trạng thái: patch aiobox và akimcp đã có trong code (§ Tiến độ aiobox, § Tiến độ akimcp; akimcp commit 2026-10-03, ra trong 3.0.0), đã dời dữ liệu 26/26 profile (2026-10-03), test chéo phía akimcp đạt trên gốc mới (§ Tiến độ akimcp), còn ca aiobox mở profile do akimcp giữ và profile 9 · Hai bản IMPORTANT trong hai repo là source of truth cho việc gom CDP (working plan cũ chỉ còn trỏ về đây); các số liệu runtime bên dưới là snapshot kiểm chứng ngày 2026-09-28 và phải được dò lại trước khi thực thi.
+Bắt đầu: 2026-09-28 · Hợp nhất + deep-think/audit: 2026-10-01 · Chat nguồn: claude.ai/chat/5c884fec-963e-4866-b416-3592d8515cfc (tab `aki-cdp`) · Trạng thái: patch aiobox và akimcp đã có trong code (§ Tiến độ aiobox, § Tiến độ akimcp; akimcp commit 2026-10-03, ra trong 3.0.0), đã dời dữ liệu 26/26 profile (2026-10-03), test chéo phía akimcp đạt trên gốc mới (§ Tiến độ akimcp), profile 9 xong (đo lại 2026-10-12 PASS, § Tiến độ akimcp; `~/.aki/cdp/profiles/chrome-profile-9` còn ngày 2026-11-02), còn hai ca: aiobox mở profile do akimcp giữ, và hai CDP client cùng điều khiển một tab (§ Verification matrix); cả hai agent tự kiểm được qua AkiMCP, không cần tay chủ · Hai bản IMPORTANT trong hai repo là source of truth cho việc gom CDP (working plan cũ chỉ còn trỏ về đây); các số liệu runtime bên dưới là snapshot kiểm chứng ngày 2026-09-28 và phải được dò lại trước khi thực thi.
 
 ## Kết luận
 
@@ -197,19 +197,19 @@ Nguyên tắc: code phải hiểu path mới trước khi dữ liệu được d
 | Ca | Kết quả mong đợi |
 |---|---|
 | akimcp mở canonical profile chưa chạy | Chrome lên một lần, CDP probe thành công, trả `status: ready`. |
-| aiobox mở profile đang do akimcp giữ | aiobox nhận Chrome đó và mở cửa sổ trên nó; không có Chrome thứ hai; `SingletonLock` và `DevToolsActivePort` không bị xóa. Đổi 2026-10-16 (trước đó là lỗi `ProfileAlreadyRunning` kèm pid; chủ báo đó là lỗi). Test: `cdp/os_process.rs` `chrome_main_is_matched_by_its_user_data_dir_parent`, `cdp/engine.rs` `sweep_takes_every_unheld_chrome_on_either_root_whoever_started_it`. Chạy thật: chưa, cần bản build mới trên profile 10 (Chrome của akimcp, pid 25898). |
+| aiobox mở profile đang do akimcp giữ | aiobox nhận Chrome đó và mở cửa sổ trên nó; không có Chrome thứ hai; `SingletonLock` và `DevToolsActivePort` không bị xóa. Đổi 2026-10-16 (trước đó là lỗi `ProfileAlreadyRunning` kèm pid; chủ báo đó là lỗi). Test: `cdp/os_process.rs` `chrome_main_is_matched_by_its_user_data_dir_parent`, `cdp/engine.rs` `sweep_takes_every_unheld_chrome_on_either_root_whoever_started_it`. Chạy thật: chưa, cần bản build mới trên profile 10 (Chrome của akimcp, pid 25898). Còn mở (kiểm 2026-11-02): hai test trên còn ở `os_process.rs:105`, `engine.rs:1255` nhưng chỉ kiểm việc chọn Chrome để nhận, không kiểm mở cửa sổ trên nó, không có Chrome thứ hai, lock còn nguyên. Agent tự kiểm được qua AkiMCP: `chrome_launch` một profile không ai giữ, rồi `aki__aiobox_write op=open_url profileId=<id>`, đếm Chrome của profile đó và đọc `op=state`. |
 | akimcp mở profile đang do aiobox giữ | Không launch process mới; đọc + probe port rồi trả `status: attached`, session đánh dấu `owned:false`. |
 | Owner sống nhưng `DevToolsActivePort` thiếu hoặc endpoint chết | akimcp báo profile đang được giữ nhưng không attach được; không xóa lock/port, không launch Chrome thứ hai. |
 | Gọi `chrome_stop` sau khi akimcp attach Chrome của aiobox | Không `SIGTERM` foreign owner; chỉ clear attached-session state hoặc trả `not-owned`. |
 | Gọi `chrome_stop` trên Chrome do akimcp tự launch | Vẫn terminate đúng owned pid và clear session state. |
 | `chrome_launch` có `url` khi profile đã do tool khác giữ | Hành vi phải được định nghĩa và test: URL được mở trên attached browser qua CDP hoặc trả lỗi rõ; không silently ignore. |
-| Hai bên cùng điều khiển một tab, ví dụ usage watcher aiobox + `devtools_eval` akimcp | Chưa từng test ở audit cũ; cần xác nhận cả hai CDP clients coexist mà không phá session/target state và ghi kết quả vào tài liệu runtime/CDP phù hợp. |
+| Hai bên cùng điều khiển một tab, ví dụ usage watcher aiobox + `devtools_eval` akimcp | Chưa từng test ở audit cũ; cần xác nhận cả hai CDP clients coexist mà không phá session/target state và ghi kết quả vào tài liệu runtime/CDP phù hợp. Còn mở (kiểm 2026-11-02): agent chạy `devtools_eval` trên một tab AIObox đang theo dõi rồi đọc `aki__aiobox op=state` trước/sau, không cần tay chủ. |
 | Kill Chrome đột ngột rồi mở lại từ mỗi bên | Stale owner/port được nhận diện; cleanup chỉ xảy ra sau khi chứng minh owner đã chết; launch lại được. |
 | `DevToolsActivePort` còn file nhưng endpoint chết | Không attach; file bị coi stale và đi flow cleanup/launch phù hợp. |
 | `SingletonLock` trỏ host không xác định | Fail closed; không xóa lock, không launch. |
 | Canonical profile không tồn tại trong akimcp | Lỗi hướng dẫn tạo profile qua aiobox; không clone ngầm. |
 | Dời profiles root xong | aiobox vẫn map đúng account/profile, login còn dùng được, registry/shared scripts không bị dời. |
-| Profile 9 | Được aiobox clone mới từ Chrome source, xuất hiện đúng canonical id/metadata rồi akimcp dùng được. |
+| Profile 9 | Được aiobox clone mới từ Chrome source, xuất hiện đúng canonical id/metadata rồi akimcp dùng được. Đạt 2026-10-12 (RESEARCH P3·W72, § Tiến độ akimcp); thư mục còn ngày 2026-11-02. |
 
 Verification khi triển khai phải theo rung nhỏ nhất: static read/typecheck/unit liên quan trước; build khi batch code hoàn tất; runtime cross-tool chỉ cho những tính chất thực sự phụ thuộc Chrome/CDP concurrency.
 

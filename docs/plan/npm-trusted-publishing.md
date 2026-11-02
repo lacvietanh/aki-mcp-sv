@@ -1,6 +1,6 @@
 # Plan — npm Trusted Publishing through GitHub Actions OIDC
 
-Status: active · named by the owner 2026-10-29 (deferred before that: 2026-10-24 "deffered/wishlist", 2026-10-26 out of 3.1.0). `release.yml` is rewritten (verify → publish → release). Open: the owner saves the trusted publisher on npmjs.com immediately before tagging the next release (a saved configuration expires if no publish succeeds within 2 days), then the first tag release proves it. Until that release succeeds, `npm publish` by hand with the owner's login stays the fallback.
+Status: active · named by the owner 2026-10-29 (deferred before that: 2026-10-24 "deffered/wishlist", 2026-10-26 out of 3.1.0). `release.yml` is rewritten (verify → publish → release). Open: the owner saves the trusted publisher on npmjs.com immediately before tagging the next release (a saved configuration expires if no publish succeeds within 2 days), then the first tag release proves it. Until that release succeeds, `npm publish` by hand with the owner's login stays the fallback. Checked 2026-11-02: 4.0.0 (2026-10-31) did not prove it, it went out by hand (`npm view @akinet/akimcp@4.0.0 dist.attestations _npmUser` returns no attestations and `_npmUser` = the owner's login); the workflow-content boxes below are ticked from `release.yml`, the two that need npm stay open.
 
 ## Goal
 
@@ -59,11 +59,11 @@ Update `.github/workflows/release.yml` only:
 ## Verification checklist
 
 - [ ] npm trusted publisher exactly matches `lacvietanh` / `aki-mcp-sv` / `release.yml` and has no environment binding unless intentionally configured.
-- [ ] Workflow grants only required `contents: write` and `id-token: write` permissions.
-- [ ] Workflow contains no `NPM_TOKEN`, `NODE_AUTH_TOKEN`, OTP secret, `--otp`, or interactive publish path.
-- [ ] CI runs install, tests, `npm pack --dry-run`, tag/version/CHANGELOG consistency checks, `npm publish`, and registry verification in order.
+- [x] Workflow grants only required `contents: write` and `id-token: write` permissions. (2026-11-02, `release.yml`: workflow `permissions: {}`; `verify` `contents: read`; `publish` `contents: read` + `id-token: write`; `release` `contents: write`.)
+- [x] Workflow contains no `NPM_TOKEN`, `NODE_AUTH_TOKEN`, OTP secret, `--otp`, or interactive publish path. (2026-11-02, `release.yml` read: none present.)
+- [x] CI runs install, tests, `npm pack --dry-run`, tag/version/CHANGELOG consistency checks, `npm publish`, and registry verification in order. (2026-11-02, `release.yml`: `npm ci` → `npm test` → tag/CHANGELOG check → a real `npm pack` installed and started, stronger than `--dry-run` → `npm publish` → `npm view` polled 5 times.)
 - [ ] A test release shows npm provenance and `npm view @akinet/akimcp@<version> version` returning `<version>`.
-- [ ] The GitHub Release is created only after the registry verification succeeds.
+- [x] The GitHub Release is created only after the registry verification succeeds. (2026-11-02, `release.yml`: `release` has `needs: publish`, and `publish` exits 1 when `npm view` never returns the tag.)
 
 ## Scope
 
