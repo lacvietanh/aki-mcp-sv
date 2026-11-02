@@ -37,6 +37,8 @@ export const AIOBOX_CONNECT = {
 
 export const aioboxInstalled = () => fs.existsSync(aioboxDir());
 export const windowsFile = () => path.join(aioboxDir(), 'cdp', 'windows.json');
+// Resolved at call time: provider-registry.js imports the modules that import this one, so a static import would be a cycle.
+export const aioboxServed = async () => (await import('./provider-registry.js')).providerServed('aiobox');
 
 // For the call-log report's bypass count (scripts/tool-calls-report.js), kept here so that CLI loads no MCP code; none when AIObox is off or its map is unreadable.
 export function aioboxPorts() {

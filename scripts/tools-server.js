@@ -5,16 +5,15 @@
 // is installed and switched on, lives in provider-registry.js.
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { ruleContextInstructions } from './rule-context-mcp.js';
-import { mountProviders, listProviders } from './provider-registry.js';
+import { mountProviders, providerServed } from './provider-registry.js';
 import { VERSION } from './version.js';
 import { IDENTITY } from './mcp-name.js';
 
 export function createToolsServer() {
   // The AIObox step names aki__aiobox, so it rides along only while that tool is served (installed and switched on).
-  const aiobox = listProviders().find((p) => p.id === 'aiobox');
   const server = new McpServer(
     { name: IDENTITY.key, version: VERSION, title: IDENTITY.name },
-    { instructions: ruleContextInstructions(Boolean(aiobox?.available && aiobox?.enabled)) },
+    { instructions: ruleContextInstructions(providerServed('aiobox')) },
   );
   return mountProviders(server, IDENTITY.prefix);
 }
