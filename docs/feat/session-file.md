@@ -1,8 +1,8 @@
 # Session file (ss)
 
-> updated 2026-10-31 · v4.0.0
+> updated 2026-11-03 · v4.1.0
 
-One Markdown file per chat that holds where its work stands, so a successor, another client or the same chat after a compaction resumes without the owner re-explaining. AkiMCP names the file and reports on it; only the chat writes it. Decided in `plan/ss-session-file.md` (v1 and v2).
+One Markdown file per chat that holds where its work stands, so a successor, another client or the same chat after a compaction resumes without the owner re-explaining. AkiMCP names the file and reports on it; only the chat writes it. Decided in `plan/done/ss-session-file.md` (v1 and v2).
 
 ## Path and name
 
@@ -15,12 +15,13 @@ One Markdown file per chat that holds where its work stands, so a successor, ano
 
 Tool names here use the default prefix `aki__`. A server with another Tool prefix serves the same tools under that prefix; panel section 1 shows yours.
 
-`aki__akidevrule_context` hands out the path and creates nothing (`scripts/session-file.js`). No `ss` input mints one; an `ss` input that is an ss path is kept, whether or not the file exists, so a re-call after a compaction or a rule change never starts a second file. The line follows the receipt line, outside the receipt hash, and the same values sit in `structuredContent.ss`:
+`aki__akidevrule_context` hands out the path and creates nothing (`scripts/session-file.js`). No `ss` input mints one; an `ss` input that is an ss path or a council seat file is kept, whether or not the file exists, so a re-call after a compaction or a rule change never starts a second file. The line follows the receipt line, outside the receipt hash, and the same values sit in `structuredContent.ss`:
 
 | State | Line |
 |---|---|
 | minted | `ss: <path> · new · folder ready` or `· folder missing` (create the folder first) |
 | kept | `ss: <path> · kept`, plus `· not created yet` when the file does not exist |
+| working path inside a council room, no `ss` input | `ss: none minted · <room> is a council room; its seat file is this chat's ss` |
 | input not an ss path | `ss: <path> · new (the ss given was ignored: not an ss path)` |
 | data dir outside the allowed folders | `ss: unavailable · <data dir> is outside the allowed folders; add it under Folders in the panel` |
 
@@ -86,7 +87,7 @@ Then a fixed body:
 
 ## Council seats
 
-Inside an `/akiflow` council room the seat file `<room>/<seat>.md` is the seat's session file: a seat mints no ss and its posts carry no `ss:` line. The chat that opened the room puts the room path in its own ss `room:` key.
+Inside an `/akiflow` council room the seat file `<room>/<seat>.md` is the seat's session file: a seat mints no ss and its posts carry no `ss:` line. The chat that opened the room puts the room path in its own ss `room:` key. A room is `~/.aki/agent-council/<project>/<YYYY.MM.DD-HHMM>-<slug>/` and a seat file sits directly in it (`[a-z0-9-]+.md`). AkiMCP keeps `ss=<seat file>` like an ss and names it in the stale line, and a context call whose working path is inside a room mints none. A seat file write carries no `ss file written` line: its format is the room's, not the ss shape.
 
 ## Side folder
 
@@ -96,9 +97,9 @@ Inside an `/akiflow` council room the seat file `<room>/<seat>.md` is the seat's
 
 All of these are facts about a file, never orders.
 
-- **On a write**: a `write_file` or `edit_file` of an ss ends with `ss file written: <path> · shape ok`, or `· shape: missing <keys and headings>` naming each missing frontmatter key and heading. The write always succeeds. A legacy `task/<slug>/working.md` write keeps `ss file written: <path>` (`scripts/filesystem-mcp.js`).
-- **On an acting call**: acting tools take an optional `ss` beside `receipt`. When the call did not write that file itself, the result ends with `ss: <path> · not created yet` (file missing) or `ss: <path> · last written N min ago` (15 minutes or more behind); an invalid `ss` gets `ss: not an ss path, ignored` (`scripts/rule-gate.js`).
-- **In the call log** (`tool-calls.jsonl`, `scripts/tool-call-log.js`): gated calls carry `ss` (a valid ss was passed) and `ssAge` (minutes since its last write, `-1` when missing, `null` on any other read error); context calls carry `ssState` (`new`, `kept`, `ignored`, `unavailable`); ss writes carry `ssShape` (`ok` or the count missing). No path is logged.
+- **On a write**: a `write_file` or `edit_file` of an ss ends with `ss file written: <path> · shape ok`, or `· shape: missing <keys and headings>` naming each missing frontmatter key and heading. The write always succeeds (`scripts/filesystem-mcp.js`).
+- **On an acting call**: acting tools take an optional `ss` beside `receipt`. When the call did not write that file itself, the result ends with `ss: <path> · not created yet` (file missing) or `ss: <path> · last written N min ago` (15 minutes or more behind); an invalid `ss` gets `ss: not an ss path, ignored` (`scripts/rule-gate.js`). A seat file counts as an ss here.
+- **In the call log** (`tool-calls.jsonl`, `scripts/tool-call-log.js`): gated calls carry `ss` (a valid ss or seat file was passed) and `ssAge` (minutes since its last write, `-1` when missing, `null` on any other read error); context calls carry `ssState` (`new`, `kept`, `council`, `ignored`, `unavailable`); ss writes carry `ssShape` (`ok` or the count missing). No path is logged.
 
 ## Finding open sessions
 
@@ -106,7 +107,7 @@ No tool: `aki__search_content` with query `^status: (active|waiting)` and path `
 
 ## Legacy
 
-`<data dir>/task/<slug>/working.md` files stay where they are, since plans cite them. The write-time match for them is removed in the first release after which none was modified for 30 days. `task-logs/` and `tasks.json` belong to `aki__task_start`.
+`<data dir>/task/<slug>/working.md` files stay where they are, since plans cite them. A write of one is an ordinary write, with no `ss file written` line (up to 4.1.0 it got one). `task-logs/` and `tasks.json` belong to `aki__task_start`.
 
 ## Limits
 

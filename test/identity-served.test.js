@@ -1,4 +1,4 @@
-// What a server started under an identity serves: tool names, texts that name a tool, the rule gate, per-spawn stdio (docs/plan/v4-custom-name.md § P3).
+// What a server started under an identity serves: tool names, texts that name a tool, the rule gate, per-spawn stdio (docs/plan/done/v4-custom-name.md § P3).
 import './setup.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';

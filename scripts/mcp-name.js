@@ -1,4 +1,4 @@
-// Naming SSoT for the MCP server identity: docs/plan/v4-custom-name.md § The identity (no hyphen in the key: docs/ref/fact-agy-mcp-config.md § CLI-5).
+// Naming SSoT for the MCP server identity: docs/plan/done/v4-custom-name.md § The identity (no hyphen in the key: docs/ref/fact-agy-mcp-config.md § CLI-5).
 import { readSettings } from './allowlist.js';
 import { SETTINGS_PATH } from './userdata.js';
 

@@ -1,4 +1,4 @@
-// session-file.js: the ss path's project key, label, mint, acceptance, age and the header a context call returns (docs/plan/ss-session-file.md P1).
+// session-file.js: the ss path's project key, label, mint, acceptance, age and the header a context call returns (docs/plan/done/ss-session-file.md P1).
 import './setup.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { USER_DIR, SETTINGS_PATH } from '../scripts/userdata.js';
-import { SS_DIR, projectKey, sanitizeLabel, mintSessionPath, acceptSessionPath, isSessionFile, shapeOf, shapeNote, shapeFromResult, ssAgeMinutes, staleLine, sessionFor } from '../scripts/session-file.js';
+import { SS_DIR, projectKey, sanitizeLabel, mintSessionPath, acceptSessionPath, acceptSeatPath, acceptChatFile, shapeOf, shapeNote, shapeFromResult, ssAgeMinutes, staleLine, sessionFor } from '../scripts/session-file.js';
 
 const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ss-')));
 const at = new Date(2026, 9, 24, 18, 12);
@@ -78,10 +78,19 @@ test('acceptSessionPath takes only an ss name directly under <ss dir>/<project>/
   assert.ok(acceptSessionPath('c:\\users\\A\\.aki\\mcpsv\\ss\\proj\\2026.10.24-1812-ab.md', win), 'Windows paths compare case-insensitively');
 });
 
-test('isSessionFile names an ss and a legacy task working.md, nothing else', () => {
-  assert.equal(isSessionFile(path.join(SS_DIR, 'p', '2026.10.24-1812-ab.md')), true);
-  assert.equal(isSessionFile(path.join(tmp, '.aki', 'mcpsv', 'task', 'old-thread', 'working.md')), true);
-  assert.equal(isSessionFile(path.join(tmp, 'working.md')), false);
+const room = path.join(os.homedir(), '.aki', 'agent-council', 'p', '2026.11.03-0100-ship');
+const seat = path.join(room, 'maker.md');
+
+test('a chat file is an ss or a seat file directly in a council room, not a task working.md', () => {
+  const ss = path.join(SS_DIR, 'p', '2026.10.24-1812-ab.md');
+  assert.equal(acceptChatFile(ss), ss);
+  assert.equal(acceptChatFile(seat), seat);
+  assert.equal(acceptSessionPath(seat), null, 'a seat file is no ss, so its writes carry no ss line');
+  assert.equal(acceptSeatPath(path.join(room, 'notes', 'maker.md')), null, 'one room level only');
+  assert.equal(acceptSeatPath(`${room}/../2026.11.03-0100-other/maker.md`), null);
+  assert.equal(acceptSeatPath(path.join(path.dirname(room), 'loose-room', 'maker.md')), null, 'a room name starts with its date');
+  assert.equal(acceptChatFile(path.join(os.homedir(), '.aki', 'mcpsv', 'task', 'old-thread', 'working.md')), null);
+  assert.equal(acceptSeatPath('C:\\Users\\a\\.aki\\agent-council\\p\\2026.11.03-0100-ship\\maker.md', { dir: 'C:\\Users\\a\\.aki\\agent-council', pathApi: path.win32 }), 'C:\\Users\\a\\.aki\\agent-council\\p\\2026.11.03-0100-ship\\maker.md');
 });
 
 test('staleLine says nothing for a fresh file and names a missing or stale one', () => {
@@ -117,6 +126,8 @@ test('sessionFor mints, keeps, ignores, and reports an unreachable data dir', ()
   const ignored = sessionFor({ ss: '/etc/hosts', workingPath: repo, workingRoot: tmp, now: at });
   assert.equal(ignored.state, 'ignored');
   assert.match(ignored.line, /^ss: .+ · new \(the ss given was ignored: not an ss path\)$/);
+  assert.deepEqual(sessionFor({ ss: seat, workingPath: room }), { path: seat, state: 'kept', line: `ss: ${seat} · kept · not created yet` });
+  assert.deepEqual(sessionFor({ workingPath: room, workingRoot: tmp, now: at }), { path: null, state: 'council', line: `ss: none minted · ${room} is a council room; its seat file is this chat's ss` });
   fs.writeFileSync(SETTINGS_PATH, JSON.stringify({ folders: [tmp] }));
   try {
     assert.deepEqual(sessionFor({ ss: fresh.path }), { path: null, state: 'unavailable', line: `ss: unavailable · ${path.resolve(USER_DIR)} is outside the allowed folders; add it under Folders in the panel` });
@@ -149,7 +160,7 @@ test('the write-time note and the call log field are one format, written and rea
   assert.equal(shapeNote('---\nstatus: active\n---\n'), `shape: missing ${shapeOf('---\nstatus: active\n---\n').join(', ')}`);
   assert.equal(shapeFromResult('wrote /p\nss file written: /p · shape ok'), 'ok');
   assert.equal(shapeFromResult('```diff\n+x\n```\nss file written: /p · shape: missing status, ## Now'), 2, 'the count of what is missing');
-  assert.equal(shapeFromResult('wrote /p\nss file written: /p'), undefined, 'a legacy write has no shape');
+  assert.equal(shapeFromResult('wrote /p\nss file written: /p'), undefined, 'a line without a shape has none');
   assert.equal(shapeFromResult('wrote /p'), undefined);
   assert.equal(shapeFromResult(undefined), undefined);
 });

@@ -30,17 +30,17 @@ const call = async (name, args) => {
   return r.content.map((c) => c.text).join('\n');
 };
 
-// D9 of docs/plan/ss-session-file.md: a write of a chat's ss or of a legacy task working.md ends with a fact line naming it, never an order; any other write does not.
+// D9 of docs/plan/done/ss-session-file.md: a write of a chat's ss ends with a fact line naming it, never an order; any other write does not, an old task working.md included (v2 P9).
 const ssFile = path.join(SS_DIR, 'demo', '2026.10.24-1812-ab.md');
 const legacy = path.join(home, '.aki', 'mcpsv', 'task', 'old-thread', 'working.md');
 for (const f of [ssFile, legacy]) fs.mkdirSync(path.dirname(f), { recursive: true });
-// v2 D6: a write of an ss (not a legacy working.md) also says whether it has the frontmatter keys and headings, as a fact.
+// v2 D6: the line also says whether the ss has the frontmatter keys and headings, as a fact.
 assert.equal(await call('write_file', { path: ssFile, content: '# goal\n' }), `wrote ${ssFile}\nss file written: ${ssFile} · shape: missing ${shapeOf('# goal\n').join(', ')}`);
 assert.match(await call('edit_file', { path: ssFile, edits: [{ oldText: 'goal', newText: 'state' }] }), new RegExp(`\\nss file written: ${ssFile.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · shape: missing status, repo, .*## Log$`));
 const shaped = ['---', ...['status', 'repo', 'chat', 'started', 'parent', 'successor', 'room', 'plan', 'transcript'].map((k) => `${k}: none`), '---', '# t', ...['Now', 'Asked', 'Next', 'Decisions', 'Open', 'Files', 'Log'].map((h) => `## ${h}`), ''].join('\n');
 assert.equal(await call('write_file', { path: ssFile, content: shaped }), `wrote ${ssFile}\nss file written: ${ssFile} · shape ok`);
 assert.match(await call('edit_file', { path: ssFile, edits: [{ oldText: '## Log', newText: '## Log\n- 12:00 x' }] }), new RegExp(`\\nss file written: ${ssFile.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · shape ok$`), 'an edit is checked on the content it leaves');
-assert.equal(await call('write_file', { path: legacy, content: 'x\n' }), `wrote ${legacy}\nss file written: ${legacy}`);
+assert.equal(await call('write_file', { path: legacy, content: 'x\n' }), `wrote ${legacy}`);
 assert.equal(await call('write_file', { path: path.join(home, 'work', 'plain.md'), content: 'x\n' }), `wrote ${path.join(home, 'work', 'plain.md')}`);
 
 if (process.platform !== 'win32') {

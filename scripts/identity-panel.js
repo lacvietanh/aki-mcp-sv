@@ -1,4 +1,4 @@
-// The panel's name field: the browser asks here on every keystroke, so resolveIdentity, slug() and the budget stay in mcp-name.js only (docs/plan/v4-custom-name.md § P6).
+// The panel's name field: the browser asks here on every keystroke, so resolveIdentity, slug() and the budget stay in mcp-name.js only (docs/plan/done/v4-custom-name.md § P6).
 import { readSettings, writeSettings } from './allowlist.js';
 import { esc } from './html.js';
 import { IDENTITY, IDENTITY_PROBLEM, DEFAULT_NAME, DEFAULT_KEY, DEFAULT_PREFIX, resolveIdentity, candidateIdentity, aioboxFindsName, describeProblem, quoteValue } from './mcp-name.js';

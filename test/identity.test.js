@@ -1,4 +1,4 @@
-// resolveIdentity: how the Display name makes the Server ID and Tool prefix, and what is refused (docs/plan/v4-custom-name.md § The identity).
+// resolveIdentity: how the Display name makes the Server ID and Tool prefix, and what is refused (docs/plan/done/v4-custom-name.md § The identity).
 import './setup.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';

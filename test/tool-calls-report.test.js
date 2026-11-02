@@ -16,13 +16,13 @@ const now = Date.now();
 const at = (ago) => new Date(now - ago).toISOString();
 const rows = [
   { ts: at(9 * 86_400_000), client: 'old', tool: 'aki__aiobox_write', op: 'eval', ok: true, version: '2.2.0' },
-  { ts: at(5000), client: 'a', tool: 'aki__aiobox_write', op: 'compose', ok: true, version: VERSION },
-  { ts: at(4000), client: 'a', tool: 'aki__aiobox', op: 'state', ok: true, version: VERSION },
-  { ts: at(3000), client: 'a', tool: 'aki__aiobox_write', op: 'eval', evalKind: ['click', 'submit'], ok: true, version: VERSION },
-  { ts: at(2000), client: 'a', tool: 'aki__aiobox', op: 'read', ok: false, errorCode: 'no_window', version: VERSION },
-  { ts: at(1500), client: 'b', tool: 'aki__devtools_eval', port: 9222, evalKind: ['click'], ok: true, version: VERSION },
-  { ts: at(1000), client: 'b', tool: 'aki__aiobox_write', op: 'bogus', ok: false, errorCode: '-32602', version: VERSION },
-  { ts: at(800), client: 'd', tool: 'aki__devtools_eval', ok: false, error: 'refused (busy; next: wait)' },
+  { ts: at(5000), client: 'a', tool: 'aki__aiobox_write', bare: 'aiobox_write', op: 'compose', ok: true, version: VERSION },
+  { ts: at(4000), client: 'a', tool: 'aki__aiobox', bare: 'aiobox', op: 'state', ok: true, version: VERSION },
+  { ts: at(3000), client: 'a', tool: 'aki__aiobox_write', bare: 'aiobox_write', op: 'eval', evalKind: ['click', 'submit'], ok: true, version: VERSION },
+  { ts: at(2000), client: 'a', tool: 'aki__aiobox', bare: 'aiobox', op: 'read', ok: false, errorCode: 'no_window', version: VERSION },
+  { ts: at(1500), client: 'b', tool: 'aki__devtools_eval', bare: 'devtools_eval', port: 9222, evalKind: ['click'], ok: true, version: VERSION },
+  { ts: at(1000), client: 'b', tool: 'aki__aiobox_write', bare: 'aiobox_write', op: 'bogus', ok: false, errorCode: '-32602', version: VERSION },
+  { ts: at(800), client: 'd', tool: 'aki__devtools_eval', bare: 'devtools_eval', ok: false, error: 'refused (busy; next: wait)' },
 ];
 fs.writeFileSync(`${file}.1`, `${JSON.stringify(rows[0])}\n`);
 fs.writeFileSync(file, `${rows.slice(1).map((r) => JSON.stringify(r)).join('\n')}\nnot json\n`);
@@ -30,24 +30,25 @@ fs.writeFileSync(file, `${rows.slice(1).map((r) => JSON.stringify(r)).join('\n')
 const all = readEntries(file);
 assert.equal(all.length, 8, 'the rotated copy is read too, a broken line is skipped');
 const r = report(all, { aioboxPorts: new Set([9222]), version: VERSION });
-assert.equal(r.aioboxCalls, 6);
-assert.equal(r.clients, 3);
+assert.equal(r.aioboxCalls, 5, 'the 2.2.0 line has no bare and counts under its full name');
+assert.equal(r.clients, 2);
 assert.equal(r.C1_evalShare, undefined, 'AkiMCP counts no AIObox op since B1');
 assert.deepEqual(r.C2_bypass, { calls: 1, tools: ['devtools_eval'], evalKinds: { click: 1 } });
-assert.deepEqual(r.C3_writeBeforeState, { calls: 3, share: '75%' }, 'old eval, a compose before state, b without state');
+assert.deepEqual(r.C3_writeBeforeState, { calls: 2, share: '66.7%' }, 'a compose before state, b without state');
 assert.equal(r.C4_staleSchema, 1, 'errorCode -32602 counts like the old error text');
 assert.equal(r.C5_olderVersion, 1);
 assert.deepEqual(r.C6_refusals, { no_window: 1, busy: 1 }, 'refusal code from errorCode and from detail error text');
-assert.equal(r.aioboxSuccess, '66.7%', 'old eval, compose, state, eval ok; read, bogus failed');
+assert.equal(r.aioboxSuccess, '60%', 'compose, state, eval ok; read, bogus failed');
 assert.equal(readEntries(file, { sinceMs: now - 7 * 86_400_000 }).length, 7, '--days drops older lines');
 
-// A log across a rename: pre-4.0 lines carry only the aki__ name, 4.0 lines carry bare, and both count as the same tool.
+// A log across a rename: lines carry bare, so a renamed prefix counts as the same tool; a pre-4.0 line without bare is not stripped (v4-custom-name R1).
 const mixed = report([
   { ts: at(3000), client: 'a', tool: 'aki__aiobox', op: 'state', ok: true },
+  { ts: at(2500), client: 'a', tool: 'aki__aiobox', bare: 'aiobox', op: 'state', ok: true },
   { ts: at(2000), client: 'a', tool: 'mac__aiobox', bare: 'aiobox', op: 'read', ok: true },
   { ts: at(1000), client: 'a', tool: 'mac__devtools_eval', bare: 'devtools_eval', port: 9222, ok: true },
 ], { aioboxPorts: new Set([9222]) });
-assert.equal(mixed.aioboxCalls, 2, 'one pre-4.0 and one 4.0 AIObox line make one total');
+assert.equal(mixed.aioboxCalls, 2, 'two prefixes, one tool; the line without bare is not an AIObox call');
 assert.deepEqual(mixed.C2_bypass.tools, ['devtools_eval']);
 
 // A dated sidecar (the D9 keep-days layout) is read together with the current file.
@@ -62,7 +63,7 @@ fs.rmSync(datedDir, { recursive: true, force: true });
 const cli = (...args) => spawnSync(process.execPath, [fileURLToPath(new URL('../scripts/tool-calls-report.js', import.meta.url)), ...args], { encoding: 'utf8', env: { ...process.env, HOME: dir, USERPROFILE: dir, AKI_MCP_DATA_DIR: dir } });
 const whole = cli(file);
 assert.equal(whole.status, 0, whole.stderr);
-assert.deepEqual([JSON.parse(whole.stdout).file, JSON.parse(whole.stdout).days, JSON.parse(whole.stdout).aioboxCalls], [file, null, 6]);
+assert.deepEqual([JSON.parse(whole.stdout).file, JSON.parse(whole.stdout).days, JSON.parse(whole.stdout).aioboxCalls], [file, null, 5]);
 for (const args of [[file, '--days', '7'], ['--days', '7', file]]) {
   const week = JSON.parse(cli(...args).stdout);
   assert.deepEqual([week.days, week.C5_olderVersion], [7, 0], `--days 7 leaves the 9-day-old 2.2.0 call out (${args.join(' ')})`);

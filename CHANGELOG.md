@@ -2,6 +2,15 @@
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning per [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **A council seat file is kept as that seat's session file (ss)** (`scripts/session-file.js`, `scripts/tool-call-log.js`, `test/session-file.test.js`, `docs/feat/session-file.md`): in an /akiflow council session the seat file `~/.aki/agent-council/<project>/<YYYY.MM.DD-HHMM>-<slug>/<seat>.md` is that chat's ss, as the rule text already says. Before, `aki__akidevrule_context` took `ss=<seat file>` for "not an ss path" and minted a new ss, and a seat whose `workingPath` was its room got a new ss in a folder named after the room: the call logs of 2026-10-26 to 2026-11-02 show seats minting ss in all 4 council rooms opened since the opener named the seat file. Now `ss=<seat file>` is `kept`, an acting call that carries it ends with the `last written N min ago` line when the file falls behind, and the call log counts the call as carrying `ss`. A context call whose `workingPath` is inside a council room mints nothing and answers `ss: none minted · <room> is a council room; its seat file is this chat's ss`, with `ssState` `council`. A seat file write gets no `ss file written` line, because the room's format is akiflow's, not the ss shape. Tool definitions are unchanged. Tested in `test/session-file.test.js` (seat accepted, `kept`, `council`); the stale line and the log count read the same check, not tested on their own.
+
+### Removed
+- **A write to an old `task/<slug>/working.md` no longer ends with `ss file written`** (`scripts/session-file.js`, `scripts/filesystem-mcp.js`, `test/filesystem-mcp.test.js`, `test/tool-call-log.test.js`, `docs/feat/session-file.md`): the file sessions kept before 3.1.0 was still matched as a session file, so a write of one added the ss line. Since 3.1.0 the rule names only the ss, so the line confirmed a file nothing reads as a session. The match was to go once no such file had been written for 30 days; 68 still were, but nothing depends on the line, so it goes now, on the owner's order of 2026-11-03 to clear the backlog. The files stay where they are and are written like any other file. Tested in `test/filesystem-mcp.test.js`.
+- **`npm run tool-calls` no longer strips `aki__` from log lines written before 4.0.0** (`scripts/tool-calls-report.js`, `test/tool-calls-report.test.js`): for maintainers reading the call-log report. 4.0.0 read a line without `bare` by stripping the default prefix and said this would end on 2026-12-10, when the last such line ages out of the 40-day log; it ends now, with the same backlog order. A pre-4.0 line counts under its full tool name, so a report without `--days` that reaches back before 2026-10-31 does not count an old `aki__aiobox` line as an AIObox call; a `--days` window that starts on or after 2026-10-31 sees only 4.0 lines. Tested in `test/tool-calls-report.test.js`.
+
 ## [4.1.0] - 2026-11-03
 
 ### Added

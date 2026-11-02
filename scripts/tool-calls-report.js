@@ -5,10 +5,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { datedLogFiles } from './tool-call-log.js';
-import { DEFAULT_PREFIX } from './mcp-name.js';
 
-// A line written before 4.0.0 has no `bare`: its tool name carries the constant prefix.
-const bareOf = (e) => e.bare ?? (typeof e.tool === 'string' && e.tool.startsWith(DEFAULT_PREFIX) ? e.tool.slice(DEFAULT_PREFIX.length) : e.tool);
+// A line written before 4.0.0 has no `bare` and counts under its full tool name (docs/plan/done/v4-custom-name.md R1).
+const bareOf = (e) => e.bare ?? e.tool;
 const REFUSAL = /\((\w+); next: /;
 const pct = (n, d) => (d ? `${Math.round((n / d) * 1000) / 10}%` : '-');
 const errText = (e) => (typeof e.error === 'string' ? e.error : typeof e.errorCode === 'string' ? e.errorCode : '');

@@ -5,11 +5,7 @@ import { fileURLToPath } from 'node:url'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
-const EXEMPT_FILES = [
-  'docs/plan/ss-session-file.md',
-  'docs/plan/per-client-tool-surface.md',
-  'docs/plan/v4-custom-name.md',
-]
+const EXEMPT_FILES = ['docs/plan/per-client-tool-surface.md']
 const EXEMPT_DIRS = ['docs/plan/done/', 'docs/research/']
 const NOTE = /default prefix .aki__|aki__. by default/
 

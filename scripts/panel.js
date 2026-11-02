@@ -443,7 +443,7 @@ export const ROUTES = {
   'POST /api/claude-code-apply': async () => applyClaudeCode(),
   'POST /api/codex-apply': async () => applyCodex(),
   'POST /api/cursor-apply': async () => applyCursor(),
-  // Read-only: what resolveIdentity makes of the draft being typed (docs/plan/v4-custom-name.md § P6).
+  // Read-only: what resolveIdentity makes of the draft being typed (docs/plan/done/v4-custom-name.md § P6).
   'POST /api/identity-preview': async (body) => previewReply(body),
   'POST /api/identity': async (body) => saveIdentity(body),
   'POST /api/identity-reset': async () => resetIdentity(),

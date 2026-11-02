@@ -1,5 +1,6 @@
-// A chat's session file (ss): aki__akidevrule_context mints its path, the chat passes it back, and this module names, checks and ages it (docs/plan/ss-session-file.md D2-D5, D9-D12). Nothing here creates a file or a folder.
+// A chat's session file (ss): aki__akidevrule_context mints its path, the chat passes it back, and this module names, checks and ages it (docs/plan/done/ss-session-file.md D2-D5, D9-D12). Nothing here creates a file or a folder.
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { randomInt } from 'node:crypto';
 import { USER_DIR } from './userdata.js';
@@ -8,8 +9,10 @@ import { getRoots, containedIn } from './roots.js';
 export const SS_DIR = path.resolve(USER_DIR, 'ss');
 // D10: an ss this far behind an acting call is named in that call's result.
 const SS_STALE_MS = 15 * 60_000;
-// D12: the file sessions kept before ss, still matched while old threads write it.
-const LEGACY_WORKING_FILE = /[\\/]\.aki[\\/]mcpsv[\\/]task[\\/][^\\/]+[\\/]working\.md$/;
+// v2 D4, v2 P9: an /akiflow council room, <home>/.aki/agent-council/<project>/<YYYY.MM.DD-HHMM>-<slug>/, whose seat file <room>/<seat>.md is that chat's session file.
+const COUNCIL_DIR = path.join(os.homedir(), '.aki', 'agent-council');
+const ROOM_NAME = /^\d{4}\.\d{2}\.\d{2}-\d{4}-[a-z0-9-]+$/;
+const SEAT_NAME = /^[a-z0-9-]+\.md$/;
 // D2, D4, v2 D7: <YYYY.MM.DD-HHMM>-<label of at most LABEL_MAX>, plus a 3-character collision suffix.
 const LABEL_MAX = 24;
 const SS_NAME = new RegExp(`^\\d{4}\\.\\d{2}\\.\\d{2}-\\d{4}-[a-z0-9-]{1,${LABEL_MAX + 3}}\\.md$`);
@@ -72,8 +75,24 @@ export function acceptSessionPath(p, { dir = SS_DIR, pathApi = path } = {}) {
   return sameDir && PROJECT_NAME.test(project) && !/^\.+$/.test(project) && SS_NAME.test(pathApi.basename(file)) ? file : null;
 }
 
-// D9: a write the filesystem tools name as an ss write.
-export const isSessionFile = (real) => Boolean(acceptSessionPath(real)) || LEGACY_WORKING_FILE.test(real);
+// v2 P9: the room a path sits in when it is inside a council room, else null.
+function councilRoomOf(p, { dir = COUNCIL_DIR, pathApi = path } = {}) {
+  if (typeof p !== 'string' || !pathApi.isAbsolute(p) || p.split(/[\\/]/).includes('..')) return null;
+  const rel = pathApi.relative(pathApi.resolve(dir), pathApi.resolve(p));
+  const [project, room] = rel.split(/[\\/]/);
+  if (!room || rel.startsWith('..') || pathApi.isAbsolute(rel) || !PROJECT_NAME.test(project) || !ROOM_NAME.test(room)) return null;
+  return pathApi.join(pathApi.resolve(dir), project, room);
+}
+
+// v2 D4, v2 P9: the absolute seat file when p is one (directly inside a council room), else null.
+export function acceptSeatPath(p, { dir = COUNCIL_DIR, pathApi = path } = {}) {
+  const room = councilRoomOf(p, { dir, pathApi });
+  const file = room && pathApi.resolve(p);
+  return file && pathApi.dirname(file) === room && SEAT_NAME.test(pathApi.basename(file)) ? file : null;
+}
+
+// The file a chat passes as ss=: its ss, or its seat file in a council session.
+export const acceptChatFile = (p) => acceptSessionPath(p) ?? acceptSeatPath(p);
 
 // v2 D1, D2: the frontmatter keys and headings a new ss is expected to carry.
 const SHAPE_KEYS = ['status', 'repo', 'chat', 'started', 'parent', 'successor', 'room', 'plan', 'transcript'];
@@ -110,7 +129,7 @@ export function ssAgeMinutes(file, now = Date.now()) {
 
 // D10: the line an acting call that names its ss ends with, or null while the file is current. A fact about a file, never an order (F6).
 export function staleLine(ss, now = Date.now()) {
-  const file = acceptSessionPath(ss);
+  const file = acceptChatFile(ss);
   if (!file) return 'ss: not an ss path, ignored';
   const age = ssAgeMinutes(file, now);
   if (age === null) return null;
@@ -118,14 +137,16 @@ export function staleLine(ss, now = Date.now()) {
   return age * 60_000 >= SS_STALE_MS ? `ss: ${file} · last written ${age} min ago` : null;
 }
 
-// D5: the ss a context call hands back with its header line: the one passed in when it is an ss path (kept), else a new one. `unavailable` when the file tools cannot write the data dir (F8).
+// D5: the ss a context call hands back with its header line: the one passed in when it is an ss path or a seat file (kept), none inside a council room (v2 P9), else a new one. `unavailable` when the file tools cannot write the data dir (F8).
 export function sessionFor({ ss, label, workingPath, workingRoot, now = new Date() }) {
   if (!getRoots().some((root) => containedIn(SS_DIR, root))) {
     return { path: null, state: 'unavailable', line: `ss: unavailable · ${path.resolve(USER_DIR)} is outside the allowed folders; add it under Folders in the panel` };
   }
   const given = typeof ss === 'string' && ss !== '';
-  const kept = given ? acceptSessionPath(ss) : null;
+  const kept = given ? acceptChatFile(ss) : null;
   if (kept) return { path: kept, state: 'kept', line: `ss: ${kept} · kept${fs.existsSync(kept) ? '' : ' · not created yet'}` };
+  const room = councilRoomOf(workingPath);
+  if (room) return { path: null, state: 'council', line: `ss: none minted · ${room} is a council room; its seat file is this chat's ss` };
   const file = mintSessionPath({ project: projectKey(workingPath, workingRoot), label, now });
   if (given) return { path: file, state: 'ignored', line: `ss: ${file} · new (the ss given was ignored: not an ss path)` };
   return { path: file, state: 'new', line: `ss: ${file} · new · folder ${fs.existsSync(path.dirname(file)) ? 'ready' : 'missing'}` };

@@ -1,7 +1,7 @@
 // Every tool that acts refuses a call without the receipt of the rules in force (docs/plan/done/rule-receipt-gate.md); a receipt proves issuance, not presence in context, so the refusal text tells the AI to reload without knownReceipt.
 // A gated call that touches a project whose rule files, or writes a file whose type's rules (the AkiDevRule route map), the receipt does not cover is not run: the result carries those rules and a new receipt (D23 in docs/plan/done/akimcp-tool-refactor.md, Stage A in docs/plan/done/rule-presence-check.md). Read tools always run and append one line naming the project rule files.
 // A receipt counts only when this server issued it (aki__akidevrule_context records it here, in memory) and the same call made now still returns it: a changed rule file changes the receipt, so the old one is refused.
-// Beside receipt every acting tool takes the chat's optional `ss`; a call that ran ends with one line when that file is missing or behind (D10 in docs/plan/ss-session-file.md). The server stores nothing per chat: it reads one mtime.
+// Beside receipt every acting tool takes the chat's optional `ss`; a call that ran ends with one line when that file is missing or behind (D10 in docs/plan/done/ss-session-file.md). The server stores nothing per chat: it reads one mtime.
 import { z } from 'zod';
 import { served } from './mcp-name.js';
 import { assembleRuleContext } from './rule-context.js';
