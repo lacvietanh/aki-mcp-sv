@@ -13,10 +13,10 @@ const OPT_IN = process.argv.includes('--opt-in');
 const OPT_IN_CLIS = { agy: 'agy', kiro: 'kiro-cli' };
 // The default recording runs first: creating ~/.aki/aiobox/ is what makes the second one differ.
 const OUTPUTS = OPT_IN
-  ? [{ file: 'surface-3.3.1-optin.json', withAiobox: false }]
+  ? [{ file: 'surface-default-optin.json', withAiobox: false }]
   : [
-    { file: 'surface-3.3.1.json', withAiobox: false },
-    { file: 'surface-3.3.1-aiobox.json', withAiobox: true },
+    { file: 'surface-default.json', withAiobox: false },
+    { file: 'surface-default-aiobox.json', withAiobox: true },
   ];
 
 // agy and kiro are detected by their binary on PATH and stay off until setting.json switches them on: the scratch HOME gets stub binaries and that setting.

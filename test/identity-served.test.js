@@ -169,9 +169,9 @@ test('a stdio child started after the file changed serves the new prefix while t
   for (const name of liveNames) assert.match(name, /^mac__/);
 });
 
-test('at the default identity every served tool equals its 3.3.1 recording and initialize equals it apart from the version', () => {
+test('at the default identity every served tool equals its recording and initialize equals it apart from the version', () => {
   const { tools, providers, serverInfo, capabilities, instructions } = probe();
-  const recorded = fixture('surface-3.3.1-aiobox.json');
+  const recorded = fixture('surface-default-aiobox.json');
   const { version, ...info } = serverInfo;
   assert.deepEqual({ serverInfo: info, capabilities, instructions }, { serverInfo: { name: recorded.initialize.serverInfo.name, title: recorded.initialize.serverInfo.title }, capabilities: recorded.initialize.capabilities, instructions: recorded.initialize.instructions });
   assert.ok(version);
@@ -187,7 +187,7 @@ test('agy_run and kiro_read at the default identity equal their recording when b
   fs.mkdirSync(bin);
   for (const cli of ['agy', 'kiro-cli']) fs.writeFileSync(path.join(bin, cli), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
   const { tools } = probe({ setting: { providers: { agy: { enabled: true }, kiro: { enabled: true } } }, env: { PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
-  const recorded = fixture('surface-3.3.1-optin.json');
+  const recorded = fixture('surface-default-optin.json');
   for (const { name } of Object.values(recorded.providers).flat()) assert.deepEqual(tools.find((t) => t.name === name), Object.values(recorded.providers).flat().find((t) => t.name === name), `${name} differs from its recording`);
   assert.deepEqual(Object.values(recorded.providers).flat().map((t) => t.name).sort(), ['aki__agy_run', 'aki__kiro_read']);
 });

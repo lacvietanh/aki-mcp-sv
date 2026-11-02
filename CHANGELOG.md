@@ -2,6 +2,11 @@
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning per [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **The ss rule names its one exception and links its doc by a URL that opens anywhere** (`scripts/rule-context-mcp.js`, `test/rule-context.test.js`): the ss step of `aki__akidevrule_context` now says that a chat which cannot set `status: waiting` and `successor: <new ss>` itself leaves it to the successor, which sets just those two keys once (`docs/feat/session-file.md` § One writer, chained handoffs); before, it said only "never write another chat's ss". It links that doc on GitHub: the relative path `docs/feat/session-file.md` did not resolve outside this repo, and the npm package ships no `docs/`. The handoff rule is stated once, in the ss step; the shared-work line keeps only the optional letter in `~/.aki/handoff/`. **Tool definition changed: reconnect AkiMCP in every client after updating, and Claude asks "Always allow" again for `aki__akidevrule_context`.** Tested in `test/rule-context.test.js`, `test/identity-served.test.js`, `test/tool-surface.test.js`.
+
 ## [4.0.0] - 2026-10-31
 
 ### Added
