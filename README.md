@@ -1,6 +1,6 @@
 # aki-mcp-sv (`@akinet/akimcp`)
 
-Turn web AIs (Claude, ChatGPT, Grok, Notion, ClickUp, Buda), Postman and any web chat that can send HTTP requests into secure operators for your local machine. AkiMCP v3 exposes a governed suite of 38 tools for files, shell, search, Git, SQLite, browser automation, DevTools, background tasks, localhost services, clipboard, notifications, ports, Postman control, and AIObox windows through one OAuth-gated MCP endpoint. *(Gemini support remains experimental.)*
+Turn web AIs (Claude, ChatGPT, Grok, Notion, ClickUp, Buda), Postman and any web chat that can send HTTP requests into secure operators for your local machine. AkiMCP v4 exposes a governed suite of 38 tools for files, shell, search, Git, SQLite, browser automation, DevTools, background tasks, localhost services, clipboard, notifications, ports, Postman control, and AIObox windows through one OAuth-gated MCP endpoint. *(Gemini support remains experimental.)*
 
 One command opens a much larger operating surface: build and edit projects from the browser, inspect databases and local APIs, drive browser workflows, manage long-running jobs, debug through DevTools, and control Postman without giving every client unrestricted shell access.
 
@@ -75,11 +75,11 @@ Nothing needs preparing beforehand; `npm start` handles it:
 - Prints the **Remote MCP server URL** and **Passphrase** used on the confirmation page when a client connects.
 - Opens the **control panel** at `http://127.0.0.1:9998/?t=<token>`. A step header maps the flow (0 Ingress · 1 Connectors · 2 Install rules · 3 Instructions · 7 Security), then the sections follow it: 0 Ingress (optional; a 3-tab ingress picker: Tailscale + Funnel / Owned public origin / Hosted domain), 1 Connectors, 2 Install akidevrule, 3 Instructions prompt, 4 Tool providers (each provider's tools, whether its app is installed, an on/off switch, Detect again), 5 allowed Folders, 6 shell allowlist, 7 Security & connection limits (rate limit settings, blocked callers and Release, registered clients with Remove, callers active since start), 8 AIObox (what the desktop app adds to AkiMCP, with a link to aiobox.app; one line when it is already installed; section 1 ends with a short version of it), 9 Logs (call log settings and the security log).
 
-The default allowed root is your **home directory** (`$HOME`, or `%USERPROFILE%` on Windows): the one folder guaranteed to exist on any machine and to hold the projects you actually want Claude to reach. In plain terms, that means the whole home folder (Desktop, Documents, Downloads, Photos, everything under it), not just the projects you meant to share. Add/remove folders from **panel section 5**: click "+ Add folder…" and type an absolute path (`/Users/you/projects` or `C:\Users\you\projects`). Saving takes effect immediately for every tool — shell, find, search, and file read/write/edit alike — no restart. To change the root from the start: `MCP_DATA_DIR=/other/path npm start` (or `set MCP_DATA_DIR=D:\work` then `npm start` on Windows cmd).
+The default allowed root is your **home directory** (`$HOME`, or `%USERPROFILE%` on Windows): the one folder guaranteed to exist on any machine and to hold the projects you actually want Claude to reach. In plain terms, that means the whole home folder (Desktop, Documents, Downloads, Photos, everything under it), not just the projects you meant to share. Add/remove folders from **panel section 5**: click "+ Add folder…" and type an absolute path (`/Users/you/projects` or `C:\Users\you\projects`). Saving takes effect immediately for file, search and Git tools and for the shell working directory; shell command arguments are not confined to those roots. With no non-empty saved `folders` list, set the fallback base using `MCP_DATA_DIR=/other/path npm start` (or `set MCP_DATA_DIR=D:\work` then `npm start` on Windows cmd). A non-empty saved list takes precedence over `MCP_DATA_DIR`.
 
-Beyond `$MCP_DATA_DIR`, the filesystem tools are also granted `~/.aki` (where akidevrule deploys) and `~/.claude`, so claude.ai can read your **native** `CLAUDE.md` and skill router the same way Claude Code does, with no copying or staging.
+In the default fallback, beyond `$MCP_DATA_DIR` (or home), the filesystem tools are also granted `~/.aki` (where akidevrule deploys) and `~/.claude`, so claude.ai can read your **native** `CLAUDE.md` and skill router the same way Claude Code does, with no copying or staging.
 
-`~/.claude` is granted at the folder level (the filesystem tools can't scope to individual files), so `.claude.json`/`auth-cache.json` (session tokens) and `history.jsonl` (chat history) inside it are also reachable through the connector. This row is locked in panel section 5, with no delete button by design so it can't be revoked by accident; the panel itself cannot remove it. If you don't want `~/.claude` granted at all, edit `~/.aki/mcpsv/setting.json` and remove the `~/.claude` entry from its `folders` list before connecting; claude.ai then loses access to your `CLAUDE.md` too.
+`~/.claude` is granted at the folder level (the filesystem tools can't scope to individual files), so `.claude.json`/`auth-cache.json` (session tokens) and `history.jsonl` (chat history) inside it are also reachable through the connector. This row is locked in panel section 5, with no delete button by design so it can't be revoked by accident; the panel itself cannot remove it. To remove access, edit `~/.aki/mcpsv/setting.json` before connecting: use a non-empty `folders` list that excludes `~/.claude` and every ancestor that contains it (including home). An empty list restores the defaults. This also removes access to your `CLAUDE.md` there.
 
 `npm start` runs in the foreground: Ctrl+C to stop, restart manually when needed. **After editing code, Ctrl+C and `npm start` again** (Node doesn't hot-reload).
 
@@ -98,11 +98,11 @@ Why not token-in-URL: `docs/ref/claude-connector.md`, `docs/research/claude-ai-o
 Tool names here use the default prefix `aki__`. A server with another Tool prefix serves the same tools under that prefix; panel section 1 shows yours.
 
 claude.ai connects and calls the in-house `aki__*` tool suite (38 tools). Tools of an app that is not installed (agy, Kiro CLI, Postman, Chrome, AIObox) are not served, and panel section 4 turns any optional provider on or off (agy and Kiro CLI start off); the client sees the change on its next tool list, usually a new chat. Every tool declares MCP annotations, so ChatGPT stops asking to confirm read-only tools:
-- **Chromium Remote & Profiles**: `aki__chrome_profiles`, `aki__chrome_launch`, `aki__chrome_tabs`, `aki__chrome_interact`, `aki__chrome_stop` (opens the shared profile clones AIObox keeps in `~/.aki/cdp/profiles/` on a stealth port-0 launch, or attaches when another process runs the profile; while AIObox runs it refuses and names `aki__aiobox_write op=open_url`; stop kills only a Chrome it launched; React/Vue synthetic typing, scroll-to-center click)
+- **Chromium Remote & Profiles**: `aki__chrome_profiles`, `aki__chrome_launch`, `aki__chrome_tabs`, `aki__chrome_interact`, `aki__chrome_stop` (opens the shared profiles AIObox keeps in `~/.aki/cdp/profiles/` (copies, logins kept) on a stealth port-0 launch, or attaches when another process runs the profile; while AIObox runs and the `aiobox` provider is served it refuses and names `aki__aiobox_write op=open_url`; stop kills only a Chrome it launched; React/Vue synthetic typing, scroll-to-center click)
 - **DevTools & CDP**: `aki__devtools_targets`, `aki__devtools_eval`, `aki__devtools_screenshot`
 - **OS Native Integration**: `aki__notify_user` (desktop notification banner & chime sound), `aki__clipboard_read`, `aki__clipboard_write` (system clipboard read/write bridge)
 - **Localhost & Intranet Fetch**: `aki__local_fetch` (SSRF-protected HTTP client for local backend APIs and LAN services)
-- **Background Tasks**: `aki__task_start`, `aki__task_manage` (detached background execution, process-group teardown, zero-RAM direct log streaming & tailing)
+- **Background Tasks**: `aki__task_start`, `aki__task_manage` (detached background execution, process-group teardown, direct log streaming & tailing)
 - **Filesystem**: `aki__read_text_file`, `aki__write_file`, `aki__edit_file`, `aki__create_directory`, `aki__move_file`, `aki__get_file_info`, `aki__list_allowed_directories`
 - **Search & Execution**: `aki__find_path`, `aki__search_content`, `aki__run_cmd`
 - **Dev Servers & Ports**: `aki__port_status`, `aki__kill_port`
@@ -280,7 +280,7 @@ Claude web / ChatGPT
 Tailscale Funnel        (https://your-machine.your-tailnet.ts.net)
       │
       ▼
-gatekeeper.js  — public port 9999
+gatekeeper.js  — loopback port 127.0.0.1:9999 (public ingress forwards here)
       │           /.well-known/oauth-* + openid-configuration  metadata (openid is an alias for ChatGPT discovery)
       │           /authorize, /token    minimal authorization server (scripts/oauth.js)
       │           /register         RFC 7591 dynamic client registration (ChatGPT self-registers here)
@@ -328,7 +328,7 @@ aki-mcp-sv/
 │   ├── start.js                 # orchestrates gatekeeper + panel, single process
 │   ├── instance-lock.js          # single-instance lock: a second launch reuses (or replaces an older) running instance
 │   ├── open-browser.js           # cross-platform "open default browser" — the one per-OS seam, no external dep
-│   ├── gatekeeper.js             # OAuth-gated reverse proxy, public port
+│   ├── gatekeeper.js             # OAuth-gated reverse proxy, loopback listener
 │   ├── oauth.js                  # minimal authorization server (pre-issued client + RFC 7591 DCR)
 │   ├── rate-limit.js             # failure-only limiter: blocks callers after repeated wrong credentials
 │   ├── callers.js                # in-memory list of addresses that used the valid token since start
@@ -394,7 +394,7 @@ A clone stays exactly as checked out: editing folders/allowlist from the panel n
 
 ## Configuration
 
-Copy `.env.example` to `.env` and uncomment what you need — `start.js` loads it automatically on boot (falls back silently to defaults when `.env` is absent, so the default Tailscale flow is unaffected). Supported vars: `PUBLIC_ORIGIN`, `GATEKEEPER_PORT`, `PANEL_PORT`, `MCP_DATA_DIR`, `MCP_REQUEST_TIMEOUT_MS`. For a one-off alternate profile, pass `node --env-file=.env.user ./scripts/start.js` instead.
+Copy `.env.example` to `.env` and uncomment what you need — `start.js` loads it automatically on boot (falls back silently to defaults when `.env` is absent, so the default Tailscale flow is unaffected). Supported vars: `PUBLIC_ORIGIN`, `GATEKEEPER_PORT`, `PANEL_PORT`, `MCP_DATA_DIR`, `MCP_REQUEST_TIMEOUT_MS`. For a one-off alternate profile, pass `node --env-file=.env.user ./scripts/start.js` instead. CLI options: `--port <port>` selects the gatekeeper port (default 9999; dev 9997), `--panel-port <port>` selects the panel port (default 9998; dev 9996), and `--no-browser` prevents automatically opening the panel.
 
 ## Exposing to the internet
 
@@ -460,7 +460,7 @@ Use `aki__find_path` to locate a file or directory — it scans the whole tree i
 - **Temporary tokens** (4 hours, +30 min per click in the panel, memory only) for [any HTTP chat](#connecting-from-any-http-chat): each one is revoked by its own chat with `DELETE /mcp`, by **Revoke** in the panel, by expiry or by a restart, without touching the shared token. *Roll & sign out all clients* revokes them too.
 - **Loopback is not trusted**: the server binds `127.0.0.1` only and still requires the token, so a web page in your browser cannot drive it. The panel binds `127.0.0.1` too and needs its own per-start token.
 - **Wrong credentials get blocked**: default 5 in 60 seconds, then 15 minutes of `429`. Valid tokens are never counted or blocked. Panel section 7 edits every number, lists blocked callers and releases them, and shows every registered client (Delete for one that never got a token; Revoke & roll or Remove only for the rest) and who used the token since the last restart, with a filter, sortable columns and Refresh on each table; section 9 shows the security log (`security.log` in the data dir, rotated at 1 MB).
-- **Tools reach only the folders you list** (default your home folder plus `~/.aki` and `~/.claude`), and the shell runs only allowlisted commands, without a shell (panel sections 5 and 6). Commands you add are your responsibility.
+- **Folder scope and shell:** file, search and Git tools and shell working directories are confined to listed folders (default home plus `~/.aki` and `~/.claude`). `run_cmd` executes allowlisted commands without a shell, but ordinary path arguments are not confined to those folders; credential-file arguments are refused (panel sections 5 and 6). Commands you add are your responsibility.
 - **Secrets** (`passphrase.txt`, `tokens.json`, `oauth-client.json`, `oauth-dcr-clients.json`) live in `~/.aki/mcpsv/`, mode 0600, never in the repo.
 
 ### How this differs from Desktop Commander
@@ -474,7 +474,7 @@ This project targets a different scenario: exposing local access to Claude **on 
 - **Fail-safe**: an unfamiliar or new command is blocked automatically, no guessing required.
 - **Minimal attack surface**: only the exact commands you've approved can run, nothing more.
 - **Granular down to the subcommand**: `git` is scoped to `status/log/diff/show`, something a blocklist can't express cleanly.
-- **Neutralizes prompt injection**: exposed to the open internet, a hard whitelist means a malicious or injected instruction has nothing to escalate to — there's no unlisted command for it to reach for.
+- **Guardrail, not an injection boundary**: the allowlist limits accidental commands, but `setting.json` is writable by file tools under the default roots, so a determined or injected instruction can widen it. Protect the token and review access; see [Security](docs/feat/security.md).
 - **Inspection-first by construction**: the built-in set is reads plus a few dev/media helpers — flag-rich binaries that could escape it via their own flags (`find`, `sort`) are kept out (issue #2), and git's write forms are refused; adding a write command is a deliberate edit (panel section 6 or `~/.aki/mcpsv/setting.json`), not the removal of a ban.
 
 ## Screenshots

@@ -4,7 +4,7 @@ Canonical procedure to **trigger and verify** every automation in `scripts/postm
 
 ## What the autoclicker acts on
 
-`PermissionCardClicker.tick(cfg)` runs every 500 ms (`LOOP_INTERVAL_MS`, driven by `PageLoop`). Each tick it scans `cards()` — elements matching `PERMISSION_CARD_ROOT` (`.tool-approval-wrapper, .tool-approval-single-item, .external-mcp-tool-approval, .ai-chat-loop-approval-message`) plus any `[role="dialog"]`/`[role="alertdialog"]` and dynamic chat action buttons — visible, and outside `#aki-control-panel`. For each unpressed card it selects the primary button, checks the matching config flag, presses once, marks `dataset.akiPressed = '1'`, and credits the stat when the card leaves the DOM (`_creditArmed`).
+`PermissionCardClicker.tick(cfg)` runs every 500 ms (`LOOP_INTERVAL_MS`, driven by `PageLoop`). Each tick it scans `cards()` — elements matching `PERMISSION_CARD_ROOT` (`.tool-approval-wrapper, .tool-approval-single-item, .external-mcp-tool-approval, .ai-chat-loop-approval-message`) plus any `[role="dialog"]`/`[role="alertdialog"]` and dynamic chat action buttons — visible, and outside `#aki-control-panel`. For each unpressed card it selects the primary button, checks the matching config flag, presses once, marks `dataset.akiPressed` as `label@time` until the label changes or `PRESS_RETRY_MS` expires, and credits the stat when the card leaves the DOM (`_creditArmed`).
 
 Primary-button selection (`_slotButton` → `matchPrimary`):
 - a button whose label matches a target keyword wins;

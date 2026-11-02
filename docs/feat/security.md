@@ -1,6 +1,6 @@
 # Security
 
-> updated 2026-10-31 · v4.0.0
+> updated 2026-11-03 · v4.0.0
 
 The one place for akimcp's whole security picture: stance, every surface and its gate, the connection limits, who holds access and who uses it, what each secret on disk unlocks and how to revoke it, and what is logged. README carries a summary and points here. Design record for client activity and the security-only log: `docs/plan/done/client-activity-and-security-log.md`.
 
@@ -106,7 +106,7 @@ Verdict record (`proportion.C1`):
 
 ## Tool reach — folders, shell allowlist, trusted zones
 
-- **Folders:** every file, search and git tool, and every shell `cwd`, is confined to the folders in `setting.json` → `folders` (default `$MCP_DATA_DIR`, i.e. `$HOME`, plus `~/.aki` and `~/.claude`), read fresh on every call. `~/.claude` is reachable at folder level, so session tokens and chat history inside it are in reach; the panel row is locked, edit `setting.json` to remove it.
+- **Folders:** every file, search and git tool, and every shell `cwd`, is confined to the folders in `setting.json` → `folders` (default `$MCP_DATA_DIR`, i.e. `$HOME`, plus `~/.aki` and `~/.claude`), read fresh on every call. `~/.claude` is reachable at folder level, so session tokens and chat history inside it are in reach; the panel row is locked. To remove access, set a non-empty `folders` list in `setting.json` that excludes `~/.claude` and all ancestor roots containing it, including home; an empty list restores the defaults.
 - **Shell allowlist:** `run_cmd` uses `execFile`, never a shell, and refuses `; & | \``. A binary runs only if it is on the allowlist (inspection-first by default: reads plus a few dev and media helpers; flag-rich binaries that escape read-only, such as `find` and `sort`, are kept out; `git branch`/`tag`/`remote` pass in their read forms only). Bare `git` on the list means every git command. Edited in panel section 6 or in `~/.aki/mcpsv/setting.json` `shell.allowlist.added`, read on every call (a refusal names both; the owner lets an AI add a command it is missing there); any command added is the owner's responsibility.
 - **Trusted script zones:** a script under `shell.allowlistDirs` (default `~/.claude/skills`, `~/.aki/akidevrule`, the folders the akidevrule installer writes) runs without an allowlist row. The check resolves symlinks on both sides, lets `node`/`python3`/… through only when the zone script is the first argument (so `node -e`, `node --eval=… script` and `node --require other.js script` stay blocked; an interpreter flag such as `python3 -u` needs an allowlist row), and excludes shells. Write and run cannot chain: the file tools refuse any path inside a zone (`scripts/roots.js:resolveRealWritable`). Shell commands the owner opts into that write files (`cp`, `git checkout`, …) are outside that guarantee.
 
@@ -132,7 +132,7 @@ Tool names here use the default prefix `aki__`. A server with another Tool prefi
 | `tokens.json` | the shared access token and every refresh token; AIObox gets the access token from `GET /api/access-token` (below), not from this file, to paste as Notion's bearer until it moves to the passphrase flow (AIObox keeps a fallback read of this file during the transition; once it drops that, the format here is free to change) | full tool access | Roll & sign out all clients (or delete the file and restart) |
 | `retired-tokens.json` | sha256 of the last 16 rolled or expired access tokens, so a past holder is told apart from a guesser | nothing: a hash does not authorize | delete any time; old tokens then count as wrong ones again |
 | `oauth-client.json` | the pre-issued client's ID/Secret (any client that wants a static client) | nothing without the passphrase | delete and restart, paste the new pair into the provider that uses it |
-| `oauth-dcr-clients.json` | registered public clients (no secret) | nothing | delete and restart; every DCR connector reconnects |
+| `oauth-dcr-clients.json` | registered DCR clients; confidential clients include a generated client secret | the client secret is exposed; a client still needs authorization or a refresh grant | delete and restart; every DCR connector reconnects |
 | `setting.json` | folders, allowlist, trusted zones, limits | not secret, but a write widens access | the local owner (panel or editor); also the file tools while the data dir is under an allowed folder (by decision, see Real limitations) |
 | `tool-calls.jsonl` | one line per `aki__` tool call over `/mcp`, none for stdio (`scripts/tool-call-log.js`): time, client, user agent, tool, `op`, ok or error, never the arguments' text; kept 40 days, the current file rolls to a dated sidecar at 16 MB (both settable) | which AI drove which tool, when | delete any time |
 | `~/.codex/config.toml`, `~/.cursor/mcp.json` (outside the data dir; Claude Code keeps its own copy through `claude mcp add`) | the shared access token, written by the panel's Apply buttons with owner-only permissions (0600) | full tool access, the same as `tokens.json` | Roll token, then Apply again in each client's tab |

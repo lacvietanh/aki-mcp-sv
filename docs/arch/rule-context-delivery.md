@@ -64,7 +64,7 @@ All surfaces share one pure context-assembler module so path resolution, import 
 
 **Title:** `Load Effective Aki/Claude Context`
 
-**Description:** `Call once before the first substantive action in every chat to load the effective default guidance. The server resolves global imports and applicable project CLAUDE.local/AGENTS context itself; do not search for or individually read bootstrap files. Pass an absolute workingPath when known. Read-only.` followed by four steps, the same four that end the initialize instructions (`scripts/rule-context-mcp.js`, one constant each): receipt (every tool that acts takes `receipt=<sha256:…>` and refuses without the current one); follow `/akirule` (the `SKILL.md` routing table is already in the output; Read only the routed RULE/METHOD files; open with `[RULES] agent (core) + <topics> (router)` naming the files actually Read; a receipt without `(router)` is a violation); conduct (attempt before calling a thing impossible, report failures exactly, state impact before a destructive step); session file (`SS_STEP`; the `ss:` line of this tool's result is the chat's file, a path the server made, kept across re-calls — the file's shape, the one-writer handoff chain and every line AkiMCP reports about it live in [`feat/session-file.md`](../feat/session-file.md)). The write-time fact line and the acting-call stale line are both facts, never orders. Where `aki__aiobox` is served, the initialize instructions (not this description, which is the same on every machine) end with one more line, the L0 bootstrap: `A page title starting with a handle like P2·W1 · means you are inside an AIObox window: call aki__aiobox op=state first, act via aki__aiobox_write, never aki__chrome_launch an AIObox profile.` The same line closes the result header, because a web chat never sees the instructions and every chat reads the result (`AIOBOX_STEP`, one constant for both). The description is the one tool allowed past the 700-character cap of `test/tool-surface.test.js`.
+**Description:** `Call once before the first substantive action in every chat to load the effective default guidance. The server resolves global imports and applicable project CLAUDE.local/AGENTS context itself; do not search for or individually read bootstrap files. Pass an absolute workingPath when known. Read-only.` followed by four steps, the same four that end the initialize instructions (`scripts/rule-context-mcp.js`, one constant each): receipt (every tool that acts takes `receipt=<sha256:…>` and refuses without the current one); follow `/akirule` (the `SKILL.md` routing table is already in the output; Read only the routed RULE/METHOD files; open with `[RULES] agent (core) + <topics> (router)` naming the files actually Read; a receipt without `(router)` is a violation); conduct (attempt before calling a thing impossible, report failures exactly, state impact before a destructive step); session file (`SS_STEP`; the `ss:` line of this tool's result is the chat's file, a path the server made, kept across re-calls — the file's shape, the one-writer handoff chain and every line AkiMCP reports about it live in [`feat/session-file.md`](../feat/session-file.md)). The write-time fact line and the acting-call stale line are both facts, never orders. Where `aki__aiobox` is served, the result header closes with `Inside an AIObox window: aki__aiobox op=whoami first; act via aki__aiobox_write; never aki__chrome_launch an AIObox profile.` (`AIOBOX_STEP`). It is not in the initialize instructions or tool description. The description is the one tool allowed past the 700-character cap of `test/tool-surface.test.js`.
 
 ### Input
 
@@ -106,7 +106,7 @@ The text fallback begins with the line `NO YAPPING AT ALL` (owner 2026-10-04; al
 
 The assembled `context` ships once, in the text `content`; `structuredContent` carries every other field but not `context`, so the ~90 KB corpus is not serialized twice (`docs/plan/done/rule-context-payload-dedup.md`).
 
-`knownReceipt` may return `unchanged` without the body only when the same chat demonstrably retains the prior tool result; a fresh chat always receives the full context.
+`knownReceipt` returns `unchanged` without the body when it matches the current receipt, whether from the cache or a fresh assembly. The server does not verify chat identity or whether the caller retains the body; a fresh chat must omit `knownReceipt` to receive the full context.
 
 ## Deterministic source ordering and imports
 
@@ -128,9 +128,9 @@ The `ref-ECC` corpus is excluded unless a future explicit API mode is separately
 
 ## Startup and runtime flow
 
-1. Server startup registers static initialize instructions, the dedicated tool, the optional resource, and existing tools on the shared MCP server.
+1. Server startup registers static initialize instructions, the dedicated tool and existing tools on the shared MCP server; the optional inspection resource is not built.
 2. Client initialization receives the compact handshake instruction when supported.
-3. PM control sends the one-line compatibility trigger only while initialize-instruction delivery remains unproven or unavailable.
+3. The receipt gate prompts clients that attempt an acting call without context; Postman does not inject a compatibility trigger.
 4. The model calls `aki__akidevrule_context` once with the known absolute working path or without it for global-only context.
 5. The assembler resolves trusted global sources, imports, applicable project files, precedence, hashes, and warnings.
 6. The tool returns assembled context and a receipt before substantive work continues.
@@ -189,7 +189,7 @@ Import cycles stop at the repeated real path, emit one warning, and continue ind
 
 Depth or size limits fail the offending import visibly; required core context is never silently truncated.
 
-If initialize instructions are ignored, the compact PM-control trigger remains the compatibility path.
+If initialize instructions are ignored, the receipt gate refuses an acting call until the client loads context; there is no PM-control compatibility trigger.
 
 If the tool is not called, no component may claim effective context was loaded; the missing receipt is the diagnostic signal.
 
