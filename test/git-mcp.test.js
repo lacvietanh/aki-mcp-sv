@@ -9,6 +9,10 @@ import { execFileSync } from 'node:child_process';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 
+assert.equal(process.env.XDG_CONFIG_HOME, undefined);
+assert.equal(process.env.GIT_CONFIG_GLOBAL, path.join(process.env.HOME, '.gitconfig'));
+assert.equal(process.env.GIT_CONFIG_NOSYSTEM, '1');
+
 // userdata.js reads AKI_MCP_DATA_DIR at import: a temp data dir whose only allowed folder is a temp repo, so the machine owner's settings and repos are never touched.
 const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'git-mcp-test-')));
 const repo = path.join(tmp, 'repo');

@@ -2,7 +2,6 @@
 import './setup.js';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import net from 'node:net';
 import { once } from 'node:events';
 import os from 'node:os';
 import path from 'node:path';
@@ -10,21 +9,18 @@ import path from 'node:path';
 // userdata.js reads AKI_MCP_DATA_DIR at import, so the env is set before oauth.js loads; the real ~/.aki/mcpsv is never touched.
 const dir = mkdtempSync(path.join(os.tmpdir(), 'aki-temp-token-test-'));
 process.env.AKI_MCP_DATA_DIR = dir;
-const probe = net.createServer().listen(0, '127.0.0.1');
-await once(probe, 'listening');
-process.env.GATEKEEPER_PORT = String(probe.address().port);
-probe.close();
-await once(probe, 'close');
+process.env.GATEKEEPER_PORT = '0';
 
 const { getOrIssueAccessToken, rotateAccessToken, bearerStatus, mintTempToken, revokeTempToken, listTempTokens, extendTempTokenById } = await import('../scripts/oauth.js');
 const { startGatekeeper } = await import('../scripts/gatekeeper.js');
 const { ROUTES } = await import('../scripts/panel.js');
 
 const bearer = (token) => `Bearer ${token}`;
-const base = `http://127.0.0.1:${process.env.GATEKEEPER_PORT}/mcp`;
-const call = (method, token) => fetch(base, { method, headers: { Authorization: bearer(token) } });
 const server = startGatekeeper(null);
 await once(server, 'listening');
+const origin = `http://127.0.0.1:${server.address().port}`;
+const base = `${origin}/mcp`;
+const call = (method, token) => fetch(base, { method, headers: { Authorization: bearer(token) } });
 const realNow = Date.now;
 
 try {
@@ -112,7 +108,7 @@ try {
   assert.deepEqual((await ROUTES['GET /api/temp-tokens']()).tokens, []);
 
   // The guide is served as markdown, not a binary download.
-  const guide = await fetch(`http://127.0.0.1:${process.env.GATEKEEPER_PORT}/guide/mcp-http/v1.md`);
+  const guide = await fetch(`${origin}/guide/mcp-http/v1.md`);
   assert.equal(guide.status, 200);
   assert.equal(guide.headers.get('content-type'), 'text/markdown; charset=utf-8');
 

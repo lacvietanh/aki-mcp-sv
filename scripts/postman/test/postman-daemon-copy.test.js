@@ -92,7 +92,6 @@ assert.doesNotMatch(mcpSrc, /Create workspace/);
 assert.doesNotMatch(mcpSrc, /!card\.matches\(PERMISSION_CARD_ROOT\)/);
 
 assert.match(mcpSrc, /const PM_EVENT_NEW_REQUESTER_WINDOW = 'newRequesterWindow'/);
-assert.match(mcpSrc, /triggerPostman\(PM_EVENT_NEW_REQUESTER_WINDOW\)/);
 assert.equal(
   (mcpSrc.match(/triggerPostman\(PM_EVENT_NEW_REQUESTER_WINDOW\)/g) || []).length,
   1,
@@ -118,7 +117,12 @@ assert.match(mcpSrc, /window\.__pmDeliverSummarizePrompt/);
 const chatAgentStart = mcpSrc.indexOf('<div class="aki-section-label">CHAT AGENT</div>');
 const promptInstructionStart = mcpSrc.indexOf('<span class="aki-section-label">PROMPT INSTRUCTION</span>');
 const modelSelectorStart = mcpSrc.indexOf('<div class="aki-row aki-model-row">');
-assert.ok(chatAgentStart < modelSelectorStart && modelSelectorStart < promptInstructionStart, 'model selector must live under CHAT AGENT');
+function assertSectionsPresentAndOrdered(a, b, c) {
+  for (const position of [a, b, c]) assert.ok(position >= 0, 'section missing');
+  assert.ok(a < b && b < c, 'model selector must live under CHAT AGENT');
+}
+for (const positions of [[-1, 10, 20], [0, -1, 20], [0, 10, -1]]) assert.throws(() => assertSectionsPresentAndOrdered(...positions), /missing/);
+assertSectionsPresentAndOrdered(chatAgentStart, modelSelectorStart, promptInstructionStart);
 assert.match(mcpSrc, /const liveModelId = localStorage\.getItem\('ai-chat-last-selected-model'\)/);
 assert.doesNotMatch(mcpSrc, /if \(localStorage\.getItem\('ai-chat-last-selected-model'\) === model\.id\) return true/);
 assert.match(mcpSrc, /function selectionMatches\(selection, model\)/);
