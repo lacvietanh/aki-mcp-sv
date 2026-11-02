@@ -1,6 +1,6 @@
 {
   "name": "@akinet/akimcp",
-  "version": "4.0.0",
+  "version": "4.1.0",
   "mcpName": "io.github.lacvietanh/akimcp",
   "publishConfig": {
     "access": "public"

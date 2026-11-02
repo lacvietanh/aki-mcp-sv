@@ -1,6 +1,6 @@
 # Rule context delivery architecture
 
-> updated 2026-11-03 · v4.0.0
+> updated 2026-11-03 · v4.1.0
 
 ## Decision
 
@@ -173,7 +173,7 @@ Any dependency change invalidates the assembled result on the next call; no pers
 
 The target is one model-visible round trip instead of search plus multiple reads, with no duplicate full corpus in the compatibility prompt or initialize instructions.
 
-Full effective context may remain token-heavy because parity requires load-bearing content; optimization removes orchestration overhead and duplication, not required rules. A reduced-rules or receipt-only mode is rejected for this reason (owner 2026-11-01: "rule context là bắt buộc"; `plan/v4-first-improve.md` D5).
+Full effective context may remain token-heavy because parity requires load-bearing content; optimization removes orchestration overhead and duplication, not required rules. A reduced-rules or receipt-only mode is rejected for this reason (owner 2026-11-01: "rule context là bắt buộc"; `plan/done/v4-first-improve.md` D5).
 
 ## Failure and degraded modes
 

@@ -105,7 +105,7 @@ export function mountProviders(server, prefix) {
 }
 
 export const isServed = (name) => [...toolNames.values()].some((names) => names.includes(name));
-// Installed on this machine and switched on: the one check behind every "only while aki__aiobox is served" text (docs/plan/v4-first-improve.md D4).
+// Installed on this machine and switched on: the one check behind every "only while aki__aiobox is served" text (docs/plan/done/v4-first-improve.md D4).
 export const providerServed = (id) => listProviders().some((p) => p.id === id && p.available && p.enabled);
 
 export function listProviders() {
