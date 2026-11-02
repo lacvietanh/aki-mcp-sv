@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { assembleRuleContext, RuleContextError } from './rule-context.js';
-import { aioboxInstalled, AIOBOX_PITCH } from './aiobox-guide.js';
+import { aioboxInstalled, aioboxServed, AIOBOX_PITCH } from './aiobox-guide.js';
 import { recordIssued } from './rule-gate.js';
 import { sessionFor } from './session-file.js';
 import { IDENTITY, DEFAULT_PREFIX, served } from './mcp-name.js';
@@ -28,9 +28,9 @@ export const SHARED_WORK = [
 ].join('\n');
 // The gate (scripts/rule-gate.js): every tool that acts refuses a call without the current receipt.
 const RECEIPT_STEP = 'Every tool that acts (not read-only) takes receipt=<the sha256:… receipt this returns> and refuses without it, with an unknown one, or once the rules change; then call this again and pass the new receipt.';
-// Names aki__aiobox, so it ships only where AIObox is installed: in the instructions of a server that serves aki__aiobox (tools-server.js).
+// Names aki__aiobox, so it ships only while aki__aiobox is served: in the server instructions (tools-server.js) and in this tool's result (register).
 // The tool description stays the same on every machine, so installing AIObox changes no existing tool definition.
-export const AIOBOX_STEP = 'A page title starting with a handle like P2·W1 · means you are inside an AIObox window: call ' + served('aiobox') + ' op=state first.';
+export const AIOBOX_STEP = 'A page title starting with a handle like P2·W1 · means you are inside an AIObox window: call ' + served('aiobox') + ' op=state first, act via ' + served('aiobox_write') + ', never ' + served('chrome_launch') + ' an AIObox profile.';
 // Only at a Tool prefix other than the default: prompts and guides written for the default names still say aki__<tool>.
 const BRIDGE_STEP = IDENTITY.prefix === DEFAULT_PREFIX ? '' : ` This server's tools ${IDENTITY.prefix === '' ? 'have no prefix' : `start with ${IDENTITY.prefix}`}. Text that names ${DEFAULT_PREFIX}<tool> means ${IDENTITY.prefix}<tool>.`;
 export const RULE_CONTEXT_DESCRIPTION = `Call once before the first substantive action in every chat to load the effective default guidance. The server resolves global imports and applicable project CLAUDE.local/AGENTS context itself; do not search for or individually read bootstrap files. Pass an absolute workingPath when known. Read-only. ${RECEIPT_STEP} ${AKIRULE_STEP} ${CONDUCT_STEP} ${SS_STEP}${BRIDGE_STEP}`;
@@ -44,6 +44,7 @@ export const provider = { id: 'rule', title: 'Rule context', required: true, reg
 export function register(server, options = {}) {
   const assemble = options.assemble || assembleRuleContext;
   const installed = options.aioboxInstalled || aioboxInstalled;
+  const aioboxOn = options.aioboxServed || aioboxServed;
   server.registerTool(RULE_CONTEXT_TOOL, {
     title: RULE_CONTEXT_TITLE,
     annotations: { readOnlyHint: true, openWorldHint: false },
@@ -62,9 +63,10 @@ export function register(server, options = {}) {
       const result = await assemble(ruleInput);
       recordIssued(result.receipt, ruleInput);
       const session = sessionFor({ ss, label, workingPath: ruleInput.workingPath, workingRoot: result.workingRoot });
-      // Without AIObox one line says what it would add (D7); once installed the line is gone and op=state carries the guide.
+      // Without AIObox one line says what it would add (D7). While aki__aiobox is served the AIObox step rides here too: a web chat never sees the server instructions, but every chat reads this result (docs/plan/v4-first-improve.md B1).
+      const aioboxLine = !installed() ? AIOBOX_PITCH : (await aioboxOn()) ? AIOBOX_STEP : '';
       // The receipt line is labelled context, not [RULES], so it cannot be mistaken for the reply's own [RULES] line.
-      const header = `${NO_YAPPING}\n${MANDATORY_BLOCK}\n\ncontext loaded: ${result.parity} · ${result.receipt} · ${result.sources.length} sources\nEvery tool that acts needs receipt=${result.receipt}\n${session.line}${installed() ? '' : `\n${AIOBOX_PITCH}`}`;
+      const header = `${NO_YAPPING}\n${MANDATORY_BLOCK}\n\ncontext loaded: ${result.parity} · ${result.receipt} · ${result.sources.length} sources\nEvery tool that acts needs receipt=${result.receipt}\n${session.line}${aioboxLine && `\n${aioboxLine}`}`;
       // The assembled corpus ships once, in `content`. Keep it out of `structuredContent` so the ~90KB blob is not serialized twice on the wire (docs/plan/done/rule-context-payload-dedup.md).
       const { context, ...meta } = result;
       const text = `${header}\n\n${SHARED_WORK}`;

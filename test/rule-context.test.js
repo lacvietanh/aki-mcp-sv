@@ -86,6 +86,7 @@ register({ registerTool(n, d, h) { name = n; definition = d; handler = h; } }, {
     sources: [{ path: '/tmp/project/CLAUDE.md', kind: 'project', sha256: 'b'.repeat(64), bytes: 5 }], warnings: [], context: 'rules',
   }),
   aioboxInstalled: () => true,
+  aioboxServed: async () => false,
 });
 assert.equal(name, 'akidevrule_context');
 assert.equal(definition.title, RULE_CONTEXT_TITLE);
@@ -109,8 +110,8 @@ assert.equal(SHARED_WORK.split('`parent: <old ss>`').length - 1, 1, 'the handoff
 assert.equal(SHARED_WORK.includes('git worktree add'), false, 'no instruction to create a worktree');
 assert.doesNotMatch(SHARED_WORK, /aiobox|desktop\/CHANGELOG/i, 'the shared-work text goes to every user, AIObox or not');
 assert.equal(/push|release|deploy/.test(SHARED_WORK), false, 'commit and push rules stay in AkiDevRule');
-assert.equal(AIOBOX_STEP, 'A page title starting with a handle like P2·W1 · means you are inside an AIObox window: call aki__aiobox op=state first.');
-assert.deepEqual(output.content[0].text.split('\n').filter((line) => /aiobox/i.test(line)), [], 'with AIObox installed the output carries no pitch and no other AIObox sentence');
+assert.equal(AIOBOX_STEP, 'A page title starting with a handle like P2·W1 · means you are inside an AIObox window: call aki__aiobox op=state first, act via aki__aiobox_write, never aki__chrome_launch an AIObox profile.');
+assert.deepEqual(output.content[0].text.split('\n').filter((line) => /aiobox/i.test(line)), [], 'with AIObox installed but not served the output carries no pitch and no other AIObox sentence');
 assert.equal(/^\[RULES\] (?!agent \(core\))/m.test(output.content[0].text), false, 'no line of the output is a [RULES] line a model could copy as its receipt');
 for (const must of ['BLOCKING', 'no rule Read, no action', '`[RULES] agent (core) + <topics> (router)`', 'code → coding + pattern', '.md → docs', '→ think', 'agent.B2']) assert.ok(MANDATORY_BLOCK.includes(must), must);
 assert.ok(MANDATORY_BLOCK.length <= 400, `the block stays short (${MANDATORY_BLOCK.length} chars)`);
@@ -118,6 +119,18 @@ assert.match(RULE_CONTEXT_DESCRIPTION, /a receipt without \(router\)[^.]*is a vi
 assert.equal(output.isError, undefined);
 assert.equal('context' in output.structuredContent, false, 'corpus must ship only in content, never duplicated into structuredContent');
 assert.equal(output.structuredContent.sources.length, 1, 'provenance is preserved in structuredContent');
+
+// While aki__aiobox is served the AIObox step rides in the result header too: a web chat never sees the server instructions (v4-first-improve B1).
+let servedHandler;
+register({ registerTool(_n, _d, h) { servedHandler = h; } }, {
+  assemble: async () => ({ status: 'ok', parity: 'practical-effective', receipt: `sha256:${'a'.repeat(64)}`, rulesVersion: '1', workingRoot: null, sources: [], warnings: [], context: 'rules' }),
+  aioboxInstalled: () => true,
+  aioboxServed: async () => true,
+});
+const servedLines = (await servedHandler({})).content[0].text.split('\n');
+assert.deepEqual(servedLines.filter((line) => /aiobox/i.test(line)), [AIOBOX_STEP], 'served: the AIObox step is the one AIObox line');
+const stepAt = servedLines.indexOf(AIOBOX_STEP);
+assert.ok(servedLines[stepAt - 1].startsWith('ss: ') && servedLines[stepAt + 1] === '', 'the step closes the header, right after the ss line');
 
 // Without ~/.aki/aiobox/ one line after the header says what AIObox adds and links the web guide (D7); it is the only AIObox sentence (boundary plan § 3 L2).
 let bareHandler;
