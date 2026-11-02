@@ -1,7 +1,6 @@
 // Chromium Profile & Remote Automation MCP tools (chrome_*).
 // Discovers profiles, opens or attaches to the shared CDP clones AIObox provisions (stealth Chrome on dynamic port 0),
 // provides interactive typing & scroll-to-center clicking, tab management, and AI session probing.
-import fs from 'node:fs';
 import { z } from 'zod';
 import { ok, fail } from './mcp-tool.js';
 import cdp from './cdp-engine.js';
@@ -13,14 +12,14 @@ import {
   launchChrome,
   stopChrome,
   resolvePort,
+  resolveSharedProfile,
 } from './chrome-profile.js';
-import { windowsFile, aioboxServed } from './aiobox-guide.js';
+import { aioboxRunning, aioboxServed } from './aiobox-guide.js';
 import { served } from './mcp-name.js';
 
-// While AIObox runs it owns these clones: a Chrome opened here has no AIObox panel, guard or handle.
-function aioboxWarning() {
-  if (!fs.existsSync(windowsFile())) return null;
-  return `AIObox is running and owns these profiles; a Chrome opened here has no AIObox panel or handle. To open an AIObox window, call ${served('aiobox')} op=state first.`;
+// While AIObox runs it owns these clones: a Chrome opened or attached here has no AIObox panel, guard or handle, so it is refused, with no force (plan v4-first-improve B2, D8, D10).
+function aioboxRefusal(id, url) {
+  return new Error(`Profile "${id}" was not opened: AIObox is running and owns the shared profiles; a Chrome opened here would have no AIObox panel or handle. (aiobox_running; next: ${served('aiobox_write')} op=open_url url=${url || '<link>'} profileId=${id}, or from=<your chatId> instead of profileId for your own window's profile; CDP on a window AIObox opened: its port from ${served('aiobox')} op=windows)`);
 }
 
 export const provider = {
@@ -70,13 +69,13 @@ export function register(server) {
     },
     async ({ profile, browser, url, headless }) => {
       try {
+        if (aioboxRunning() && (await aioboxServed())) throw aioboxRefusal(resolveSharedProfile(profile || 'Default', browser).id, url);
         const res = await launchChrome(profile || 'Default', {
           browser,
           url,
           headless: headless ?? false,
         });
-        const warning = (await aioboxServed()) ? aioboxWarning() : null;
-        return ok(JSON.stringify(warning ? { ...res, warning } : res, null, 2));
+        return ok(JSON.stringify(res, null, 2));
       } catch (e) {
         return fail(e);
       }

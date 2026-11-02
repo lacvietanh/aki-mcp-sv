@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import './setup.js';
 import assert from 'node:assert/strict';
+import cp from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -71,6 +72,26 @@ async function runTests() {
   assert.match(tools.get('chrome_stop').description, /owned/);
   assert.equal(JSON.parse((await call('chrome_stop', {})).content[0].text).stopped, false);
   for (const name of ['chrome_launch', 'chrome_stop', 'chrome_profiles']) assert.ok(tools.get(name).description.length <= 700, name);
+
+  // 7. B2: while AIObox runs (windows.json appPid alive) and is served, chrome_launch refuses with one next and opens nothing.
+  const clone = path.join(process.env.AKI_CDP_PROFILES_DIR, 'chrome-profile-1');
+  fs.mkdirSync(clone, { recursive: true });
+  fs.writeFileSync(path.join(clone, 'Local State'), '{}');
+  const map = path.join(home, '.aki', 'aiobox', 'cdp', 'windows.json');
+  fs.mkdirSync(path.dirname(map), { recursive: true });
+  fs.writeFileSync(map, JSON.stringify({ version: 1, appPid: process.pid, profiles: [] }));
+  const reachesLaunch = /Cannot tell which profile folder/; // the fixture clone has no profile folder, so launchChrome stops before spawning
+  const refused = await call('chrome_launch', { profile: 'Profile 1', url: 'https://example.com/' });
+  assert.equal(refused.isError, true);
+  assert.match(refused.content[0].text, /\(aiobox_running; next: aki__aiobox_write op=open_url url=https:\/\/example\.com\/ profileId=chrome-profile-1, /);
+  assert.equal(JSON.parse((await call('chrome_stop', {})).content[0].text).detail, 'no active session', 'nothing opened or attached');
+  // Not served (switched off) or crashed (windows.json left, appPid dead): launches as before B2.
+  const { setEnabled } = await import('../scripts/provider-registry.js');
+  setEnabled('aiobox', false);
+  assert.match((await call('chrome_launch', { profile: 'Profile 1' })).content[0].text, reachesLaunch, 'aiobox switched off');
+  setEnabled('aiobox', true);
+  fs.writeFileSync(map, JSON.stringify({ version: 1, appPid: cp.spawnSync(process.execPath, ['-e', '']).pid, profiles: [] }));
+  assert.match((await call('chrome_launch', { profile: 'Profile 1' })).content[0].text, reachesLaunch, 'dead appPid');
 
   await client.close();
   fs.rmSync(tmp, { recursive: true, force: true });
