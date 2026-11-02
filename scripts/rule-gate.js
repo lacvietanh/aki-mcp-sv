@@ -12,12 +12,13 @@ const RECEIPT_ARG = 'receipt';
 const SS_ARG = 'ss';
 // No description: SS_STEP in the rule says what it is, and a description here would repeat on every acting tool.
 const ssSchema = z.string().optional();
-const RECEIPT_RE = /^sha256:[a-f0-9]{64}$/;
+export const RECEIPT_RE = /^sha256:[a-f0-9]{64}$/;
 const MAX_ISSUED = 200;
-const receiptSchema = z.string().optional().describe(`required: the sha256:… receipt from ${served('akidevrule_context')}`);
+const receiptSchema = z.string().optional().describe(`required: sha256:… receipt from ${served('akidevrule_context')}`);
 
 let assemble = assembleRuleContext;
-const issued = new Map(); // receipt → { mode, workingPath, extraFiles }, oldest first
+const issued = new Map(); // receipt → { mode, workingPath, extraFiles }, least recently issued or used first
+const evicted = new Set(); // receipts dropped from issued past MAX_ISSUED, oldest first: a call with one is told why
 // S9: calls made together with the same receipt into a project it does not cover each held the whole rule file; the first result carries it, the others for SHOWN_MS only point at it.
 const shown = new Map(); // `${receipt}|${rule file sha256}` → ms its text went out in a result, oldest first
 const SHOWN_MS = 10_000;
@@ -27,6 +28,7 @@ let now = () => Date.now();
 export function setAssembler(fn) {
   assemble = fn || assembleRuleContext;
   issued.clear();
+  evicted.clear();
   shown.clear();
 }
 
@@ -39,18 +41,25 @@ export function setNow(fn) {
 export function recordIssued(receipt, input = {}) {
   if (typeof receipt !== 'string' || !RECEIPT_RE.test(receipt)) return;
   issued.delete(receipt);
+  evicted.delete(receipt);
   const extraFiles = [...new Set(Array.isArray(input.extraFiles) ? input.extraFiles : [])].sort();
   issued.set(receipt, { mode: input.mode || 'effective', workingPath: input.workingPath ?? null, extraFiles });
-  while (issued.size > MAX_ISSUED) issued.delete(issued.keys().next().value);
+  while (issued.size > MAX_ISSUED) {
+    const oldest = issued.keys().next().value;
+    issued.delete(oldest);
+    evicted.add(oldest);
+  }
+  while (evicted.size > MAX_ISSUED) evicted.delete(evicted.values().next().value);
 }
 
 const AGAIN = `call ${served('akidevrule_context')} (without knownReceipt if the rules are no longer in your context), then call this tool again with receipt=<the sha256:… it returns> (a schema of this tool without receipt is stale: reconnect AkiMCP first)`;
 
 // { refused: { code, message } } or { entry, current } with the rules the receipt stands for now.
 async function verify(receipt) {
-  if (receipt === undefined || receipt === null || receipt === '') return { refused: { code: 'RULE_RECEIPT_MISSING', message: `no rule receipt: ${AGAIN}` } };
-  if (typeof receipt !== 'string' || !RECEIPT_RE.test(receipt)) return { refused: { code: 'RULE_RECEIPT_INVALID', message: `receipt must be sha256:<64 hex>: ${AGAIN}` } };
+  if (receipt === undefined || receipt === '') return { refused: { code: 'RULE_RECEIPT_MISSING', message: `no rule receipt: ${AGAIN}` } };
+  if (!RECEIPT_RE.test(receipt)) return { refused: { code: 'RULE_RECEIPT_INVALID', message: `receipt must be sha256:<64 hex>: ${AGAIN}` } };
   const entry = issued.get(receipt);
+  if (!entry && evicted.has(receipt)) return { refused: { code: 'RULE_RECEIPT_EVICTED', message: `this AkiMCP keeps only the ${MAX_ISSUED} receipts issued or used most recently, and that one has dropped out: ${AGAIN}` } };
   if (!entry) return { refused: { code: 'RULE_RECEIPT_UNKNOWN', message: `this AkiMCP never issued that receipt, or restarted since: ${AGAIN}` } };
   let current;
   try {
@@ -59,6 +68,8 @@ async function verify(receipt) {
     return { refused: { code: 'RULE_RECEIPT_UNCHECKED', message: `the rules could not be read to check the receipt (${error.message}): ${AGAIN}` } };
   }
   if (current?.receipt !== receipt) return { refused: { code: 'RULE_RECEIPT_STALE', message: `the rules changed since that receipt: ${AGAIN}` } };
+  issued.delete(receipt);
+  issued.set(receipt, entry);
   return { entry, current };
 }
 

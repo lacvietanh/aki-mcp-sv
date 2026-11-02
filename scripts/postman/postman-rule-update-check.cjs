@@ -1,13 +1,11 @@
 'use strict';
 // Daemon-side wrapper. Two trigger points (main-process boot, this daemon's own start) share one fetch impl (rule-version-core.cjs fetchLatestRuleVersion) and write the same STATUS_PATH, so whichever ran last wins and the other side picks it up on its next disk read.
 
-const os = require('os');
 const path = require('path');
 const fs = require('fs');
 const core = require('../rule-version-core.cjs');
+const { AKI_DATA_DIR } = require('./postman-data-paths.cjs');
 
-const RULES_DIR = core.RULE_DIR;
-const AKI_DATA_DIR = process.env.AKI_DATA_DIR || path.join(os.homedir(), '.aki', 'mcpsv');
 const STATUS_PATH = path.join(AKI_DATA_DIR, 'aki-mcp-status.json');
 
 // null before the main process has ever run checkForUpdate — getRuleStatus(null) then degrades to "current known, latest unknown".
@@ -53,8 +51,6 @@ async function refreshFromNetwork(timeoutMs = 3000) {
 }
 
 module.exports = {
-  RULES_DIR,
-  STATUS_PATH,
   getLocalVersions,
   localSnapshot,
   refreshLocalVersions,

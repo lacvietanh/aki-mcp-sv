@@ -36,6 +36,21 @@ setAssembler(async () => { throw new Error('disk gone'); });
 recordIssued(A);
 assert.equal((await checkReceipt(A)).code, 'RULE_RECEIPT_UNCHECKED', 'rules that cannot be read never let a call through');
 
+// Past MAX_ISSUED (200) the oldest receipt drops out, and a call with it is told so instead of "never issued".
+const R = (i) => `sha256:${String(i).padStart(64, '0')}`;
+setAssembler(async ({ workingPath }) => ({ receipt: workingPath }));
+for (let i = 1; i <= 201; i++) recordIssued(R(i), { workingPath: R(i) });
+assert.equal((await checkReceipt(R(1))).code, 'RULE_RECEIPT_EVICTED');
+assert.equal(await checkReceipt(R(2)), null);
+recordIssued(R(1), { workingPath: R(1) });
+assert.equal(await checkReceipt(R(1)), null, 'issued again, it counts again');
+setAssembler(async ({ workingPath }) => ({ receipt: workingPath }));
+for (let i = 1; i <= 200; i++) recordIssued(R(i), { workingPath: R(i) });
+assert.equal(await checkReceipt(R(1)), null);
+recordIssued(R(201), { workingPath: R(201) });
+assert.equal(await checkReceipt(R(1)), null, 'a receipt in use is not the one dropped');
+assert.equal((await checkReceipt(R(2))).code, 'RULE_RECEIPT_EVICTED');
+
 // Which tools are gated and how their schema and handler change.
 assert.equal(isGated({ annotations: { readOnlyHint: true } }), false);
 assert.equal(isGated({ annotations: { readOnlyHint: false } }), true);

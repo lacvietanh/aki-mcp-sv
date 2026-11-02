@@ -26,7 +26,7 @@ import { startPanel } from './panel.js';
 import { warmToolsServer } from './streamable-bridge.js';
 import { announceIdentity } from './mcp-name.js';
 import { checkForUpdate, writeStatusFile, cmpSemver } from './update-check.js';
-import { USER_DIR, IS_DEV, readIngressConfig } from './userdata.js';
+import { USER_DIR, IS_DEV, readIngressConfig, gatePort as envGatePort } from './userdata.js';
 import { killPostmanDaemon } from './postman/postman-mcp.js';
 import { readLock, isPidAlive, writeLock, clearLock, killAndWait } from './instance-lock.js';
 
@@ -59,7 +59,7 @@ if (existingLock && existingLock.pid !== process.pid && isPidAlive(existingLock.
 }
 
 // AIObox spawns `akimcp --no-browser --port <n>`: --port winning is frozen in docs/plan/done/IMPORTANT-akimcp-aiobox-contract.md.
-const gatePort = customGatePort || process.env.GATEKEEPER_PORT || (isDev ? '9997' : '9999');
+const gatePort = customGatePort || String(envGatePort());
 const panelPort = customPanelPort || process.env.PANEL_PORT || (isDev ? '9996' : '9998');
 
 process.env.GATEKEEPER_PORT = gatePort;

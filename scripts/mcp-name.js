@@ -5,11 +5,11 @@ import { SETTINGS_PATH } from './userdata.js';
 export const DEFAULT_NAME = 'AkiMCP';
 export const DEFAULT_KEY = 'akimcp';
 export const DEFAULT_PREFIX = 'aki__';
-export const DEFAULT_APPLIED_KEYS = ['aki-mcp', DEFAULT_KEY];
+const DEFAULT_APPLIED_KEYS = ['aki-mcp', DEFAULT_KEY];
 
 // 64: OpenAI's cap, which Codex's mcp__<Server ID>__<tool> must fit (docs/ref/fact-client-tool-names.md N3, N4).
 export const CEILING = 64;
-export const NAME_BUDGET = 28;
+const NAME_BUDGET = 28;
 export const TOOL_BUDGET = CEILING - 'mcp____'.length - NAME_BUDGET;
 
 const NAME_RULE = /^(?!.*\p{Default_Ignorable_Code_Point})[\p{L}\p{Nd}][\p{L}\p{M}\p{Nd} ._-]{0,39}$/u;

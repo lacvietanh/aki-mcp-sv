@@ -9,7 +9,7 @@ import { ok, err } from './mcp-tool.js';
 import { served } from './mcp-name.js';
 import cdp from './cdp-engine.js';
 import { VERSION } from './version.js';
-import { aioboxDir, aioboxInstalled, windowsFile, GUIDE_URL, AIOBOX_PITCH } from './aiobox-guide.js';
+import { aioboxDir, aioboxInstalled, aioboxRunning, windowsFile, GUIDE_URL, AIOBOX_PITCH } from './aiobox-guide.js';
 
 const refreshFile = () => path.join(aioboxDir(), 'cdp', 'windows.refresh');
 const stateFile = () => path.join(aioboxDir(), 'akimcp-state.json');
@@ -81,7 +81,7 @@ const asRefusal = (e, request) => {
 };
 const refusalOut = (e) => err(JSON.stringify({ ok: false, by: 'akimcp', code: e.code, why: e.message, next: e.next, ...e.extra }, null, 2));
 const NEXT_STATE = `call ${served('aiobox')} op=state and name the window by its handle`;
-const notRunning = () => new Refusal('not_running', 'AIObox is not running (no ~/.aki/aiobox/cdp/windows.json)', 'ask the owner to open AIObox');
+const notRunning = () => new Refusal('not_running', 'AIObox is not running (no live appPid in ~/.aki/aiobox/cdp/windows.json)', 'ask the owner to open AIObox');
 
 // Out of time: a read is safe to call again; a write may have acted, so it is checked before it is asked again.
 const timeoutRefusal = (entry, mode, extra) => new Refusal(
@@ -139,9 +139,8 @@ export function stripHandle(title = '') {
 }
 
 // Read on every call: AIObox rewrites the file whole whenever a window opens or closes, so a cached copy would name windows that are gone.
-const appRunning = () => fs.existsSync(windowsFile());
 function readMap() {
-  if (!appRunning()) throw notRunning();
+  if (!aioboxRunning()) throw notRunning();
   return checkVersion(readJsonFile(windowsFile()), MAP_VERSION, 'windows.json');
 }
 
@@ -211,7 +210,7 @@ function checkExpect(tab, live, expect) {
   const url = live.url || tab.url || '';
   const title = stripHandle(live.title || tab.title || '');
   if (live.id === expect || url.includes(expect) || title.includes(expect)) return;
-  throw new Refusal('wrong_window', `handle ${tab.handle} now shows "${title}" (${url}), not "${expect}"`, 'the window shows another chat now; find the right one with the guide and pass its handle');
+  throw new Refusal('wrong_window', `handle ${tab.handle} now shows "${title}" (${url}), not "${expect}"`, 'find the right one with the guide and pass its handle');
 }
 
 // A miss asks AIObox to refresh the map once and decides on the new one; expect is never retried into a match.
@@ -367,13 +366,13 @@ async function viaFile({ op, entry, call }) {
   const full = fileUnder(entry.file, call.args);
   if (full === windowsFile()) await freshMap();
   const text = readVerbatim(full);
-  if (text === null) throw appRunning() ? new Refusal('no_file', `${path.relative(aioboxDir(), full)} does not exist`, 'check the args against op=state') : notRunning();
+  if (text === null) throw aioboxRunning() ? new Refusal('no_file', `${path.relative(aioboxDir(), full)} does not exist`, 'check the args against op=state') : notRunning();
   return ok(text);
 }
 
 // The one op AkiMCP knows. It answers with the app off too: the guide and the op table are files.
 function stateOut(ops) {
-  const running = appRunning();
+  const running = aioboxRunning();
   const guide = readVerbatim(guideFile()) ?? `guide missing: update AIObox (${GUIDE_URL})`;
   return ok(JSON.stringify({ akimcp: VERSION, running, ...(running ? {} : { next: 'ask the owner to open AIObox; ops on files still answer' }), guide, ops }, null, 2));
 }
@@ -392,7 +391,7 @@ function routeOp(ops, op, mode) {
   }
   if (!entry) throw new Refusal('unknown_op', `no op '${op}'; ops: ${Object.keys(ops).join(', ') || 'none'}`, 'call op=state: it lists every op with its args');
   if (mode === 'read' && entry.tool !== 'read') throw new Refusal('wrong_tool', `op=${actual} acts, so it is not a read`, `call it with ${served('aiobox_write')}`);
-  if (NEEDS_APP.has(entry.channel) && !appRunning()) throw notRunning();
+  if (NEEDS_APP.has(entry.channel) && !aioboxRunning()) throw notRunning();
   return { entry, actual, renamed: actual === op ? null : { from: op, to: actual } };
 }
 
@@ -442,7 +441,7 @@ export function register(server) {
     {
       title: 'AIObox: read windows',
       annotations: { readOnlyHint: true, openWorldHint: false },
-      description: "AIObox windows. Call op=state first: it returns the guide and every op with its args. window = handle, chatId or targetId; expect = text the target chat's url or title must contain; args as the guide says. Each op's help in op=state overrides the guide. Reads only; to act use " + served('aiobox_write') + ".",
+      description: "AIObox windows. Call op=state first: it returns the guide and every op with its args. Each op's help in op=state overrides the guide. Reads only; to act use " + served('aiobox_write') + ".",
       inputSchema: envelope,
     },
     serve('read'),

@@ -30,4 +30,11 @@ for (const tab of Object.keys(REMOTE_IDS)) {
   assert.ok(!html.includes(REMOTE_IDS[tab]), `${tab}: no remote snippet without an origin`);
 }
 
+// The local snippets and the Funnel re-sync command name the port this gatekeeper listens on, not a fixed 9999.
+process.env.GATEKEEPER_PORT = '19997';
+const moved = render(null);
+assert.ok(moved.includes('tailscale funnel --bg 19997') && !moved.includes('tailscale funnel --bg 9999'), 'the re-sync command follows GATEKEEPER_PORT');
+assert.ok(moved.includes('http://127.0.0.1:19997/mcp'), 'the local snippets follow GATEKEEPER_PORT');
+delete process.env.GATEKEEPER_PORT;
+
 console.log('remote-snippet.test.js: ok');

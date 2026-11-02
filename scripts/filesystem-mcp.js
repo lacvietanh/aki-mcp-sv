@@ -161,7 +161,7 @@ export function register(server) {
     {
       title: 'Read Text File',
       annotations: { readOnlyHint: true, openWorldHint: false },
-      description: 'Read the complete contents of a text file. Use "tail"/"head" to read only the last/first N lines of a large file instead of the whole thing. Only works under the configured roots.',
+      description: 'Read the complete contents of a text file. Only works under the configured roots.',
       inputSchema: {
         path: z.string(),
         tail: z.number().optional().describe('If provided, returns only the last N lines'),
@@ -207,7 +207,7 @@ export function register(server) {
       description: 'Make targeted edits to a text file: each edit replaces an exact (or whitespace-tolerant) text match with new text. Returns a git-style diff of what changed. Set dryRun to preview without writing.',
       inputSchema: {
         path: z.string(),
-        edits: z.array(z.object({ oldText: z.string().describe('Text to search for — must match'), newText: z.string() })),
+        edits: z.array(z.object({ oldText: z.string().describe('Text to match'), newText: z.string() })),
         dryRun: z.boolean().optional().default(false),
       },
     },

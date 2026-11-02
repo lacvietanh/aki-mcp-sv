@@ -8,6 +8,7 @@ import { serveStatic } from './http.js';
 import { recordCaller, createCallers } from './callers.js';
 import { logSecurity } from './security-log.js';
 import { failures, registrations, clientKey } from './rate-limit.js';
+import { gatePort } from './userdata.js';
 
 const STATIC_ALIASES = { '/favicon.ico': '/favicon/favicon.ico' };
 // Only a rejected credential counts: protocol errors and unknown paths happen during normal connects and must never lock the owner out.
@@ -21,7 +22,7 @@ function refuse(res, retryAfterSeconds) {
 
 // origin: the public https origin, or null on loopback only. onFatal: a listen-socket error tears the whole stack down, so no orphaned hub is left.
 export function startGatekeeper(origin = null, onFatal) {
-  const port = Number(process.env.GATEKEEPER_PORT || 9999);
+  const port = gatePort();
   loadOrCreatePassphrase();
   // No ingress, no OAuth metadata: the OAuth routes answer 503, and a newly saved ingress applies on restart (resolved at boot in start.js, by decision).
   const meta = origin ? metadataHandlers(origin) : null;

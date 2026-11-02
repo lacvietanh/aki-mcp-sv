@@ -4,6 +4,7 @@
 import { execFile } from 'node:child_process';
 import { z } from 'zod';
 import { ok, err, fail } from './mcp-tool.js';
+import { gatePort } from './userdata.js';
 
 const IS_WIN = process.platform === 'win32';
 
@@ -69,9 +70,8 @@ export async function getListeningPorts(targetPort = null) {
 }
 
 export function isProtectedPort(port) {
-  const gatePort = parseInt(process.env.GATEKEEPER_PORT || '9999', 10);
   const panelPort = parseInt(process.env.PANEL_PORT || '9998', 10);
-  return port === gatePort || port === panelPort;
+  return port === gatePort() || port === panelPort;
 }
 
 export const provider = { id: 'port', title: 'Ports', register };
@@ -83,7 +83,7 @@ export function register(server) {
       title: 'Check listening ports and dev servers',
       annotations: { readOnlyHint: true, openWorldHint: false },
       description:
-        'Inspect active TCP listening ports and processes (e.g. dev servers on port 3000, 5173, 8080). Provide `port` to check a specific port, or omit to list all listening ports.',
+        'Inspect active TCP listening ports and processes. Provide `port` to check a specific port, or omit to list all listening ports.',
       inputSchema: {
         port: z.number().int().optional().describe('Specific TCP port to inspect (e.g. 3000)'),
       },

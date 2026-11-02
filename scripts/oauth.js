@@ -685,7 +685,3 @@ export function bearerStatus(authHeader) {
   if (temp) return !temp.revoked && temp.expires >= Date.now() ? 'valid' : 'retired';
   return retiredTokens.includes(hash) ? 'retired' : 'unknown';
 }
-
-export function verifyBearer(authHeader) {
-  return bearerStatus(authHeader) === 'valid';
-}

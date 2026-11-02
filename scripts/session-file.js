@@ -7,9 +7,9 @@ import { getRoots, containedIn } from './roots.js';
 
 export const SS_DIR = path.resolve(USER_DIR, 'ss');
 // D10: an ss this far behind an acting call is named in that call's result.
-export const SS_STALE_MS = 15 * 60_000;
+const SS_STALE_MS = 15 * 60_000;
 // D12: the file sessions kept before ss, still matched while old threads write it.
-export const LEGACY_WORKING_FILE = /[\\/]\.aki[\\/]mcpsv[\\/]task[\\/][^\\/]+[\\/]working\.md$/;
+const LEGACY_WORKING_FILE = /[\\/]\.aki[\\/]mcpsv[\\/]task[\\/][^\\/]+[\\/]working\.md$/;
 // D2, D4, v2 D7: <YYYY.MM.DD-HHMM>-<label of at most LABEL_MAX>, plus a 3-character collision suffix.
 const LABEL_MAX = 24;
 const SS_NAME = new RegExp(`^\\d{4}\\.\\d{2}\\.\\d{2}-\\d{4}-[a-z0-9-]{1,${LABEL_MAX + 3}}\\.md$`);

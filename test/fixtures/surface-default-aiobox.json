@@ -11,14 +11,14 @@
       "version": "4.0.0",
       "title": "AkiMCP"
     },
-    "instructions": "Before the first substantive action, call aki__akidevrule_context once; pass an absolute workingPath when known. Do not discover or read bootstrap files individually. A returned receipt is the only success signal. Every tool that acts (not read-only) takes receipt=<the sha256:… receipt this returns> and refuses without it, with an unknown one, or once the rules change; then call this again and pass the new receipt. Then follow /akirule: the SKILL.md routing table is already included in this output (and in every session) — do not re-read SKILL.md; from its routes, Read only the RULE/METHOD files the task needs, since those are not preloaded. Open your first reply with `[RULES] agent (core) + <topics> (router)` naming the route files you actually Read; a receipt without (router), or the sha256 line copied, is a violation. Attempt an operation before calling it impossible, never claim a missing capability, and on failure report the exact command, absolute path, exit status and stderr; state the action and its impact before a destructive or external step. Session file (ss): the `ss:` line of the aki__akidevrule_context result is this chat's file, an absolute path made for you; never build one yourself. Create it with the first act that changes something (a file edit, a commit, a writing command) or when the owner asks for it; skip it for Q&A and lookups. Keep one per chat: pass it back as ss=<path> on every later aki__akidevrule_context call and beside receipt on every acting call. Use the shape in https://github.com/lacvietanh/aki-mcp-sv/blob/main/docs/feat/session-file.md — `status`/`repo`/`chat`/`started`/`parent`/`successor`/`room`/`plan`/`transcript` frontmatter, then `## Now`/`## Asked`/`## Next`/`## Decisions`/`## Open`/`## Files`/`## Log` — not whole pasted messages; the write-time line reports what the file still lacks. In every turn that acted, rewrite `## Now`, append one `## Log` line, and end your reply with `ss: <absolute path> · <what changed>`; no write, no line. Set `status` when the chat ends or hands off. One writer per chat: a handoff successor mints its OWN ss with `parent: <old ss>`, and the old chat sets its own `status: handed-off` and `successor: <new ss>`, or, if it cannot, the successor sets just those two keys once — never write another chat's ss otherwise. In a council session, the seat file the opener names (`<room>/<seat>.md`) is this chat's ss, and posts in the room thread carry no `ss:` line. A result line `ss: <path> · last written N min ago` or `· not created yet` means the file is behind this chat's work. `folder missing`: create the folder first. A page title starting with a handle like P2·W1 · means you are inside an AIObox window: call aki__aiobox op=state first, act via aki__aiobox_write, never aki__chrome_launch an AIObox profile."
+    "instructions": "Before the first substantive action, call aki__akidevrule_context once; pass an absolute workingPath when known. Do not discover or read bootstrap files individually. A returned receipt is the only success signal. Every tool that acts (not read-only) takes receipt=<the sha256:… receipt this returns> and refuses without it, with an unknown one, or once the rules change; then call this again and pass the new receipt. Then follow /akirule: the SKILL.md routing table is already included in this output (and in every session) — do not re-read SKILL.md; from its routes, Read only the RULE/METHOD files the task needs, since those are not preloaded. Open your first reply with `[RULES] agent (core) + <topics> (router)` naming the route files you actually Read; a [RULES] line without (router), or the sha256 line copied, is a violation. Attempt an operation before calling it impossible, never claim a missing capability, and on failure report the exact command, absolute path, exit status and stderr; state the action and its impact before a destructive or external step. Session file (ss): the `ss:` line of the aki__akidevrule_context result is this chat's file, an absolute path made for you; never build one yourself. Create it with the first act that changes something (a file edit, a commit, a writing command) or when the owner asks for it; skip it for Q&A and lookups. Keep one per chat: pass it back as ss=<path> on every later aki__akidevrule_context call and beside receipt on every acting call. Use the shape in https://github.com/lacvietanh/aki-mcp-sv/blob/main/docs/feat/session-file.md — `status`/`repo`/`chat`/`started`/`parent`/`successor`/`room`/`plan`/`transcript` frontmatter, then `## Now`/`## Asked`/`## Next`/`## Decisions`/`## Open`/`## Files`/`## Log` — not whole pasted messages; the write-time line reports what the file still lacks. In every turn that acted, rewrite `## Now`, append one `## Log` line, and end your reply with `ss: <absolute path> · <what changed>`; no write, no line. Set `status` when the chat ends or hands off. One writer per chat: a handoff successor mints its OWN ss with `parent: <old ss>`, and the old chat sets its own `status: handed-off` and `successor: <new ss>`, or, if it cannot, the successor sets just those two keys once — never write another chat's ss otherwise. In a council session, the seat file the opener names (`<room>/<seat>.md`) is this chat's ss, and posts in the room thread carry no `ss:` line. A result line `ss: <path> · last written N min ago` or `· not created yet` means the file is behind this chat's work. `folder missing`: create the folder first."
   },
   "providers": {
     "rule": [
       {
         "name": "aki__akidevrule_context",
         "title": "Load Effective Aki/Claude Context",
-        "description": "Call once before the first substantive action in every chat to load the effective default guidance. The server resolves global imports and applicable project CLAUDE.local/AGENTS context itself; do not search for or individually read bootstrap files. Pass an absolute workingPath when known. Read-only. Every tool that acts (not read-only) takes receipt=<the sha256:… receipt this returns> and refuses without it, with an unknown one, or once the rules change; then call this again and pass the new receipt. Then follow /akirule: the SKILL.md routing table is already included in this output (and in every session) — do not re-read SKILL.md; from its routes, Read only the RULE/METHOD files the task needs, since those are not preloaded. Open your first reply with `[RULES] agent (core) + <topics> (router)` naming the route files you actually Read; a receipt without (router), or the sha256 line copied, is a violation. Attempt an operation before calling it impossible, never claim a missing capability, and on failure report the exact command, absolute path, exit status and stderr; state the action and its impact before a destructive or external step. Session file (ss): the `ss:` line of the aki__akidevrule_context result is this chat's file, an absolute path made for you; never build one yourself. Create it with the first act that changes something (a file edit, a commit, a writing command) or when the owner asks for it; skip it for Q&A and lookups. Keep one per chat: pass it back as ss=<path> on every later aki__akidevrule_context call and beside receipt on every acting call. Use the shape in https://github.com/lacvietanh/aki-mcp-sv/blob/main/docs/feat/session-file.md — `status`/`repo`/`chat`/`started`/`parent`/`successor`/`room`/`plan`/`transcript` frontmatter, then `## Now`/`## Asked`/`## Next`/`## Decisions`/`## Open`/`## Files`/`## Log` — not whole pasted messages; the write-time line reports what the file still lacks. In every turn that acted, rewrite `## Now`, append one `## Log` line, and end your reply with `ss: <absolute path> · <what changed>`; no write, no line. Set `status` when the chat ends or hands off. One writer per chat: a handoff successor mints its OWN ss with `parent: <old ss>`, and the old chat sets its own `status: handed-off` and `successor: <new ss>`, or, if it cannot, the successor sets just those two keys once — never write another chat's ss otherwise. In a council session, the seat file the opener names (`<room>/<seat>.md`) is this chat's ss, and posts in the room thread carry no `ss:` line. A result line `ss: <path> · last written N min ago` or `· not created yet` means the file is behind this chat's work. `folder missing`: create the folder first.",
+        "description": "Call once before the first substantive action in every chat to load the effective default guidance. The server resolves global imports and applicable project CLAUDE.local/AGENTS context itself; do not search for or individually read bootstrap files. Pass an absolute workingPath when known. Read-only. Every tool that acts (not read-only) takes receipt=<the sha256:… receipt this returns> and refuses without it, with an unknown one, or once the rules change; then call this again and pass the new receipt. Then follow /akirule: the SKILL.md routing table is already included in this output (and in every session) — do not re-read SKILL.md; from its routes, Read only the RULE/METHOD files the task needs, since those are not preloaded. Open your first reply with `[RULES] agent (core) + <topics> (router)` naming the route files you actually Read; a [RULES] line without (router), or the sha256 line copied, is a violation. Attempt an operation before calling it impossible, never claim a missing capability, and on failure report the exact command, absolute path, exit status and stderr; state the action and its impact before a destructive or external step. Session file (ss): the `ss:` line of the aki__akidevrule_context result is this chat's file, an absolute path made for you; never build one yourself. Create it with the first act that changes something (a file edit, a commit, a writing command) or when the owner asks for it; skip it for Q&A and lookups. Keep one per chat: pass it back as ss=<path> on every later aki__akidevrule_context call and beside receipt on every acting call. Use the shape in https://github.com/lacvietanh/aki-mcp-sv/blob/main/docs/feat/session-file.md — `status`/`repo`/`chat`/`started`/`parent`/`successor`/`room`/`plan`/`transcript` frontmatter, then `## Now`/`## Asked`/`## Next`/`## Decisions`/`## Open`/`## Files`/`## Log` — not whole pasted messages; the write-time line reports what the file still lacks. In every turn that acted, rewrite `## Now`, append one `## Log` line, and end your reply with `ss: <absolute path> · <what changed>`; no write, no line. Set `status` when the chat ends or hands off. One writer per chat: a handoff successor mints its OWN ss with `parent: <old ss>`, and the old chat sets its own `status: handed-off` and `successor: <new ss>`, or, if it cannot, the successor sets just those two keys once — never write another chat's ss otherwise. In a council session, the seat file the opener names (`<room>/<seat>.md`) is this chat's ss, and posts in the room thread carry no `ss:` line. A result line `ss: <path> · last written N min ago` or `· not created yet` means the file is behind this chat's work. `folder missing`: create the folder first.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -76,7 +76,7 @@
             },
             "receipt": {
               "type": "string",
-              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+              "description": "required: sha256:… receipt from aki__akidevrule_context"
             },
             "ss": {
               "type": "string"
@@ -172,7 +172,7 @@
       {
         "name": "aki__read_text_file",
         "title": "Read Text File",
-        "description": "Read the complete contents of a text file. Use \"tail\"/\"head\" to read only the last/first N lines of a large file instead of the whole thing. Only works under the configured roots.",
+        "description": "Read the complete contents of a text file. Only works under the configured roots.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -218,7 +218,7 @@
             },
             "receipt": {
               "type": "string",
-              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+              "description": "required: sha256:… receipt from aki__akidevrule_context"
             },
             "ss": {
               "type": "string"
@@ -257,7 +257,7 @@
                 "properties": {
                   "oldText": {
                     "type": "string",
-                    "description": "Text to search for — must match"
+                    "description": "Text to match"
                   },
                   "newText": {
                     "type": "string"
@@ -276,7 +276,7 @@
             },
             "receipt": {
               "type": "string",
-              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+              "description": "required: sha256:… receipt from aki__akidevrule_context"
             },
             "ss": {
               "type": "string"
@@ -310,7 +310,7 @@
             },
             "receipt": {
               "type": "string",
-              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+              "description": "required: sha256:… receipt from aki__akidevrule_context"
             },
             "ss": {
               "type": "string"
@@ -347,7 +347,7 @@
             },
             "receipt": {
               "type": "string",
-              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+              "description": "required: sha256:… receipt from aki__akidevrule_context"
             },
             "ss": {
               "type": "string"
@@ -436,7 +436,7 @@
       {
         "name": "aki__postman_eval",
         "title": "Postman: evaluate JS in the app",
-        "description": "Evaluate a JavaScript expression inside the running Postman desktop renderer over CDP and return the serialized result. Auto-discovers Postman's remote-debugging endpoint (launch Postman from the Aki panel first) and its main renderer target. Use it to inspect or drive Postman's own UI.",
+        "description": "Evaluate a JavaScript expression inside the running Postman desktop renderer over CDP and return the serialized result. Auto-discovers Postman's remote-debugging endpoint (launch Postman from the Aki panel first) and its main renderer target.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -446,7 +446,7 @@
             },
             "receipt": {
               "type": "string",
-              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+              "description": "required: sha256:… receipt from aki__akidevrule_context"
             },
             "ss": {
               "type": "string"
@@ -470,7 +470,7 @@
       {
         "name": "aki__postman_rename_conversation",
         "title": "Postman: rename current chat",
-        "description": "Rename the currently open Agent Mode conversation by driving Postman's own inline edit (double-click → type → Enter) so the change persists in app state.",
+        "description": "Rename the currently open Agent Mode conversation and persist the change.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -481,7 +481,7 @@
             },
             "receipt": {
               "type": "string",
-              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+              "description": "required: sha256:… receipt from aki__akidevrule_context"
             },
             "ss": {
               "type": "string"
@@ -515,7 +515,7 @@
             },
             "receipt": {
               "type": "string",
-              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+              "description": "required: sha256:… receipt from aki__akidevrule_context"
             },
             "ss": {
               "type": "string"
@@ -538,7 +538,7 @@
       {
         "name": "aki__devtools_targets",
         "title": "DevTools: list targets",
-        "description": "List the CDP page targets on a Chromium/Electron remote-debugging endpoint (Chrome, Postman, VS Code, …). Provide port or omit to use active Chrome session. A window not launched by aki__chrome_launch has no active session: find its port with aki__port_status first, then pass port.",
+        "description": "List the CDP page targets on a Chromium/Electron remote-debugging endpoint (Chrome, Postman, VS Code, …). A window not launched by aki__chrome_launch has no active session: find its port with aki__port_status first, then pass port.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -596,7 +596,7 @@
             },
             "receipt": {
               "type": "string",
-              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+              "description": "required: sha256:… receipt from aki__akidevrule_context"
             },
             "ss": {
               "type": "string"
@@ -672,7 +672,7 @@
       {
         "name": "aki__aiobox",
         "title": "AIObox: read windows",
-        "description": "AIObox windows. Call op=state first: it returns the guide and every op with its args. window = handle, chatId or targetId; expect = text the target chat's url or title must contain; args as the guide says. Each op's help in op=state overrides the guide. Reads only; to act use aki__aiobox_write.",
+        "description": "AIObox windows. Call op=state first: it returns the guide and every op with its args. Each op's help in op=state overrides the guide. Reads only; to act use aki__aiobox_write.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -753,7 +753,7 @@
             },
             "receipt": {
               "type": "string",
-              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+              "description": "required: sha256:… receipt from aki__akidevrule_context"
             },
             "ss": {
               "type": "string"
@@ -779,7 +779,7 @@
       {
         "name": "aki__chrome_profiles",
         "title": "Chromium: list installed browsers and profiles",
-        "description": "List installed Chromium browsers (Chrome, Brave, Edge) and their profiles (name, email, folder ID) from Local State, plus shared clone ids for chrome_launch.",
+        "description": "List installed Chromium browsers (Chrome, Brave, Edge) and their profiles (name, email, folder ID) from Local State, plus shared profile ids for chrome_launch.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -803,13 +803,13 @@
       {
         "name": "aki__chrome_launch",
         "title": "Chromium: open shared profile on a CDP port",
-        "description": "Opens a shared profile clone (logins kept). If another process runs it, attaches to its CDP port (owned false) and opens url as a new tab; else launches stealth Chrome on --remote-debugging-port=0 (owned true). Never clones.",
+        "description": "Opens a shared profile (a copy, logins kept). If another process runs it, attaches to its CDP port (owned false) and opens url as a new tab; else launches stealth Chrome on --remote-debugging-port=0 (owned true). Never clones.",
         "inputSchema": {
           "type": "object",
           "properties": {
             "profile": {
               "type": "string",
-              "description": "Profile 14 or shared id chrome-profile-14 (default Default)"
+              "description": "id from chrome_profiles sharedProfiles, or its Chrome folder name (default Default)"
             },
             "browser": {
               "type": "string",
@@ -825,7 +825,7 @@
             },
             "receipt": {
               "type": "string",
-              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+              "description": "required: sha256:… receipt from aki__akidevrule_context"
             },
             "ss": {
               "type": "string"
@@ -846,7 +846,7 @@
       {
         "name": "aki__chrome_tabs",
         "title": "Chromium: manage tabs (list, open, close, activate)",
-        "description": "Manage page tabs on the active Chrome session or target port. Supports listing open tabs, opening new URL, closing, and activating a tab.",
+        "description": "Manage page tabs on the active Chrome session or target port.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -874,7 +874,7 @@
             },
             "receipt": {
               "type": "string",
-              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+              "description": "required: sha256:… receipt from aki__akidevrule_context"
             },
             "ss": {
               "type": "string"
@@ -933,7 +933,7 @@
             },
             "receipt": {
               "type": "string",
-              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+              "description": "required: sha256:… receipt from aki__akidevrule_context"
             },
             "ss": {
               "type": "string"
@@ -968,7 +968,7 @@
             },
             "receipt": {
               "type": "string",
-              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+              "description": "required: sha256:… receipt from aki__akidevrule_context"
             },
             "ss": {
               "type": "string"
@@ -1038,7 +1038,7 @@
             },
             "receipt": {
               "type": "string",
-              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+              "description": "required: sha256:… receipt from aki__akidevrule_context"
             },
             "ss": {
               "type": "string"
@@ -1082,7 +1082,7 @@
             },
             "receipt": {
               "type": "string",
-              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+              "description": "required: sha256:… receipt from aki__akidevrule_context"
             },
             "ss": {
               "type": "string"
@@ -1124,7 +1124,7 @@
       {
         "name": "aki__clipboard_write",
         "title": "Write to System Clipboard",
-        "description": "Copy text into the operating system clipboard so the user can immediately paste it (pbcopy / Set-Clipboard / xclip).",
+        "description": "Copy text into the operating system clipboard (pbcopy / Set-Clipboard / xclip).",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -1134,7 +1134,7 @@
             },
             "receipt": {
               "type": "string",
-              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+              "description": "required: sha256:… receipt from aki__akidevrule_context"
             },
             "ss": {
               "type": "string"
@@ -1160,7 +1160,7 @@
       {
         "name": "aki__task_start",
         "title": "Start Background Task",
-        "description": "Start an allowlist-approved shell command in the background (detached process). Logs are streamed directly to disk with zero-RAM overhead. Returns taskId and pid for tracking with aki__task_manage.",
+        "description": "Start an allowlist-approved shell command in the background (detached process). Logs are streamed directly to disk. Returns taskId and pid for tracking with aki__task_manage.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -1178,7 +1178,7 @@
             },
             "receipt": {
               "type": "string",
-              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+              "description": "required: sha256:… receipt from aki__akidevrule_context"
             },
             "ss": {
               "type": "string"
@@ -1215,7 +1215,7 @@
                 "list",
                 "delete"
               ],
-              "description": "Action: status, tail_logs, stop, list, delete"
+              "description": "Task action"
             },
             "taskId": {
               "type": "string",
@@ -1231,7 +1231,7 @@
             },
             "receipt": {
               "type": "string",
-              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+              "description": "required: sha256:… receipt from aki__akidevrule_context"
             },
             "ss": {
               "type": "string"
@@ -1257,7 +1257,7 @@
       {
         "name": "aki__port_status",
         "title": "Check listening ports and dev servers",
-        "description": "Inspect active TCP listening ports and processes (e.g. dev servers on port 3000, 5173, 8080). Provide `port` to check a specific port, or omit to list all listening ports.",
+        "description": "Inspect active TCP listening ports and processes. Provide `port` to check a specific port, or omit to list all listening ports.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -1295,7 +1295,7 @@
             },
             "receipt": {
               "type": "string",
-              "description": "required: the sha256:… receipt from aki__akidevrule_context"
+              "description": "required: sha256:… receipt from aki__akidevrule_context"
             },
             "ss": {
               "type": "string"

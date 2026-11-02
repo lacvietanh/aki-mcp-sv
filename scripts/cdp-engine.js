@@ -25,7 +25,7 @@ function devToolsPortFile(app = 'postman') {
 }
 
 // Returns the port the app listens on, or null; never falls back to 9222, so the caller can surface "unknown" instead of targeting the wrong process.
-export function readDevToolsPort(app = 'postman') {
+function readDevToolsPort(app = 'postman') {
   try {
     const first = fs.readFileSync(devToolsPortFile(app), 'utf8').trim().split('\n')[0];
     const port = parseInt(first, 10);
@@ -44,7 +44,7 @@ async function openClient(opts) {
 }
 
 // S7, 2026-10-05: 24 logged calls ended at ~60s with nothing back. Every call here ends within CALL_BOUND_MS (lookup + connect included), refusing with code timeout and a safe next step.
-export const CALL_BOUND_MS = 50_000;
+const CALL_BOUND_MS = 50_000;
 function timeoutError(message, next) {
   const e = new Error(`${message}; code timeout; next: ${next}`);
   e.code = 'timeout';
@@ -78,7 +78,7 @@ async function bounded(timeoutMs, onTimeout, work) {
 }
 const endpointTimeout = (host, port, timeoutMs) => () => timeoutError(`the CDP endpoint ${host}:${port} did not answer within ${timeoutMs / 1000}s`, `check the app is running with ${served('port_status')}, then try once more`);
 
-export async function listTargets({ host = DEFAULT_HOST, port, timeoutMs = CALL_BOUND_MS } = {}) {
+async function listTargets({ host = DEFAULT_HOST, port, timeoutMs = CALL_BOUND_MS } = {}) {
   return bounded(timeoutMs, endpointTimeout(host, port, timeoutMs), () => CDP.List({ host, port }));
 }
 
@@ -95,7 +95,7 @@ function selectTarget(targets, filter) {
 }
 
 // Throws with the page-side message when the evaluated JS throws; `target` is a target object, an id string, or omitted with a `filter`.
-export async function evaluate({
+async function evaluate({
   host = DEFAULT_HOST, port, target, filter, expression,
   awaitPromise = true, returnByValue = true, userGesture = true, timeoutMs = CALL_BOUND_MS,
 } = {}) {
@@ -133,7 +133,7 @@ async function resolveTarget({ host, port, target, filter }) {
 }
 
 // Multi-window apps (Postman) have several renderers identified by DOM, not url; polling until timeout also waits for the SPA to mount.
-export async function findTarget({ host = DEFAULT_HOST, port, probeExpression, timeoutMs = 15000, pollMs = 200 } = {}) {
+async function findTarget({ host = DEFAULT_HOST, port, probeExpression, timeoutMs = 15000, pollMs = 200 } = {}) {
   if (!probeExpression) throw new Error('findTarget requires a probeExpression');
   const deadline = Date.now() + timeoutMs;
   let lastError;
@@ -154,7 +154,7 @@ export async function findTarget({ host = DEFAULT_HOST, port, probeExpression, t
   throw new Error(`findTarget: no target matched the probe on ${host}:${port}${lastError ? ` (${lastError.message})` : ''}`);
 }
 
-export async function screenshot({
+async function screenshot({
   host = DEFAULT_HOST, port, target, filter,
   format = 'png', quality = 80, clip, timeoutMs = CALL_BOUND_MS,
 } = {}) {
@@ -181,7 +181,7 @@ function boundRequest(req, host, port, reject) {
   req.on('error', reject);
 }
 
-export async function click({
+async function click({
   host = DEFAULT_HOST, port, target, filter, selector,
 } = {}) {
   if (!selector) throw new Error('click requires selector');
@@ -203,7 +203,7 @@ export async function click({
   return evaluate({ host, port, target, filter, expression });
 }
 
-export async function type({
+async function type({
   host = DEFAULT_HOST, port, target, filter, selector, text, clear = false, enter = false,
 } = {}) {
   if (!selector) throw new Error('type requires selector');
@@ -238,7 +238,7 @@ export async function type({
   return evaluate({ host, port, target, filter, expression });
 }
 
-export async function openTab({ host = DEFAULT_HOST, port, url = 'about:blank' } = {}) {
+async function openTab({ host = DEFAULT_HOST, port, url = 'about:blank' } = {}) {
   if (!port) throw new Error('openTab requires port');
   return new Promise((resolve, reject) => {
     const req = http.request({
@@ -259,7 +259,7 @@ export async function openTab({ host = DEFAULT_HOST, port, url = 'about:blank' }
   });
 }
 
-export async function closeTab({ host = DEFAULT_HOST, port, targetId } = {}) {
+async function closeTab({ host = DEFAULT_HOST, port, targetId } = {}) {
   if (!port || !targetId) throw new Error('closeTab requires port and targetId');
   return new Promise((resolve, reject) => {
     const req = http.request({
@@ -277,7 +277,7 @@ export async function closeTab({ host = DEFAULT_HOST, port, targetId } = {}) {
   });
 }
 
-export async function activateTab({ host = DEFAULT_HOST, port, targetId } = {}) {
+async function activateTab({ host = DEFAULT_HOST, port, targetId } = {}) {
   if (!port || !targetId) throw new Error('activateTab requires port and targetId');
   return new Promise((resolve, reject) => {
     const req = http.request({

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { assembleRuleContext, RuleContextError } from './rule-context.js';
 import { aioboxInstalled, aioboxServed, AIOBOX_PITCH } from './aiobox-guide.js';
-import { recordIssued } from './rule-gate.js';
+import { recordIssued, RECEIPT_RE } from './rule-gate.js';
 import { sessionFor } from './session-file.js';
 import { IDENTITY, DEFAULT_PREFIX, served } from './mcp-name.js';
 
@@ -9,7 +9,7 @@ const RULE_CONTEXT_TOOL = 'akidevrule_context';
 const RULE_TOOL = served(RULE_CONTEXT_TOOL);
 export const RULE_CONTEXT_TITLE = 'Load Effective Aki/Claude Context';
 // Both strings end with the /akirule step: SKILL.md is already embedded every session, so the step points at its routing table; only the routed RULE/METHOD files need a Read.
-const AKIRULE_STEP = 'Then follow /akirule: the SKILL.md routing table is already included in this output (and in every session) — do not re-read SKILL.md; from its routes, Read only the RULE/METHOD files the task needs, since those are not preloaded. Open your first reply with `[RULES] agent (core) + <topics> (router)` naming the route files you actually Read; a receipt without (router), or the sha256 line copied, is a violation.';
+const AKIRULE_STEP = 'Then follow /akirule: the SKILL.md routing table is already included in this output (and in every session) — do not re-read SKILL.md; from its routes, Read only the RULE/METHOD files the task needs, since those are not preloaded. Open your first reply with `[RULES] agent (core) + <topics> (router)` naming the route files you actually Read; a [RULES] line without (router), or the sha256 line copied, is a violation.';
 // Printed first (owner 2026-10-04): a web chat has no aki-route-guard hook, and with the sha256 line first it copied that as its receipt, skipping hop 2 (Read the routed files).
 // Owner 2026-10-04: first line of every output, success or error.
 const NO_YAPPING = 'NO YAPPING AT ALL';
@@ -28,15 +28,13 @@ export const SHARED_WORK = [
 ].join('\n');
 // The gate (scripts/rule-gate.js): every tool that acts refuses a call without the current receipt.
 const RECEIPT_STEP = 'Every tool that acts (not read-only) takes receipt=<the sha256:… receipt this returns> and refuses without it, with an unknown one, or once the rules change; then call this again and pass the new receipt.';
-// Names aki__aiobox, so it ships only while aki__aiobox is served: in the server instructions (tools-server.js) and in this tool's result (register).
+// The result header carries this only while aki__aiobox is served.
 // The tool description stays the same on every machine, so installing AIObox changes no existing tool definition.
-export const AIOBOX_STEP = 'A page title starting with a handle like P2·W1 · means you are inside an AIObox window: call ' + served('aiobox') + ' op=state first, act via ' + served('aiobox_write') + ', never ' + served('chrome_launch') + ' an AIObox profile.';
+export const AIOBOX_STEP = 'Inside an AIObox window: ' + served('aiobox') + ' op=whoami first; act via ' + served('aiobox_write') + '; never ' + served('chrome_launch') + ' an AIObox profile.';
 // Only at a Tool prefix other than the default: prompts and guides written for the default names still say aki__<tool>.
 const BRIDGE_STEP = IDENTITY.prefix === DEFAULT_PREFIX ? '' : ` This server's tools ${IDENTITY.prefix === '' ? 'have no prefix' : `start with ${IDENTITY.prefix}`}. Text that names ${DEFAULT_PREFIX}<tool> means ${IDENTITY.prefix}<tool>.`;
 export const RULE_CONTEXT_DESCRIPTION = `Call once before the first substantive action in every chat to load the effective default guidance. The server resolves global imports and applicable project CLAUDE.local/AGENTS context itself; do not search for or individually read bootstrap files. Pass an absolute workingPath when known. Read-only. ${RECEIPT_STEP} ${AKIRULE_STEP} ${CONDUCT_STEP} ${SS_STEP}${BRIDGE_STEP}`;
-const BASE_INSTRUCTIONS = `Before the first substantive action, call ${RULE_TOOL} once; pass an absolute workingPath when known. Do not discover or read bootstrap files individually. A returned receipt is the only success signal. ${RECEIPT_STEP} ${AKIRULE_STEP} ${CONDUCT_STEP} ${SS_STEP}${BRIDGE_STEP}`;
-// Read once per server (per client session): an install after boot reaches a client at its next connect.
-export const ruleContextInstructions = (aioboxServed) => (aioboxServed ? `${BASE_INSTRUCTIONS} ${AIOBOX_STEP}` : BASE_INSTRUCTIONS);
+export const RULE_CONTEXT_INSTRUCTIONS = `Before the first substantive action, call ${RULE_TOOL} once; pass an absolute workingPath when known. Do not discover or read bootstrap files individually. A returned receipt is the only success signal. ${RECEIPT_STEP} ${AKIRULE_STEP} ${CONDUCT_STEP} ${SS_STEP}${BRIDGE_STEP}`;
 
 // Required: the aiobox prompt and WEB_PROMPT call aki__akidevrule_context by name.
 export const provider = { id: 'rule', title: 'Rule context', required: true, register };
@@ -52,7 +50,7 @@ export function register(server, options = {}) {
     inputSchema: {
       workingPath: z.string().optional().describe('Absolute local file or directory path for applicable project context'),
       mode: z.enum(['effective', 'exact-audit']).optional().describe('Defaults to effective'),
-      knownReceipt: z.string().regex(/^sha256:[a-f0-9]{64}$/).optional(),
+      knownReceipt: z.string().regex(RECEIPT_RE).optional(),
       ss: z.string().optional().describe('The ss path this tool returned earlier in this chat, kept instead of a new one'),
       label: z.string().optional().describe('A short name for this chat, used in a new ss file name'),
     },
@@ -63,7 +61,6 @@ export function register(server, options = {}) {
       const result = await assemble(ruleInput);
       recordIssued(result.receipt, ruleInput);
       const session = sessionFor({ ss, label, workingPath: ruleInput.workingPath, workingRoot: result.workingRoot });
-      // Without AIObox one line says what it would add (D7). While aki__aiobox is served the AIObox step rides here too: a web chat never sees the server instructions, but every chat reads this result (docs/plan/v4-first-improve.md B1).
       const aioboxLine = !installed() ? AIOBOX_PITCH : (await aioboxOn()) ? AIOBOX_STEP : '';
       // The receipt line is labelled context, not [RULES], so it cannot be mistaken for the reply's own [RULES] line.
       const header = `${NO_YAPPING}\n${MANDATORY_BLOCK}\n\ncontext loaded: ${result.parity} · ${result.receipt} · ${result.sources.length} sources\nEvery tool that acts needs receipt=${result.receipt}\n${session.line}${aioboxLine && `\n${aioboxLine}`}`;

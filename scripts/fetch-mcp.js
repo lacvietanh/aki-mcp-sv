@@ -163,5 +163,3 @@ export function register(server) {
     },
   );
 }
-
-export default { register, executeFetch, isBlockedHost };

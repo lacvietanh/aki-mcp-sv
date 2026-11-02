@@ -2,6 +2,7 @@
 // aki__aiobox / aki__aiobox_write against a temp HOME with a fixture akimcp-state.json, windows.json and guide.md, a fake CDP engine and a fake AIObox request taker: no Chrome, no AIObox needed.
 import './setup.js';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -66,13 +67,19 @@ const refused = (r, code) => {
   assert.equal(b.ok, false);
   return b;
 };
-const rejectedBySchema = async (name, args) => {
+const rejectedBySchema = async (name, args, target = client) => {
+  const message = `Input validation error: Invalid arguments for tool ${name}:`;
   try {
-    return (await client.callTool({ name, arguments: args })).isError === true;
-  } catch {
-    return true;
+    const result = await target.callTool({ name, arguments: args });
+    return result.isError === true && result.content.some((item) => item.type === 'text' && item.text.includes(message));
+  } catch (error) {
+    if (error.code === -32602 && error.message.includes(message)) return true;
+    throw error;
   }
 };
+
+await assert.rejects(() => rejectedBySchema('aiobox', { op: 'Bad-Op' }, { callTool: async () => { throw new Error('transport broke'); } }), /transport broke/);
+assert.equal(await rejectedBySchema('aiobox', {}, { callTool: async () => ({ isError: true, content: [{ type: 'text', text: 'unrelated server error' }] }) }), false);
 
 // The tool surface is the closed envelope; descriptions are static and name no op, threshold or macro.
 const tools = (await client.listTools()).tools;
@@ -81,7 +88,7 @@ const writeTool = tools.find((t) => t.name === 'aiobox_write');
 assert.deepEqual(Object.keys(readTool.inputSchema.properties), ['op', 'window', 'expect', 'wait', 'args']);
 assert.deepEqual(Object.keys(writeTool.inputSchema.properties), ['op', 'window', 'expect', 'wait', 'args', 'from']);
 assert.deepEqual(readTool.inputSchema.required, ['op']);
-assert.equal(readTool.description, "AIObox windows. Call op=state first: it returns the guide and every op with its args. window = handle, chatId or targetId; expect = text the target chat's url or title must contain; args as the guide says. Each op's help in op=state overrides the guide. Reads only; to act use aki__aiobox_write.");
+assert.equal(readTool.description, "AIObox windows. Call op=state first: it returns the guide and every op with its args. Each op's help in op=state overrides the guide. Reads only; to act use aki__aiobox_write.");
 assert.match(writeTool.description, /plus receipt/);
 assert.match(writeTool.description, /Each op's help in op=state overrides the guide\./);
 assert.match(writeTool.description, /from = your own window, so AIObox can refuse acting on yourself/);
@@ -164,6 +171,7 @@ refused(await call('aiobox', { op: 'archive', args: { chatId: 'abc-1' } }), 'not
 fs.writeFileSync(mapFile, JSON.stringify({
   version: 1,
   generation: 1,
+  appPid: process.pid,
   profiles: [
     { number: 1, id: 'chrome-profile-11', name: 'nt@x.com', port: 1111, windows: [
       { handle: 'P1·W1', state: 'normal', tabs: [{ handle: 'P1·W1', targetId: 'T-NOTION', url: 'https://app.notion.com/chat?t=abc', title: 'P1·W1 · nt@x.com · Chat | Notion', chatId: 'abc', provider: 'notion' }] },
@@ -474,7 +482,16 @@ assert.equal(refused(await call('aiobox', { op: 'read', window: 'P1·W1' }), 've
 fs.writeFileSync(mapFile, JSON.stringify({ ...JSON.parse(mapText), version: 0 }));
 assert.equal(refused(await call('aiobox', { op: 'read', window: 'P1·W1' }), 'version_mismatch').next, 'update AIObox');
 fs.writeFileSync(mapFile, 'not json');
-assert.equal(refused(await call('aiobox', { op: 'read', window: 'P1·W1' }), 'version_mismatch').next, 'update AIObox');
+assert.equal(refused(await call('aiobox', { op: 'read', window: 'P1·W1' }), 'not_running').next, 'ask the owner to open AIObox', 'a map that is not JSON names no live appPid: not running, as chrome_launch reads it');
+fs.writeFileSync(mapFile, mapText);
+
+// A crash leaves windows.json behind with a dead appPid: not running, the answer chrome_launch's guard gives too (aiobox-guide.js aioboxRunning).
+fs.writeFileSync(mapFile, JSON.stringify({ ...JSON.parse(mapText), appPid: spawnSync(process.execPath, ['-e', '']).pid }));
+const crashed = body(await call('aiobox', { op: 'state' }));
+assert.equal(crashed.running, false);
+assert.match(crashed.next, /open AIObox/);
+assert.match(refused(await call('aiobox', { op: 'read', window: 'P1·W1' }), 'not_running').why, /no live appPid/);
+refused(await call('aiobox', { op: 'archive', args: { chatId: 'zzz' } }), 'not_running');
 fs.writeFileSync(mapFile, mapText);
 
 // State with the app up.

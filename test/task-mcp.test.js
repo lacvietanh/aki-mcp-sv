@@ -11,9 +11,10 @@ import {
   register,
   taskStart,
   taskManage,
-  isProcessAlive,
   readLogTail,
 } from '../scripts/task-mcp.js';
+import { pidAlive } from '../scripts/pid-alive.js';
+import { readSettings, writeSettings } from '../scripts/allowlist.js';
 
 async function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -45,10 +46,12 @@ async function runTests() {
   await client.close();
 
   // 2. Test liveness check function
-  assert.equal(isProcessAlive(process.pid), true, 'Current process PID must be alive');
-  assert.equal(isProcessAlive(999999), false, 'Non-existent PID must not be alive');
-  assert.equal(isProcessAlive(0), false);
-  assert.equal(isProcessAlive(-1), false);
+  assert.equal(pidAlive(process.pid), true, 'Current process PID must be alive');
+  assert.equal(pidAlive(999999), false, 'Non-existent PID must not be alive');
+  assert.equal(pidAlive(0), false);
+  assert.equal(pidAlive(-1), false);
+  assert.equal(pidAlive(1.5), false);
+  if (process.platform !== 'win32') assert.equal(pidAlive(1), true, 'pid 1 is not ours to signal (EPERM) and is alive');
 
   // 3. Test log tailing logic
   const tempLog = path.join(os.tmpdir(), `test-tail-${Date.now()}.log`);
@@ -122,11 +125,11 @@ async function runTests() {
 
   // 8. Test task_manage: stop with a long-running process
   const stopTestId = `test_stop_${Date.now()}`;
-  const dummyFile = path.join(os.tmpdir(), `dummy-${Date.now()}.txt`);
-  fs.writeFileSync(dummyFile, 'hello\n');
+  const settings = readSettings();
+  writeSettings({ ...settings, shell: { ...settings.shell, allowlist: { added: [['node', '-v', '-e']] } } });
   try {
     const longTask = await taskStart({
-      command: `tail -f ${dummyFile}`,
+      command: `node -e "setInterval(() => {}, 1000)"`,
       taskId: stopTestId,
     });
     assert.equal(longTask.status, 'running');
@@ -137,7 +140,7 @@ async function runTests() {
     assert.equal(stopRes.stopped, true);
     assert.equal(stopRes.wasAlive, true);
 
-    await waitFor(() => !isProcessAlive(longTask.pid), 'the stopped process exit');
+    await waitFor(() => !pidAlive(longTask.pid), 'the stopped process exit');
     const afterStopStatus = await taskManage({ action: 'status', taskId: stopTestId });
     assert.equal(afterStopStatus.alive, false);
     assert.equal(afterStopStatus.status, 'stopped');
@@ -145,7 +148,7 @@ async function runTests() {
     await taskManage({ action: 'delete', taskId: stopTestId });
   } finally {
     await taskManage({ action: 'stop', taskId: stopTestId }).catch(() => {});
-    try { fs.unlinkSync(dummyFile); } catch {}
+    writeSettings(settings);
   }
 
   // 9. Test task_manage: list

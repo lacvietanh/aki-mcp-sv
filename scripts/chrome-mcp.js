@@ -1,6 +1,6 @@
 // Chromium Profile & Remote Automation MCP tools (chrome_*).
 // Discovers profiles, opens or attaches to the shared CDP clones AIObox provisions (stealth Chrome on dynamic port 0),
-// provides interactive typing & scroll-to-center clicking, tab management, and AI session probing.
+// provides interactive typing & scroll-to-center clicking and tab management.
 import { z } from 'zod';
 import { ok, fail } from './mcp-tool.js';
 import cdp from './cdp-engine.js';
@@ -19,7 +19,7 @@ import { served } from './mcp-name.js';
 
 // While AIObox runs it owns these clones: a Chrome opened or attached here has no AIObox panel, guard or handle, so it is refused, with no force (plan v4-first-improve B2, D8, D10).
 function aioboxRefusal(id, url) {
-  return new Error(`Profile "${id}" was not opened: AIObox is running and owns the shared profiles; a Chrome opened here would have no AIObox panel or handle. (aiobox_running; next: ${served('aiobox_write')} op=open_url url=${url || '<link>'} profileId=${id}, or from=<your chatId> instead of profileId for your own window's profile; CDP on a window AIObox opened: its port from ${served('aiobox')} op=windows)`);
+  return new Error(`Profile "${id}" was not opened: AIObox is running and owns the shared profiles; a Chrome opened here would have no AIObox panel or handle. (aiobox_running; next: ${served('aiobox_write')} op=open_url url=${url || '<link>'} profileId=${id})`);
 }
 
 export const provider = {
@@ -36,7 +36,7 @@ export function register(server) {
       title: 'Chromium: list installed browsers and profiles',
       annotations: { readOnlyHint: true, openWorldHint: false },
       description:
-        'List installed Chromium browsers (Chrome, Brave, Edge) and their profiles (name, email, folder ID) from Local State, plus shared clone ids for chrome_launch.',
+        'List installed Chromium browsers (Chrome, Brave, Edge) and their profiles (name, email, folder ID) from Local State, plus shared profile ids for chrome_launch.',
       inputSchema: {
         browser: z.string().optional().describe('chrome, brave, or edge (default chrome)'),
       },
@@ -59,9 +59,9 @@ export function register(server) {
       title: 'Chromium: open shared profile on a CDP port',
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
       description:
-        'Opens a shared profile clone (logins kept). If another process runs it, attaches to its CDP port (owned false) and opens url as a new tab; else launches stealth Chrome on --remote-debugging-port=0 (owned true). Never clones.',
+        'Opens a shared profile (a copy, logins kept). If another process runs it, attaches to its CDP port (owned false) and opens url as a new tab; else launches stealth Chrome on --remote-debugging-port=0 (owned true). Never clones.',
       inputSchema: {
-        profile: z.string().optional().describe('Profile 14 or shared id chrome-profile-14 (default Default)'),
+        profile: z.string().optional().describe('id from chrome_profiles sharedProfiles, or its Chrome folder name (default Default)'),
         browser: z.string().optional().describe('chrome, brave, or edge (default chrome)'),
         url: z.string().optional().describe('URL to open (new tab on attach)'),
         headless: z.boolean().optional().describe('only for a new launch (default false)'),
@@ -73,7 +73,7 @@ export function register(server) {
         const res = await launchChrome(profile || 'Default', {
           browser,
           url,
-          headless: headless ?? false,
+          headless,
         });
         return ok(JSON.stringify(res, null, 2));
       } catch (e) {
@@ -88,7 +88,7 @@ export function register(server) {
       title: 'Chromium: manage tabs (list, open, close, activate)',
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description:
-        'Manage page tabs on the active Chrome session or target port. Supports listing open tabs, opening new URL, closing, and activating a tab.',
+        'Manage page tabs on the active Chrome session or target port.',
       inputSchema: {
         action: z.enum(['list', 'open', 'close', 'activate']).optional().describe('action to perform (default list)'),
         url: z.string().optional().describe('URL to open when action is open'),
@@ -113,7 +113,6 @@ export function register(server) {
           const res = await cdp.activateTab({ port: p, targetId });
           return ok(JSON.stringify(res, null, 2));
         }
-        // action === 'list'
         const targets = await cdp.listTargets({ port: p });
         const pages = targets
           .filter((t) => t.type === 'page')
@@ -156,12 +155,11 @@ export function register(server) {
             target: targetId,
             selector,
             text,
-            clear: clear ?? false,
-            enter: enter ?? false,
+            clear,
+            enter,
           });
           return ok(JSON.stringify(res, null, 2));
         }
-        throw new Error(`unknown action: ${action}`);
       } catch (e) {
         return fail(e);
       }
@@ -188,5 +186,3 @@ export function register(server) {
     },
   );
 }
-
-export default { register };

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import './setup.js';
 import assert from 'node:assert/strict';
+import { test } from 'node:test';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -77,7 +78,7 @@ async function closedPort() {
 
 let fakeChromePid;
 
-async function runTests() {
+async function runTests(t) {
   // Browser and source-profile discovery
   assert.ok(getBrowserInfo('chrome').name.includes('Chrome'));
   assert.ok(getBrowserInfo('brave').name.includes('Brave'));
@@ -121,8 +122,12 @@ async function runTests() {
   });
   assert.equal(exists(path.join(root, 'chrome-profile-99')), false);
 
+  // Every id the shared list returns opens as itself, whatever its prefix.
+  const provisioned = makeProfile('aio-1700000000000');
+  assert.deepEqual(resolveSharedProfile('aio-1700000000000'), { id: 'aio-1700000000000', dir: provisioned, browser: 'chrome' });
+
   // The rest drives Chrome's POSIX lock (a SingletonLock symlink) and a shebang script as the browser; Windows has neither, so its run ends here.
-  if (process.platform === 'win32') return console.log('chrome-profile.test.js: ok (lock and launch scenarios are POSIX-only, skipped on Windows)');
+  if (process.platform === 'win32') { t.skip('lock and launch scenarios are POSIX-only'); return; }
 
   // Unknown owner (lock from another host): fail closed, lock untouched.
   lock(dir, `other-host.invalid-${process.pid}`);
@@ -172,6 +177,10 @@ async function runTests() {
   fs.writeFileSync(path.join(dir, 'SingletonCookie'), 'x');
   fs.writeFileSync(path.join(dir, 'DevToolsActivePort'), `${dead}\n/stale\n`);
   assert.equal(readOwner(dir).state, 'dead');
+  // pid 0 names no process (kill(0, 0) signals this process group): a lock naming it is dead too.
+  lock(dir, `${os.hostname()}-0`);
+  assert.deepEqual(readOwner(dir), { state: 'dead', pid: 0 });
+  lock(dir, `${os.hostname()}-${gone}`);
   const fake = path.join(tmp, 'fake-chrome.mjs');
   fs.writeFileSync(fake, `#!${process.execPath}
 import fs from 'node:fs';
@@ -213,13 +222,13 @@ s.listen(0, '127.0.0.1', () => fs.writeFileSync(dir + '/DevToolsActivePort', s.a
   console.log('chrome-profile.test.js: ok');
 }
 
-try {
-  await runTests();
-} finally {
-  if (fakeChromePid) {
-    try {
-      process.kill(fakeChromePid, 'SIGKILL');
-    } catch {}
+test('chrome profile discovery and POSIX lock/launch', async (t) => {
+  try {
+    await runTests(t);
+  } finally {
+    if (fakeChromePid) {
+      try { process.kill(fakeChromePid, 'SIGKILL'); } catch {}
+    }
+    fs.rmSync(tmp, { recursive: true, force: true });
   }
-  fs.rmSync(tmp, { recursive: true, force: true });
-}
+});

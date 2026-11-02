@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pidAlive } from './pid-alive.js';
 
 // Resolved per call: a test (or a changed HOME) is honored.
 export const aioboxDir = () => path.join(os.homedir(), '.aki', 'aiobox');
@@ -39,18 +40,10 @@ export const aioboxInstalled = () => fs.existsSync(aioboxDir());
 export const windowsFile = () => path.join(aioboxDir(), 'cdp', 'windows.json');
 // AIObox deletes windows.json on quit but not on a crash, so it runs only while the map's appPid is alive (plan v4-first-improve D11; a reused pid reads as running).
 export function aioboxRunning() {
-  let pid;
   try {
-    pid = JSON.parse(fs.readFileSync(windowsFile(), 'utf8')).appPid;
+    return pidAlive(JSON.parse(fs.readFileSync(windowsFile(), 'utf8')).appPid);
   } catch {
     return false;
-  }
-  if (!Number.isInteger(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e) {
-    return e.code === 'EPERM';
   }
 }
 // Resolved at call time: provider-registry.js imports the modules that import this one, so a static import would be a cycle.

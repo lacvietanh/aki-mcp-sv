@@ -77,15 +77,16 @@ redetect();
 const withAiobox = await servedNames();
 assert.deepEqual(withAiobox.filter((n) => !bare.includes(n)).sort(), AIOBOX_TOOLS);
 assert.ok(bare.every((n) => withAiobox.includes(n)), 'nothing served before is lost');
-// The handle step reaches a client that connects once AIObox is served: in the instructions, and aki__aiobox's own description is the same on every machine.
+// The step is not in instructions in either state; aki__aiobox's description stays the same on every machine.
 const { AIOBOX_STEP } = await import('../scripts/rule-context-mcp.js');
 const later = createToolsServer();
 const [laterClient, laterServer] = InMemoryTransport.createLinkedPair();
 await later.connect(laterServer);
 const client2 = new Client({ name: 'surface-with-aiobox-test', version: '1' });
 await client2.connect(laterClient);
-assert.ok(client2.getInstructions().endsWith(AIOBOX_STEP), 'instructions carry the AIObox step once it is served');
-assert.ok(!client.getInstructions().includes(AIOBOX_STEP), 'and not before');
+assert.ok(!client2.getInstructions().includes(AIOBOX_STEP), 'instructions omit the AIObox step when served');
+assert.ok(!client.getInstructions().includes(AIOBOX_STEP), 'and when hidden');
+for (const instructions of [client.getInstructions(), client2.getInstructions()]) assert.doesNotMatch(instructions, /A page title starting with a handle|Inside an AIObox window/);
 const toolsWithAiobox = (await client2.listTools()).tools;
 assert.match(toolsWithAiobox.find((t) => t.name === 'aki__aiobox').description, /^AIObox windows\. Call op=state first/);
 // Installing AIObox changes no other tool's definition, so a client's Always allow on them holds (A12); aki__aiobox/aki__aiobox_write are new, so not in describedBare.

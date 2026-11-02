@@ -11,7 +11,7 @@ import path from 'node:path';
 const dir = mkdtempSync(path.join(os.tmpdir(), 'aki-oauth-test-'));
 process.env.AKI_MCP_DATA_DIR = dir;
 const { TOKENS_PATH } = await import('../scripts/userdata.js');
-const { getOrIssueAccessToken, verifyBearer, handleRegister } = await import('../scripts/oauth.js');
+const { getOrIssueAccessToken, bearerStatus, handleRegister } = await import('../scripts/oauth.js');
 const { startPanel } = await import('../scripts/panel.js');
 
 const removeDataDir = () => rmSync(dir, { recursive: true, force: true });
@@ -22,8 +22,8 @@ async function run() {
     const second = getOrIssueAccessToken();
     assert.match(first, /^[0-9a-f]{64}$/);
     assert.equal(second, first, 'a still-valid access token must be reused, not minted again');
-    assert.equal(verifyBearer('Bearer ' + first), true);
-    assert.equal(verifyBearer('Bearer ' + '0'.repeat(64)), false, 'unknown hex must not pass verifyBearer');
+    assert.equal(bearerStatus('Bearer ' + first), 'valid');
+    assert.equal(bearerStatus('Bearer ' + '0'.repeat(64)), 'unknown', 'unknown hex is not a valid bearer');
     const saved = JSON.parse(readFileSync(TOKENS_PATH, 'utf8'));
     assert.ok(saved.access[first]);
     assert.ok(saved.access[first].expires > Date.now());
@@ -58,8 +58,8 @@ async function run() {
       assert.doesNotMatch(html, /tokens\.json/);
       assert.doesNotMatch(html, /Registration URL/);
       assert.doesNotMatch(html, /Advanced OAuth/);
-      assert.equal(verifyBearer('Bearer ' + first), true);
-      assert.equal(verifyBearer('Bearer ' + panelToken), false, 'panel loopback token must not pass verifyBearer');
+      assert.equal(bearerStatus('Bearer ' + first), 'valid');
+      assert.notEqual(bearerStatus('Bearer ' + panelToken), 'valid', 'the panel loopback token is not a valid bearer');
 
       const withoutToken = await fetch(base + '/api/access-token');
       assert.equal(withoutToken.status, 403, 'GET /api/access-token needs the panel token');
@@ -105,7 +105,7 @@ async function run() {
       registrar.close();
     }
 
-    console.log('PASS: getOrIssueAccessToken reuses a valid token, persists it, and GET / prefills Postman JSON with that verifyBearer-accepted token');
+    console.log('PASS: getOrIssueAccessToken reuses a valid token, persists it, and GET / prefills Postman JSON with that token, which bearerStatus reads as valid');
   } finally {
     removeDataDir();
   }

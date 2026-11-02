@@ -44,7 +44,7 @@ export async function notifyUser({ message, title = 'Aki MCP', sound = true } = 
     } catch {
       // Toast API missing on older Windows: a beep still reaches the user, but no text does.
       await run('powershell', ['-NoProfile', '-Command', '[console]::beep(800,200)']);
-      return { ...result, notified: false, fallback: 'beep', next: 'only a beep sounded (Windows Toast failed): give the message in chat' };
+      return { ...result, notified: false, fallback: 'beep', next: 'Windows Toast failed; give the message in chat' };
     }
   }
 
@@ -172,7 +172,7 @@ export function register(server) {
     {
       title: 'Write to System Clipboard',
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
-      description: 'Copy text into the operating system clipboard so the user can immediately paste it (pbcopy / Set-Clipboard / xclip).',
+      description: 'Copy text into the operating system clipboard (pbcopy / Set-Clipboard / xclip).',
       inputSchema: {
         text: z.string().describe('text to copy into the clipboard'),
       },
@@ -187,5 +187,3 @@ export function register(server) {
     },
   );
 }
-
-export default { register, notifyUser, clipboardRead, clipboardWrite };

@@ -6,6 +6,7 @@ import { aioboxInstalled, AIOBOX_PANEL, AIOBOX_CONNECT } from './aiobox-guide.js
 import { IDENTITY, appliedKeys } from './mcp-name.js';
 import { renderIdentityField } from './identity-panel.js';
 import { TEMP_TTL_MS, TEMP_EXTEND_MS } from './oauth.js';
+import { gatePort } from './userdata.js';
 
 const CLAUDE_DIR = path.join(os.homedir(), '.claude');
 const AKI_DIR = path.join(os.homedir(), '.aki');
@@ -138,8 +139,9 @@ function secretSnippet(label, value, secrets, id) {
 
 // The local client configs, built once here for both the rendered snippets and panel.js's Apply writers, so the two cannot drift.
 // Local clients connect straight to loopback (no WAN, no tunnel); only remote web connectors need the public `url`.
-export const localMcpUrl = () => `http://127.0.0.1:${process.env.GATEKEEPER_PORT || 9999}/mcp`;
+export const localMcpUrl = () => `http://127.0.0.1:${gatePort()}/mcp`;
 export const httpBearerEntry = (url, token) => ({ url, headers: { Authorization: `Bearer ${token}` } });
+export const stdioEntry = (stdioJs) => ({ command: 'node', args: [stdioJs] });
 // Remove-then-add: `claude mcp add` refuses an existing entry and keeps its old token (docs/plan/done/audit-tool-drift-oct25.md F9); `-s user` reaches every project.
 export const claudeCodeLines = (url, token) => `claude mcp remove ${IDENTITY.key} -s user\nclaude mcp add --transport http -s user ${IDENTITY.key} ${url} --header "Authorization: Bearer ${token}"`;
 const noOriginNotice = (reason) => `<p class="helptext">Set up a public address in <a href="#s0">section 0</a> first, ${reason}.</p>`;
@@ -159,7 +161,7 @@ const aioboxConnectStrip = () => (aioboxInstalled()
 
 const legacyNameHint = (hasApply = true) => (otherAppliedKeys() ? `<p class="helptext legacy-hint">Your config may still have entries named ${otherAppliedKeys()}; delete them.${hasApply ? ' Apply does this for you.' : ''}</p>` : '');
 // The guide's public address lives here once; the four labels are the ones its section 0 reads (docs/plan/done/web-chat-client.md).
-export const GUIDE_URL = 'https://akimcp.top/guide/mcp-http/v1.md';
+const GUIDE_URL = 'https://akimcp.top/guide/mcp-http/v1.md';
 export const tempTokenKickoff = ({ mcpUrl, token, expires }) => [
   'I own this AkiMCP server. Connect to MCP_URL using TOKEN by following the protocol spec at GUIDE, then wait for my task. When I say the work is done, revoke the token as section 4 of the spec describes: send DELETE to MCP_URL with the same Bearer.',
   `GUIDE: ${GUIDE_URL}`,
@@ -168,7 +170,7 @@ export const tempTokenKickoff = ({ mcpUrl, token, expires }) => [
   `EXPIRES: ${new Date(expires).toISOString()}`,
 ].join('\n');
 // The Postman and Cursor config files take the same HTTP+Bearer entry.
-export const httpBearerJson = (url, token) => JSON.stringify({ mcpServers: { [IDENTITY.key]: httpBearerEntry(url, token) } });
+const httpBearerJson = (url, token) => JSON.stringify({ mcpServers: { [IDENTITY.key]: httpBearerEntry(url, token) } });
 export const CODEX_TABLE = `[mcp_servers.${IDENTITY.key}]`;
 // Codex CLI (~/.codex/config.toml): `http_headers` carries a static bearer so the snippet is copy-paste-ready with no env var to export.
 export const codexBlock = (url, token) => `${CODEX_TABLE}\nurl = "${url}"\nhttp_headers = { "Authorization" = "Bearer ${token}" }`;
@@ -178,11 +180,10 @@ export function renderPanel({ origin, ingress = 'funnel', client, passphrase, to
   const localUrl = localMcpUrl();
   const localBearerJson = httpBearerJson(localUrl, accessToken);
   // stdio, because our /mcp is Bearer-gated and agy's SSE transport has no headers; CLI and IDE read the same file, so one entry serves both — docs/ref/fact-agy-mcp-config.md § CLI-1, CLI-2, IDE-1.
-  const stdioPath = path.join(repoRoot, 'scripts', 'stdio.js');
-  const agyJson = JSON.stringify({ mcpServers: { [IDENTITY.key]: { command: 'node', args: [stdioPath] } } });
+  const agyJson = JSON.stringify({ mcpServers: { [IDENTITY.key]: stdioEntry(path.join(repoRoot, 'scripts', 'stdio.js')) } });
   const claudeCodeCmd = claudeCodeLines(localUrl, accessToken);
   // The Claude app's config file takes only stdio entries (docs/plan/done/connector-setup-ux.md F11), so it spawns the same entry as AGY.
-  const claudeAppJson = JSON.stringify({ mcpServers: { [IDENTITY.key]: { command: 'node', args: [stdioPath] } } });
+  const claudeAppJson = agyJson;
   const codexToml = codexBlock(localUrl, accessToken);
   const ecoHalf = Math.ceil(ECOSYSTEM.length / 2);
   const funnelMode = ingress === 'funnel';
@@ -268,7 +269,7 @@ ${ingress === 'cloudflared' ? '' : `<p class="helptext"><strong>Cloudflare Tunne
 </ol>
 <div class="acts"><button data-act="tailscale">Recheck</button><span class="msg" id="msgTs"></span></div>
 <p class="helptext">Connector keeps dropping with <em>"hostname doesn't resolve / isn't reachable"</em>? The Funnel edge desynced, a Tailscale-side issue, not this server. Re-sync in a terminal (needs ${copyEl('sudo')}, so it can't be a button here), then reconnect. Why: <span class="mono">docs/research/claude-ai-oauth-connector.md</span> round 9.</p>
-${field('Re-sync command', 'tailscale funnel --https=443 off && tailscale serve reset && tailscale funnel --bg 9999')}
+${field('Re-sync command', `tailscale funnel --https=443 off && tailscale serve reset && tailscale funnel --bg ${gatePort()}`)}
 <p class="helptext">Funnel works with no domain, but a Cloudflare tunnel is steadier and faster: when you have a domain (or someone gave you a tunnel file), switch in the "Owned public origin" tab.</p>
 </div>
 

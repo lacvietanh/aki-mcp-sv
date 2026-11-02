@@ -277,7 +277,7 @@ export function register(server) {
       title: 'Postman: evaluate JS in the app',
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description:
-        "Evaluate a JavaScript expression inside the running Postman desktop renderer over CDP and return the serialized result. Auto-discovers Postman's remote-debugging endpoint (launch Postman from the Aki panel first) and its main renderer target. Use it to inspect or drive Postman's own UI.",
+        "Evaluate a JavaScript expression inside the running Postman desktop renderer over CDP and return the serialized result. Auto-discovers Postman's remote-debugging endpoint (launch Postman from the Aki panel first) and its main renderer target.",
       inputSchema: { expression: z.string().describe('JS evaluated in the Postman renderer; the last expression is returned') },
     },
     async ({ expression }) => {
@@ -292,7 +292,7 @@ export function register(server) {
       title: 'Postman: rename current chat',
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
       description:
-        "Rename the currently open Agent Mode conversation by driving Postman's own inline edit (double-click → type → Enter) so the change persists in app state.",
+        "Rename the currently open Agent Mode conversation and persist the change.",
       inputSchema: { name: z.string().min(1).describe('the new conversation title') },
     },
     async ({ name }) => {

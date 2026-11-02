@@ -83,7 +83,7 @@ export async function resolveRealUnderRoot(target) {
 async function refuseTrustedZone(real) {
   const zones = await Promise.all(loadAllowlistDirs().map((dir) => realpath(dir).catch(() => dir)));
   const zone = zones.find((dir) => containedIn(real, dir));
-  if (zone) throw new Error(`read-only for file tools: ${zone} is a trusted script directory`);
+  if (zone) throw new Error(`read-only for file tools: ${zone} is a trusted script directory; to write here, remove it in the control panel, section 6 → Trusted script directories`);
 }
 
 // Closed to every tool that takes a path, so a token never lands in a chat by accident. setting.json stays open on purpose (owner decision).

@@ -12,7 +12,7 @@ import path from 'node:path';
 // userdata.js reads AKI_MCP_DATA_DIR at import, so the env must be set before oauth.js loads; the real ~/.aki/mcpsv is never touched.
 const dir = mkdtempSync(path.join(os.tmpdir(), 'aki-notion-test-'));
 process.env.AKI_MCP_DATA_DIR = dir;
-const { handleRegister, handleAuthorize, handleToken, handleRevoke, metadataHandlers, getOrIssueAccessToken, verifyBearer } = await import('../scripts/oauth.js');
+const { handleRegister, handleAuthorize, handleToken, handleRevoke, metadataHandlers, getOrIssueAccessToken, bearerStatus } = await import('../scripts/oauth.js');
 
 const server = http.createServer((req, res) => {
   const route = req.url.split('?')[0];
@@ -93,7 +93,7 @@ try {
   assert.equal((await revoke({ client_id: client.client_id, client_secret: 'x' }, grant.access_token)).status, 401);
   assert.equal((await revoke(client, grant.access_token)).status, 200);
   assert.ok(!tokens().refresh[grant.refresh_token], 'the caller is signed out');
-  assert.equal(verifyBearer(`Bearer ${grant.access_token}`), true, 'the shared access token keeps serving every other client');
+  assert.equal(bearerStatus(`Bearer ${grant.access_token}`), 'valid', 'the shared access token keeps serving every other client');
   assert.equal((await revoke(client, 'unknown')).status, 200);
 
   console.log('PASS: Notion connector — exact callback hosts, non-object /register, own-property clients, Basic auth, scope, revoke on the shared token');

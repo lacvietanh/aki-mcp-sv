@@ -22,11 +22,11 @@ writeFileSync(path.join(dir, 'tokens.json'), JSON.stringify({
   refresh: { r1: { clientId: client.clientId }, r2: { clientId: client.clientId } },
 }));
 
-const { getOrIssueAccessToken, rotateAccessToken, verifyBearer, handleToken } = await import('../scripts/oauth.js');
+const { getOrIssueAccessToken, rotateAccessToken, bearerStatus, handleToken } = await import('../scripts/oauth.js');
 const { ROUTES } = await import('../scripts/panel.js');
 
 const saved = () => JSON.parse(readFileSync(path.join(dir, 'tokens.json'), 'utf8'));
-const bearer = (t) => verifyBearer('Bearer ' + t);
+const bearer = (t) => bearerStatus('Bearer ' + t) === 'valid';
 
 const server = http.createServer((req, res) => handleToken(req, res));
 server.listen(0, '127.0.0.1');

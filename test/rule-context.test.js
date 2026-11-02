@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { assembleRuleContext, RuleContextError } from '../scripts/rule-context.js';
 import { register, MANDATORY_BLOCK, SHARED_WORK, AIOBOX_STEP, RULE_CONTEXT_DESCRIPTION, RULE_CONTEXT_TITLE } from '../scripts/rule-context-mcp.js';
 import { AIOBOX_PITCH, AIOBOX_PANEL, GUIDE_URL } from '../scripts/aiobox-guide.js';
@@ -73,6 +74,13 @@ try {
   await assert.rejects(() => assembleRuleContext({ workingPath: home }, deps), (error) => error instanceof RuleContextError && error.code === 'OUTSIDE_ALLOWED_ROOTS');
   await assert.rejects(() => assembleRuleContext({ workingPath: path.join(home, 'new', 'deeper') }, deps), (error) => error instanceof RuleContextError && error.code === 'OUTSIDE_ALLOWED_ROOTS');
 
+  const data = path.join(temp, 'custom-identity');
+  await fs.mkdir(data);
+  await fs.writeFile(path.join(data, 'setting.json'), JSON.stringify({ identity: { name: 'AkiMCP', key: 'akimcp', prefix: 'test__' } }));
+  const custom = spawnSync(process.execPath, ['--input-type=module', '-e', 'const { AIOBOX_STEP } = await import(process.argv[1]); process.stdout.write(AIOBOX_STEP)', new URL('../scripts/rule-context-mcp.js', import.meta.url).href], { encoding: 'utf8', env: { ...process.env, AKI_MCP_DATA_DIR: data } });
+  assert.equal(custom.status, 0, custom.stderr);
+  assert.equal(custom.stdout, 'Inside an AIObox window: test__aiobox op=whoami first; act via test__aiobox_write; never test__chrome_launch an AIObox profile.');
+
   console.log('PASS: rule context import expansion, routing source, provenance, cache invalidation, precedence, and safe degradation');
 } finally {
   await fs.rm(temp, { recursive: true, force: true });
@@ -110,17 +118,17 @@ assert.equal(SHARED_WORK.split('`parent: <old ss>`').length - 1, 1, 'the handoff
 assert.equal(SHARED_WORK.includes('git worktree add'), false, 'no instruction to create a worktree');
 assert.doesNotMatch(SHARED_WORK, /aiobox|desktop\/CHANGELOG/i, 'the shared-work text goes to every user, AIObox or not');
 assert.equal(/push|release|deploy/.test(SHARED_WORK), false, 'commit and push rules stay in AkiDevRule');
-assert.equal(AIOBOX_STEP, 'A page title starting with a handle like P2·W1 · means you are inside an AIObox window: call aki__aiobox op=state first, act via aki__aiobox_write, never aki__chrome_launch an AIObox profile.');
+assert.equal(AIOBOX_STEP, 'Inside an AIObox window: aki__aiobox op=whoami first; act via aki__aiobox_write; never aki__chrome_launch an AIObox profile.');
 assert.deepEqual(output.content[0].text.split('\n').filter((line) => /aiobox/i.test(line)), [], 'with AIObox installed but not served the output carries no pitch and no other AIObox sentence');
 assert.equal(/^\[RULES\] (?!agent \(core\))/m.test(output.content[0].text), false, 'no line of the output is a [RULES] line a model could copy as its receipt');
 for (const must of ['BLOCKING', 'no rule Read, no action', '`[RULES] agent (core) + <topics> (router)`', 'code → coding + pattern', '.md → docs', '→ think', 'agent.B2']) assert.ok(MANDATORY_BLOCK.includes(must), must);
 assert.ok(MANDATORY_BLOCK.length <= 400, `the block stays short (${MANDATORY_BLOCK.length} chars)`);
-assert.match(RULE_CONTEXT_DESCRIPTION, /a receipt without \(router\)[^.]*is a violation/);
+assert.match(RULE_CONTEXT_DESCRIPTION, /a \[RULES\] line without \(router\)[^.]*is a violation/);
 assert.equal(output.isError, undefined);
 assert.equal('context' in output.structuredContent, false, 'corpus must ship only in content, never duplicated into structuredContent');
 assert.equal(output.structuredContent.sources.length, 1, 'provenance is preserved in structuredContent');
 
-// While aki__aiobox is served the AIObox step rides in the result header too: a web chat never sees the server instructions (v4-first-improve B1).
+// While aki__aiobox is served the AIObox step appears in the result header, not server instructions.
 let servedHandler;
 register({ registerTool(_n, _d, h) { servedHandler = h; } }, {
   assemble: async () => ({ status: 'ok', parity: 'practical-effective', receipt: `sha256:${'a'.repeat(64)}`, rulesVersion: '1', workingRoot: null, sources: [], warnings: [], context: 'rules' }),

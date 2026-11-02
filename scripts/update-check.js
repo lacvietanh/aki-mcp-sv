@@ -8,15 +8,15 @@ import ruleCore from './rule-version-core.cjs';
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 // Lives under this app's own USER_DIR — akidevrule's own data stays under ~/.aki directly (paths owned by rule-version-core.cjs).
-export const STATUS_PATH = path.join(USER_DIR, 'aki-mcp-status.json');
+const STATUS_PATH = path.join(USER_DIR, 'aki-mcp-status.json');
 const REPO_MCP = 'lacvietanh/aki-mcp-sv';
 const BRANCH_MCP = 'main';
 
 const MCP_PKG_URL = `https://raw.githubusercontent.com/${REPO_MCP}/${BRANCH_MCP}/package.json`;
 
-// The version logic lives in rule-version-core.cjs, shared with the Postman daemon; panel.js imports cmpSemver and getRuleStatus from here.
+// The version logic and the rule install paths live in rule-version-core.cjs, shared with the Postman daemon; panel.js imports them from here.
 const { fetchText, fetchLatestRuleVersion } = ruleCore;
-export const { cmpSemver, getRuleStatus } = ruleCore;
+export const { cmpSemver, getRuleStatus, RULE_DIR, RULE_SOURCE_FILE, RULE_CLONE_DIR, RULE_REPO_URL } = ruleCore;
 
 function readLocalMcp() {
   try { return JSON.parse(readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8')).version || null; }

@@ -7,6 +7,10 @@ const fs = require('fs');
 const https = require('https');
 
 const RULE_DIR = path.join(os.homedir(), '.aki', 'akidevrule');
+// Install rules (panel.js installRules, the Postman daemon's own copy): a clone the owner pointed at in .source-repo, else ours in RULE_CLONE_DIR.
+const RULE_SOURCE_FILE = path.join(RULE_DIR, '.source-repo');
+const RULE_CLONE_DIR = path.join(os.homedir(), '.aki', 'akidevrule-src');
+const RULE_REPO_URL = 'https://github.com/lacvietanh/akidevrule.git';
 const RULE_CHANGELOG = path.join(RULE_DIR, 'CHANGELOG.md');
 const RULE_INDEX = path.join(RULE_DIR, 'index.md');
 const RULE_CHANGELOG_URL = 'https://raw.githubusercontent.com/lacvietanh/akidevrule/master/CHANGELOG.md';
@@ -93,7 +97,7 @@ async function fetchLatestRuleVersion(timeoutMs = 3000, userAgent = 'aki-mcp-sv'
 }
 
 module.exports = {
-  RULE_DIR,
-  parseChangelogVersion, cmpSemver, classifyRule, getRuleStatus,
+  RULE_DIR, RULE_SOURCE_FILE, RULE_CLONE_DIR, RULE_REPO_URL,
+  cmpSemver, getRuleStatus,
   fetchText, fetchLatestRuleVersion,
 };

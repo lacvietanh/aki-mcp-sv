@@ -39,7 +39,7 @@ const RAISES = [
   { date: '2026-11-02', why: 'ss: SS_STEP points at the session-file doc by URL and names the successor exception (docs/feat/session-file.md § One writer, chained handoffs); 37304 before, 37428 after', chars: 124 },
 ];
 const BUDGET_CHARS = Math.round(BASELINE_CHARS * 1.1) + RAISES.reduce((sum, r) => sum + r.chars, 0);
-// Measured 2026-11-02 on the full surface (38 tools): 37428 chars, 494 under the budget.
+// Measured 2026-11-03 on the full surface (38 tools): 36751 chars, 1171 under the budget.
 
 const server = createToolsServer();
 const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();

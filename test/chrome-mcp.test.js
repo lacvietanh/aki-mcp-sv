@@ -83,15 +83,37 @@ async function runTests() {
   const reachesLaunch = /Cannot tell which profile folder/; // the fixture clone has no profile folder, so launchChrome stops before spawning
   const refused = await call('chrome_launch', { profile: 'Profile 1', url: 'https://example.com/' });
   assert.equal(refused.isError, true);
-  assert.match(refused.content[0].text, /\(aiobox_running; next: aki__aiobox_write op=open_url url=https:\/\/example\.com\/ profileId=chrome-profile-1, /);
+  assert.match(refused.content[0].text, /\(aiobox_running; next: aki__aiobox_write op=open_url url=https:\/\/example\.com\/ profileId=chrome-profile-1\)$/);
+  assert.doesNotMatch(refused.content[0].text, /from=<your chatId>|op=windows/);
+  const noUrl = await call('chrome_launch', { profile: 'Profile 1' });
+  assert.match(noUrl.content[0].text, /\(aiobox_running; next: aki__aiobox_write op=open_url url=<link> profileId=chrome-profile-1\)$/);
   assert.equal(JSON.parse((await call('chrome_stop', {})).content[0].text).detail, 'no active session', 'nothing opened or attached');
   // Not served (switched off) or crashed (windows.json left, appPid dead): launches as before B2.
   const { setEnabled } = await import('../scripts/provider-registry.js');
   setEnabled('aiobox', false);
-  assert.match((await call('chrome_launch', { profile: 'Profile 1' })).content[0].text, reachesLaunch, 'aiobox switched off');
+  // Launching says nothing about AIObox: the description and the errors are the same on every machine.
+  const launches = async (why) => {
+    const text = (await call('chrome_launch', { profile: 'Profile 1' })).content[0].text;
+    assert.match(text, reachesLaunch, why);
+    assert.doesNotMatch(text, /aiobox/i, why);
+  };
+  await launches('aiobox switched off');
   setEnabled('aiobox', true);
   fs.writeFileSync(map, JSON.stringify({ version: 1, appPid: cp.spawnSync(process.execPath, ['-e', '']).pid, profiles: [] }));
-  assert.match((await call('chrome_launch', { profile: 'Profile 1' })).content[0].text, reachesLaunch, 'dead appPid');
+  await launches('dead appPid');
+  // A map that is not AIObox's (not JSON, appPid not a number) is no running AIObox either.
+  for (const text of ['not json', JSON.stringify({ version: 1, appPid: String(process.pid), profiles: [] })]) {
+    fs.writeFileSync(map, text);
+    await launches(text);
+  }
+  // The refusal names the id AIObox knows: any id the shared list returns, the clone of the browser asked for, and a placeholder when no url is given.
+  fs.writeFileSync(map, JSON.stringify({ version: 1, appPid: process.pid, profiles: [] }));
+  for (const id of ['aio-1700000000000', 'brave-profile-1']) {
+    fs.mkdirSync(path.join(process.env.AKI_CDP_PROFILES_DIR, id), { recursive: true });
+    fs.writeFileSync(path.join(process.env.AKI_CDP_PROFILES_DIR, id, 'Local State'), '{}');
+  }
+  assert.match((await call('chrome_launch', { profile: 'aio-1700000000000', url: 'https://example.com/' })).content[0].text, / url=https:\/\/example\.com\/ profileId=aio-1700000000000\)$/);
+  assert.match((await call('chrome_launch', { profile: 'Profile 1', browser: 'brave' })).content[0].text, / profileId=brave-profile-1\)$/);
 
   await client.close();
   fs.rmSync(tmp, { recursive: true, force: true });

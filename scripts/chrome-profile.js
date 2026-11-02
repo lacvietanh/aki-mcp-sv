@@ -7,6 +7,7 @@ import http from 'node:http';
 import { spawn } from 'node:child_process';
 import { USER_DIR } from './userdata.js';
 import { served } from './mcp-name.js';
+import { pidAlive } from './pid-alive.js';
 
 const SESSION_FILE = path.join(USER_DIR, 'chrome-session.json');
 
@@ -147,7 +148,7 @@ const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(
 
 const browserKey = (b) => BROWSER_IDS.find((id) => String(b).toLowerCase().includes(id));
 
-/** Maps a profile folder ("Profile 14") or canonical id ("chrome-profile-14") to its shared clone directory. */
+/** Maps a profile folder ("Profile 14"), a canonical id ("chrome-profile-14") or any other id listSharedProfiles returns to its shared clone directory. */
 export function resolveSharedProfile(profile = 'Default', browser) {
   const asked = browser === undefined ? undefined : browserKey(browser);
   if (browser !== undefined && !asked) throw new Error(`Unsupported browser "${browser}": use chrome, brave or edge.`);
@@ -157,8 +158,9 @@ export function resolveSharedProfile(profile = 'Default', browser) {
   if (canonical && asked && asked !== prefix) {
     throw new Error(`Profile id "${raw}" belongs to ${prefix}, but browser "${browser}" was requested.`);
   }
+  const listed = !canonical && raw === slug(raw) && fs.existsSync(path.join(profilesRoot(), raw, 'Local State'));
   const key = canonical ? prefix : (asked || 'chrome');
-  const id = canonical ? raw : `${key}-${slug(raw)}`;
+  const id = canonical || listed ? raw : `${key}-${slug(raw)}`;
   const dir = path.join(profilesRoot(), id);
   if (!fs.existsSync(path.join(dir, 'Local State'))) {
     // States the fact and the next step that works on any machine; names no AIObox (REQ-15 H1).
@@ -213,12 +215,7 @@ export function readOwner(dir) {
   const [, host, pidStr] = m;
   const pid = Number(pidStr);
   if (host !== os.hostname()) return { state: 'unknown', pid, detail: `lock host ${host} is not this machine (${os.hostname()})` };
-  try {
-    process.kill(pid, 0);
-    return { state: 'alive', pid };
-  } catch (e) {
-    return e.code === 'EPERM' ? { state: 'alive', pid } : { state: 'dead', pid };
-  }
+  return { state: pidAlive(pid) ? 'alive' : 'dead', pid };
 }
 
 function readPortFile(dir) {

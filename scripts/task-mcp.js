@@ -10,6 +10,7 @@ import { USER_DIR } from './userdata.js';
 import { resolveUnderRoot, refuseCredentialArgs } from './roots.js';
 import { Shell } from './shell-mcp.js';
 import { ok, fail } from './mcp-tool.js';
+import { pidAlive } from './pid-alive.js';
 import { served } from './mcp-name.js';
 import { launchOf } from './find-on-path.js';
 
@@ -44,16 +45,6 @@ function saveTask(task) {
   const tasks = loadTasks();
   tasks[task.taskId] = task;
   saveTasks(tasks);
-}
-
-export function isProcessAlive(pid) {
-  if (!pid || typeof pid !== 'number' || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e) {
-    return e.code === 'EPERM';
-  }
 }
 
 function killProcessGroup(pid, signal = 'SIGTERM') {
@@ -122,7 +113,7 @@ export async function taskStart({ command, cwd, taskId: requestedId }) {
   }
 
   const tasks = loadTasks();
-  if (tasks[taskId] && isProcessAlive(tasks[taskId].pid) && tasks[taskId].status === 'running') {
+  if (tasks[taskId] && pidAlive(tasks[taskId].pid) && tasks[taskId].status === 'running') {
     throw new Error(`Task "${taskId}" is already running (PID ${tasks[taskId].pid})`);
   }
 
@@ -219,7 +210,7 @@ export async function taskManage({ action, taskId, maxBytes = 10240, lines = nul
   if (action === 'list') {
     let changed = false;
     const list = Object.values(tasks).map((t) => {
-      const alive = t.status === 'running' && isProcessAlive(t.pid);
+      const alive = t.status === 'running' && pidAlive(t.pid);
       if (!alive && t.status === 'running') {
         t.status = 'exited';
         changed = true;
@@ -249,7 +240,7 @@ export async function taskManage({ action, taskId, maxBytes = 10240, lines = nul
   }
 
   if (action === 'status') {
-    const alive = task.status === 'running' && isProcessAlive(task.pid);
+    const alive = task.status === 'running' && pidAlive(task.pid);
     if (!alive && task.status === 'running') {
       task.status = 'exited';
       saveTask(task);
@@ -271,7 +262,7 @@ export async function taskManage({ action, taskId, maxBytes = 10240, lines = nul
   }
 
   if (action === 'stop') {
-    const alive = task.status === 'running' && isProcessAlive(task.pid);
+    const alive = task.status === 'running' && pidAlive(task.pid);
     if (alive) {
       killProcessGroup(task.pid);
     }
@@ -286,7 +277,7 @@ export async function taskManage({ action, taskId, maxBytes = 10240, lines = nul
   }
 
   if (action === 'delete') {
-    const alive = task.status === 'running' && isProcessAlive(task.pid);
+    const alive = task.status === 'running' && pidAlive(task.pid);
     if (alive) {
       throw new Error(`Task "${taskId}" is running. Stop it before deleting.`);
     }
@@ -302,8 +293,6 @@ export async function taskManage({ action, taskId, maxBytes = 10240, lines = nul
       deleted: true,
     };
   }
-
-  throw new Error(`Unknown action: ${action}`);
 }
 
 export const provider = { id: 'task', title: 'Background tasks', register };
@@ -314,7 +303,7 @@ export function register(server) {
     {
       title: 'Start Background Task',
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
-      description: 'Start an allowlist-approved shell command in the background (detached process). Logs are streamed directly to disk with zero-RAM overhead. Returns taskId and pid for tracking with ' + served('task_manage') + '.',
+      description: 'Start an allowlist-approved shell command in the background (detached process). Logs are streamed directly to disk. Returns taskId and pid for tracking with ' + served('task_manage') + '.',
       inputSchema: {
         command: z.string().describe('The shell command to run in background (e.g. "npm test", "git status")'),
         cwd: z.string().optional().describe('Working directory under allowed roots'),
@@ -338,7 +327,7 @@ export function register(server) {
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
       description: 'Manage background tasks started with ' + served('task_start') + ': inspect status/liveness, tail logs without loading full files into memory, stop process trees cleanly across platforms, list tasks, or delete finished records.',
       inputSchema: {
-        action: z.enum(['status', 'tail_logs', 'stop', 'list', 'delete']).describe('Action: status, tail_logs, stop, list, delete'),
+        action: z.enum(['status', 'tail_logs', 'stop', 'list', 'delete']).describe('Task action'),
         taskId: z.string().optional().describe('Task ID (required for status, tail_logs, stop, delete)'),
         maxBytes: z.number().optional().describe('Max bytes to tail from log file (default: 10240)'),
         lines: z.number().optional().describe('Max lines from end of log to return'),

@@ -21,7 +21,7 @@ export function register(server) {
       title: 'DevTools: list targets',
       annotations: { readOnlyHint: true, openWorldHint: false },
       description:
-        'List the CDP page targets on a Chromium/Electron remote-debugging endpoint (Chrome, Postman, VS Code, …). Provide port or omit to use active Chrome session. ' + NO_SESSION_HINT,
+        'List the CDP page targets on a Chromium/Electron remote-debugging endpoint (Chrome, Postman, VS Code, …). ' + NO_SESSION_HINT,
       inputSchema: {
         port: z.number().int().optional().describe('remote-debugging port (default: active Chrome session)'),
         host: z.string().optional().describe('default 127.0.0.1'),
@@ -94,5 +94,3 @@ export function register(server) {
     },
   );
 }
-
-export default { register };

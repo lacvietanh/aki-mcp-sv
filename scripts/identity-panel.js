@@ -9,7 +9,7 @@ const withTools = (prefix) => (prefix ? `${prefix}*` : 'no prefix');
 const namesLine = ({ name, key, prefix }) => `${name} · ${key} · ${withTools(prefix)}`;
 const isDefault = ({ name, key, prefix }) => name === DEFAULT_NAME && key === DEFAULT_KEY && prefix === DEFAULT_PREFIX;
 
-export function readDraft(body) {
+function readDraft(body) {
   const text = (value, label) => {
     if (value == null) return undefined;
     if (typeof value !== 'string') throw new Error(`${label} must be text`);
@@ -28,7 +28,7 @@ function storedForm({ name, key, prefix }) {
 
 const canon = (stored) => JSON.stringify(stored, ['name', 'key', 'prefix']);
 
-export function savedDraft() {
+function savedDraft() {
   const raw = readSettings().identity;
   if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) return { name: DEFAULT_NAME };
   const text = (value) => (typeof value === 'string' ? value : undefined);
@@ -70,7 +70,7 @@ export function previewIdentity(draft) {
   };
 }
 
-export function statusText() {
+function statusText() {
   const serving = IDENTITY;
   const saved = savedIdentity().identity;
   const now = `Serving now: ${serving.name}`;
@@ -123,7 +123,7 @@ function noticesHtml(p) {
   return lines.join('\n');
 }
 
-export function fragments(p) {
+function fragments(p) {
   return { name: p.problem?.slot === 'name' ? errLine(p.problem.text) : '', rows: rowsHtml(p), notes: `${previewRowsHtml(p)}${noticesHtml(p)}` };
 }
 
@@ -156,7 +156,7 @@ export function resetIdentity() {
   return { ok: true, message: `Reset. ${serving}`, ...reply(savedDraft()) };
 }
 
-export function redRowText() {
+function redRowText() {
   if (!IDENTITY_PROBLEM) return '';
   const { field, value, reason } = IDENTITY_PROBLEM;
   return `${field} ${quoteValue(value)} in setting.json is not valid: ${reason}. AkiMCP is serving the default names until you fix it.`;

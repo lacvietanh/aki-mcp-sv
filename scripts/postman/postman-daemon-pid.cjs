@@ -36,4 +36,4 @@ function release() {
   try { fs.unlinkSync(PID_PATH); } catch { /* gone */ }
 }
 
-module.exports = { PID_PATH, live, read, claim, release };
+module.exports = { live, read, claim, release };

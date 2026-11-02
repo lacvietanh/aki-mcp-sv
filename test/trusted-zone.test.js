@@ -64,6 +64,23 @@ await assert.rejects(() => taskStart({ command: 'cat tokens.json', cwd: dataDir 
 writeFileSync(path.join(dataDir, 'notes.txt'), 'secret-token is mentioned here\n');
 const hits = await searchContent('secret-token', dataDir, undefined, 50);
 assert.ok(hits.includes('notes.txt') && !hits.includes('tokens.json'), 'search_content leaves the credential files out of its results');
+
+// A zone holding the data dir locks setting.json and every ss file out of the file tools: the refusal names the panel fix, and the panel refuses such a zone.
+const settingPath = path.join(dataDir, 'setting.json');
+const ssFile = path.join(dataDir, 'ss', 'proj', '2026.11.03-0000-x.md');
+mkdirSync(path.dirname(ssFile), { recursive: true });
+writeFileSync(settingPath, JSON.stringify({ shell: { allowlistDirs: [path.join(home, '.aki')] } }));
+await assert.rejects(() => resolveRealWritable(ssFile), /read-only for file tools: .*\.aki is a trusted script directory.*Trusted script directories/, 'a zone over the data dir refuses an ss file and names the panel fix');
+rmSync(settingPath);
+const { ROUTES } = await import('../scripts/panel.js');
+const saveZones = (dirs) => ROUTES['POST /api/trusted-dirs']({ dirs });
+const zonesBefore = loadAllowlistDirs();
+for (const over of [dataDir, path.join(home, '.aki'), home]) {
+  await assert.rejects(() => saveZones([zone, over]), /holds akimcp's data dir/, `the panel refuses ${over} as a trusted directory`);
+}
+assert.deepEqual(loadAllowlistDirs(), zonesBefore, 'a refused save leaves the zones as they were');
+await saveZones([zone, path.join(home, '.aki', 'akidevrule')]);
+assert.equal(await resolveRealWritable(ssFile), ssFile, 'narrower zones leave ss files writable');
 rmSync(tmp, { recursive: true, force: true });
 
 console.log('PASS: trusted script zones — run by default, unwritable by the file tools');

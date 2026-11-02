@@ -5,7 +5,7 @@ import { execFile } from 'node:child_process';
 import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, unlinkSync, realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { renderPanel, localMcpUrl, httpBearerEntry, claudeCodeLines, CODEX_TABLE, codexBlock, tempTokenKickoff } from './config-page.js';
+import { renderPanel, localMcpUrl, httpBearerEntry, stdioEntry, claudeCodeLines, CODEX_TABLE, codexBlock, tempTokenKickoff } from './config-page.js';
 import { IDENTITY, IDENTITY_PROBLEM, quoteValue, appliedKeys } from './mcp-name.js';
 import { previewReply, saveIdentity, resetIdentity } from './identity-panel.js';
 import { getOrIssueAccessToken, rotateAccessToken, mintTempToken, listTempTokens, revokeTempTokenById, extendTempTokenById, TEMP_EXTEND_MS, rotatePassphrase, loadOrCreatePassphrase, listClients, removeClient } from './oauth.js';
@@ -13,12 +13,12 @@ import { logSecurity, readSecurityLog } from './security-log.js';
 import { LOG_DEFAULTS, loadLogSettings, normalizeLogSettings } from './tool-call-log.js';
 import { listCallers } from './callers.js';
 import { loadAllowlist, loadAllowlistDirs, readSettings, writeSettings, DEFAULT_ALLOWLIST } from './allowlist.js';
-import { getRoots } from './roots.js';
+import { getRoots, containedIn } from './roots.js';
 import { funnelStatus } from './tailscale.js';
-import { SETTINGS_PATH, USER_DIR, INGRESS_CONFIG_PATH, CLOUDFLARED_CRED_PATH, readIngressConfig } from './userdata.js';
+import { SETTINGS_PATH, USER_DIR, INGRESS_CONFIG_PATH, CLOUDFLARED_CRED_PATH, readIngressConfig, gatePort } from './userdata.js';
 import { readBody, json, serveStatic, serveFontAwesome } from './http.js';
 import { failures, readLimits, validateLimits, LIMIT_DEFAULTS } from './rate-limit.js';
-import { getLocalVersions, cmpSemver, writeStatusFile, getRuleStatus } from './update-check.js';
+import { getLocalVersions, cmpSemver, writeStatusFile, getRuleStatus, RULE_DIR, RULE_SOURCE_FILE, RULE_CLONE_DIR, RULE_REPO_URL } from './update-check.js';
 import { getDaemonStatus, launchPostmanDaemon, killPostmanDaemon, requestNewWindow } from './postman/postman-mcp.js';
 import { listProviders, setEnabled, redetect } from './provider-registry.js';
 import { fileURLToPath } from 'node:url';
@@ -26,10 +26,6 @@ import { launchShim } from './find-on-path.js';
 
 const IS_WIN = process.platform === 'win32';
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const RULES_DIR = path.join(os.homedir(), '.aki', 'akidevrule');
-const SOURCE_REPO_FILE = path.join(RULES_DIR, '.source-repo');
-const RULES_CLONE_DIR = path.join(os.homedir(), '.aki', 'akidevrule-src');
-const RULES_REPO_URL = 'https://github.com/lacvietanh/akidevrule.git';
 
 const writeJsonAtomic = (file, data) => writeTextAtomic(file, `${JSON.stringify(data, null, 2)}\n`);
 
@@ -242,7 +238,7 @@ function applyAgy() {
   refuseForeign(CLIENT.agy, mcpConfig.mcpServers[IDENTITY.key]);
   const old = sortOldKeys(CLIENT.agy, (key) => mcpConfig.mcpServers[key]);
   for (const key of old.gone) delete mcpConfig.mcpServers[key];
-  mcpConfig.mcpServers[IDENTITY.key] = { command: 'node', args: [STDIO_JS] };
+  mcpConfig.mcpServers[IDENTITY.key] = stdioEntry(STDIO_JS);
   // A previous (wrong) version wrote the server under settings.json mcpServers; agy does not read it there.
   if (isOurs(settings.mcpServers?.[IDENTITY.key])) delete settings.mcpServers[IDENTITY.key];
   const retired = new Set(old.gone.map((key) => `mcp(${key}/*)`));
@@ -304,11 +300,17 @@ function setShellAllowlist(allowlist) {
   writeSettings(settings);
 }
 
+// A zone is read-only to the file tools (roots.js refuseTrustedZone), so one holding the data dir would lock setting.json and every ss file out of them.
 function validateTrustedDirs(dirs) {
   if (!Array.isArray(dirs) || !dirs.every((d) => typeof d === 'string' && path.isAbsolute(d))) {
     throw new Error('trusted directories must be absolute paths');
   }
-  return dirs.map((p) => path.normalize(p));
+  const normalized = dirs.map((p) => path.normalize(p));
+  const real = (p) => { try { return realpathSync(p); } catch { return path.resolve(p); } };
+  const dataDir = real(USER_DIR);
+  const over = normalized.find((d) => containedIn(dataDir, real(d)));
+  if (over) throw new Error(`${over} holds akimcp's data dir ${USER_DIR} (setting.json, ss files), which the file tools could then no longer write; pick a narrower directory`);
+  return normalized;
 }
 
 function setTrustedDirs(dirs) {
@@ -359,17 +361,17 @@ function run(command, args, cwd) {
 
 // Three states, one button: already cloned locally, cloned by us before, or never seen on this machine.
 async function installRules() {
-  const recorded = existsSync(SOURCE_REPO_FILE) ? readFileSync(SOURCE_REPO_FILE, 'utf8').trim() : null;
+  const recorded = existsSync(RULE_SOURCE_FILE) ? readFileSync(RULE_SOURCE_FILE, 'utf8').trim() : null;
   let repo = recorded && existsSync(path.join(recorded, 'install.sh')) ? recorded : null;
 
   if (!repo) {
-    if (existsSync(path.join(RULES_CLONE_DIR, '.git'))) {
-      await run('git', ['-C', RULES_CLONE_DIR, 'pull', '--ff-only']);
+    if (existsSync(path.join(RULE_CLONE_DIR, '.git'))) {
+      await run('git', ['-C', RULE_CLONE_DIR, 'pull', '--ff-only']);
     } else {
-      mkdirSync(path.dirname(RULES_CLONE_DIR), { recursive: true });
-      await run('git', ['clone', '--depth', '1', RULES_REPO_URL, RULES_CLONE_DIR]);
+      mkdirSync(path.dirname(RULE_CLONE_DIR), { recursive: true });
+      await run('git', ['clone', '--depth', '1', RULE_REPO_URL, RULE_CLONE_DIR]);
     }
-    repo = RULES_CLONE_DIR;
+    repo = RULE_CLONE_DIR;
   }
   // Windows uses install.ps1: a bare `bash.exe` resolves to the WSL launcher and fails with "execvpe(/bin/bash) failed" when no distro is installed.
   let cmd, args;
@@ -426,7 +428,7 @@ export const ROUTES = {
     trustedDirs: loadAllowlistDirs(),
     ingressConfig: readIngressConfig(),
   }),
-  'GET /api/tailscale': async () => funnelStatus(process.env.GATEKEEPER_PORT || '9999'),
+  'GET /api/tailscale': async () => funnelStatus(gatePort()),
   // Same function aki__postman_status calls (scripts/postman/postman-mcp.js) — one status shape, two readers.
   'GET /api/postman-status': async () => getDaemonStatus(),
   // Spawn-or-recognize lives in launchPostmanDaemon (scripts/postman/postman-mcp.js), so N clicks behave like one.
@@ -551,7 +553,7 @@ export function startPanel({ port, token, origin, ingress, client, passphrase, u
         return res.end('wrong token — open the URL printed in your terminal');
       }
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      return res.end(renderPanel({ origin, ingress, client, passphrase: loadOrCreatePassphrase(), token, accessToken: getOrIssueAccessToken(), repoRoot: REPO_ROOT, rulesDir: RULES_DIR, userDir: USER_DIR, updateInfo, savedIngress: readIngressConfig(), isDev }));
+      return res.end(renderPanel({ origin, ingress, client, passphrase: loadOrCreatePassphrase(), token, accessToken: getOrIssueAccessToken(), repoRoot: REPO_ROOT, rulesDir: RULE_DIR, userDir: USER_DIR, updateInfo, savedIngress: readIngressConfig(), isDev }));
     }
 
     if (req.method === 'GET' && (await serveStatic(res, urlPath) || await serveFontAwesome(res, urlPath))) return;

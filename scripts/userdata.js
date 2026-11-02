@@ -9,6 +9,9 @@ export const USER_DIR = process.env.AKI_MCP_DATA_DIR || path.join(os.homedir(), 
 process.env.AKI_MCP_DATA_DIR = USER_DIR;
 process.env.AKI_DATA_DIR = USER_DIR;
 
+// start.js sets GATEKEEPER_PORT; a process it did not start (stdio.js, a test) falls back to the default.
+export const gatePort = () => Number(process.env.GATEKEEPER_PORT || (IS_DEV ? 9997 : 9999));
+
 export const SETTINGS_PATH = path.join(USER_DIR, 'setting.json');
 export const CLIENT_PATH = path.join(USER_DIR, 'oauth-client.json');
 export const DCR_CLIENTS_PATH = path.join(USER_DIR, 'oauth-dcr-clients.json');

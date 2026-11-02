@@ -6,7 +6,6 @@
 const CDP = require('chrome-remote-interface');
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 const { execFile } = require('child_process');
 const { fetchAllUsage } = require('./postman-usage.cjs');
 const { PostmanSession } = require('./postman-session.cjs');
@@ -18,8 +17,8 @@ const {
   refreshLocalVersions,
   refreshFromNetwork,
   getLocalVersions,
-  RULES_DIR,
 } = require('./postman-rule-update-check.cjs');
+const { RULE_SOURCE_FILE, RULE_CLONE_DIR, RULE_REPO_URL } = require('../rule-version-core.cjs');
 
 const { AKI_DATA_DIR, DATA_JSON_PATH, OWNERSHIP_STATUS_PATH, NEW_WINDOW_FLAG_PATH } = require('./postman-data-paths.cjs');
 const PROMPTS_DIR = path.join(AKI_DATA_DIR, 'prompts');
@@ -30,10 +29,6 @@ const SUM_PROMPT_NAME = 'aki-prompt-sum-to-new-chat.md';
 const DEFAULT_PROMPT_PATH = path.join(ASSETS_PROMPTS_DIR, `${PROVIDER}.md`);
 const SHARED_PROMPT_USER_PATH = path.join(PROMPTS_DIR, SUM_PROMPT_NAME);
 const SHARED_PROMPT_DEFAULT_PATH = path.join(ASSETS_PROMPTS_DIR, SUM_PROMPT_NAME);
-
-const RULES_SOURCE_FILE = path.join(RULES_DIR, '.source-repo');
-const RULES_CLONE_DIR = path.join(os.homedir(), '.aki', 'akidevrule-src');
-const RULES_REPO_URL = 'https://github.com/lacvietanh/akidevrule.git';
 
 const clients = new Map();
 const attachedTargetIds = new Set();
@@ -256,18 +251,18 @@ function runCmd(command, args, cwd) {
 
 // Bắt chước aki-mcp-sv panel.js installRules: .source-repo hoặc clone/pull akidevrule, rồi bash install.sh (unattended — install.sh/install.ps1 giờ là thin launcher → node install.mjs).
 async function installAkiRule() {
-  const recorded = fs.existsSync(RULES_SOURCE_FILE) ? fs.readFileSync(RULES_SOURCE_FILE, 'utf8').trim() : null;
+  const recorded = fs.existsSync(RULE_SOURCE_FILE) ? fs.readFileSync(RULE_SOURCE_FILE, 'utf8').trim() : null;
   let repo = recorded && fs.existsSync(path.join(recorded, 'install.sh')) ? recorded : null;
   if (!repo) {
-    if (fs.existsSync(path.join(RULES_CLONE_DIR, '.git'))) {
-      const pull = await runCmd('git', ['-C', RULES_CLONE_DIR, 'pull', '--ff-only']);
+    if (fs.existsSync(path.join(RULE_CLONE_DIR, '.git'))) {
+      const pull = await runCmd('git', ['-C', RULE_CLONE_DIR, 'pull', '--ff-only']);
       if (!pull.ok) return pull;
     } else {
-      fs.mkdirSync(path.dirname(RULES_CLONE_DIR), { recursive: true });
-      const clone = await runCmd('git', ['clone', '--depth', '1', RULES_REPO_URL, RULES_CLONE_DIR]);
+      fs.mkdirSync(path.dirname(RULE_CLONE_DIR), { recursive: true });
+      const clone = await runCmd('git', ['clone', '--depth', '1', RULE_REPO_URL, RULE_CLONE_DIR]);
       if (!clone.ok) return clone;
     }
-    repo = RULES_CLONE_DIR;
+    repo = RULE_CLONE_DIR;
   }
   // akidevrule ships install.ps1 for Windows on purpose: a bare `bash.exe` there resolves to the WSL
   // launcher (System32\bash.exe) and dies with "execvpe(/bin/bash) failed" when no WSL distro is installed. Choose a
