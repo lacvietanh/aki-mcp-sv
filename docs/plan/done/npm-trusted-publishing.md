@@ -1,6 +1,6 @@
 # Plan — npm Trusted Publishing through GitHub Actions OIDC
 
-Status: active · named by the owner 2026-10-29 (deferred before that: 2026-10-24 "deffered/wishlist", 2026-10-26 out of 3.1.0). `release.yml` is rewritten (verify → publish → release). Open: the owner saves the trusted publisher on npmjs.com immediately before tagging the next release (a saved configuration expires if no publish succeeds within 2 days), then the first tag release proves it. Until that release succeeds, `npm publish` by hand with the owner's login stays the fallback. Checked 2026-11-02: 4.0.0 (2026-10-31) did not prove it, it went out by hand (`npm view @akinet/akimcp@4.0.0 dist.attestations _npmUser` returns no attestations and `_npmUser` = the owner's login); the workflow-content boxes below are ticked from `release.yml`, the two that need npm stay open.
+Status: done 2026-11-03 · named by the owner 2026-10-29 (deferred before that: 2026-10-24 "deffered/wishlist", 2026-10-26 out of 3.1.0). `release.yml` is rewritten (verify → publish → release). 4.1.0 is the first release published by trusted publishing: Release run 41534641287 attempt 3, `npm view @akinet/akimcp@4.1.0` returns `4.1.0`, provenance `https://slsa.dev/provenance/v1`, `_npmUser` = `GitHub Actions`. Attempts 1–2 failed with E404 because npm had expired the saved entry (no publish within 2 days of saving); it was deleted and re-created on 2026-11-03 and used the same minute. Attempt 3's job still read red: the publish landed, but the five 6-second `npm view` polls ended before the registry showed it; the poll now waits up to 5 minutes. Checked 2026-11-02: 4.0.0 (2026-10-31) did not prove it, it went out by hand (`npm view @akinet/akimcp@4.0.0 dist.attestations _npmUser` returns no attestations and `_npmUser` = the owner's login); the workflow-content boxes below were ticked from `release.yml` that day, the two that need npm on 2026-11-03.
 
 ## Goal
 
@@ -38,7 +38,7 @@ Update `.github/workflows/release.yml` only:
 4. `verify` asserts `package.json` version equals `${GITHUB_REF_NAME}`, that the tag's `CHANGELOG.md` has the matching heading, then installs the packed tarball into a temp directory and checks that `akimcp --stdio` answers `initialize` with the tag as `serverInfo.version`.
 5. `publish` uses GitHub-hosted runners, Node `22.14.0`, and installs npm `11.21.0` (trusted publishing needs `>=11.5.1`; Node 22.14.0 ships an older npm). Third-party actions are pinned by commit SHA.
 6. `npm publish` runs with no `NPM_TOKEN`, `--otp` or interactive input, and is skipped when the registry already has the version (rerun-safe). `publishConfig.access: public` stays; no `--provenance` flag, trusted publishing supplies it.
-7. After publishing, `npm view @akinet/akimcp@${GITHUB_REF_NAME} version` is polled up to five times and must equal the tag.
+7. After publishing, `npm view @akinet/akimcp@${GITHUB_REF_NAME} version --prefer-online` is polled every 10 s for up to 5 minutes and must equal the tag (npm answers "may take a few minutes to become available").
 8. `release` runs only after `publish` succeeds, with the existing tagged-CHANGELOG notes and compare-link logic, and stays idempotent.
 
 ## Release process
@@ -58,11 +58,11 @@ Update `.github/workflows/release.yml` only:
 
 ## Verification checklist
 
-- [ ] npm trusted publisher exactly matches `lacvietanh` / `aki-mcp-sv` / `release.yml` and has no environment binding unless intentionally configured.
+- [x] npm trusted publisher exactly matches `lacvietanh` / `aki-mcp-sv` / `release.yml` and has no environment binding unless intentionally configured. (2026-11-03, npmjs.com package access page: GitHub Actions, `lacvietanh/aki-mcp-sv`, `release.yml`, no environment, npm publish allowed.)
 - [x] Workflow grants only required `contents: write` and `id-token: write` permissions. (2026-11-02, `release.yml`: workflow `permissions: {}`; `verify` `contents: read`; `publish` `contents: read` + `id-token: write`; `release` `contents: write`.)
 - [x] Workflow contains no `NPM_TOKEN`, `NODE_AUTH_TOKEN`, OTP secret, `--otp`, or interactive publish path. (2026-11-02, `release.yml` read: none present.)
 - [x] CI runs install, tests, `npm pack --dry-run`, tag/version/CHANGELOG consistency checks, `npm publish`, and registry verification in order. (2026-11-02, `release.yml`: `npm ci` → `npm test` → tag/CHANGELOG check → a real `npm pack` installed and started, stronger than `--dry-run` → `npm publish` → `npm view` polled 5 times.)
-- [ ] A test release shows npm provenance and `npm view @akinet/akimcp@<version> version` returning `<version>`.
+- [x] A test release shows npm provenance and `npm view @akinet/akimcp@<version> version` returning `<version>`. (2026-11-03, 4.1.0: `version` = `4.1.0`, `dist.attestations.provenance.predicateType` = `https://slsa.dev/provenance/v1`, `_npmUser.name` = `GitHub Actions`.)
 - [x] The GitHub Release is created only after the registry verification succeeds. (2026-11-02, `release.yml`: `release` has `needs: publish`, and `publish` exits 1 when `npm view` never returns the tag.)
 
 ## Scope

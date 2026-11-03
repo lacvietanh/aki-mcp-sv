@@ -105,7 +105,7 @@ Tool names here use the default prefix `aki__`. A server with another Tool prefi
 - [ref/fact-client-tool-names.md](ref/fact-client-tool-names.md) — how Claude, Codex/OpenAI, Cursor and the MCP spec name and cap tool names (64 binding through Codex), each with source and read date; unsourced clients listed as ASSUMPTION
 - [research/client-tool-name-limits.md](research/client-tool-name-limits.md) — 2026-10-31: the sources behind that fact doc, and v4's V1/V2 live checks closed by reading the code path instead of spending quota
 - [plan/done/panel-connect-polish.md](plan/done/panel-connect-polish.md) — done 2026-10-31: panel section 1 gets an *Any MCP app* tab for the common `mcpServers` JSON, a logo on every connector tab, *Any HTTP chat* first in Web, `+30 min` and *Last used* on temp tokens, and an AIObox strip at the bottom; the temp-token row checked in a scratch panel
-- [plan/npm-trusted-publishing.md](plan/npm-trusted-publishing.md) — active since 2026-10-29: `release.yml` publishes `@akinet/akimcp` through npm Trusted Publishing (no token, no OTP); waits for the trusted publisher to be saved on npmjs.com and the first tag release to prove it (4.0.0 went out by hand, no provenance), until then `npm publish` by hand
+- [plan/done/npm-trusted-publishing.md](plan/done/npm-trusted-publishing.md) — done 2026-11-03: `release.yml` publishes `@akinet/akimcp` through npm Trusted Publishing (no token, no OTP); 4.1.0 is the first release it published, with provenance. A trusted publisher saved on npmjs.com expires unless a publish uses it within 2 days
 
 ## Wishlist — kept, not scheduled
 
