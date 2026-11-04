@@ -55,6 +55,47 @@ assert.ok(cut.startsWith('[output truncated:') && !cut.includes(token.slice(0, 1
 const { redactError } = await import('../scripts/roots.js');
 assert.equal(redactError(new Error(`Unexpected token in ${token}`)).message, 'Unexpected token in [redacted]');
 
+// A project's .env is no akimcp file: its secrets are known by shape, through each tool that reaches them. Fixtures are built at run time so this file reads unredacted.
+const project = path.join(tmp, 'project');
+fs.mkdirSync(project);
+const botToken = `${'12345678'}:${'Ab-_'.repeat(8)}xyz`;
+const envFile = path.join(project, '.env');
+fs.writeFileSync(envFile, [`AKIDEV_TG_BOT_TOKEN=${botToken}`, 'PORT=3000', `DB_${'PASSWORD'}="hunter 2"`, 'export GH_TOKEN="$(gh auth token)"', ''].join('\n'));
+const env = await text('aki__read_text_file', { path: envFile });
+assert.equal(env, ['AKIDEV_TG_BOT_TOKEN=[redacted]', 'PORT=3000', 'DB_PASSWORD=[redacted]', 'export GH_TOKEN="$(gh auth token)"', ''].join('\n'), 'a secret-named value is hidden; a plain value and a $reference stay');
+const found = await text('aki__search_content', { query: 'AKIDEV_TG', path: project });
+assert.ok(found.includes('.env:1:AKIDEV_TG_BOT_TOKEN=[redacted]') && !found.includes(botToken), `search_content hides it too: ${found}`);
+const grepped = await text('aki__run_cmd', { command: 'grep -r DB_ .', cwd: project, receipt });
+assert.ok(grepped.includes('DB_PASSWORD=[redacted]') && !grepped.includes('hunter'), `and so does run_cmd: ${grepped}`);
+
+const [pemBegin, pemEnd] = ['BEGIN', 'END'].map((edge) => `-----${edge} RSA PRIVATE KEY-----`);
+fs.writeFileSync(path.join(tmp, 'notes.md'), [
+  `bot ${botToken}`,
+  `key sk-${'a1B2'.repeat(6)}`,
+  `gh ghp_${'a1B2'.repeat(9)}`,
+  `Authorization: Bearer ${'z9Y8'.repeat(5)}`,
+  `postgres://app:${'pw'.repeat(4)}@db.local/app`,
+  `${pemBegin}\nMIIEabc\n${pemEnd}`,
+  'plain text stays: a Bearer header, task-1793772142200, PORT=3000',
+].join('\n'));
+assert.equal(await text('aki__read_text_file', { path: path.join(tmp, 'notes.md') }), [
+  'bot [redacted]',
+  'key [redacted]',
+  'gh [redacted]',
+  'Authorization: Bearer [redacted]',
+  'postgres://app:[redacted]@db.local/app',
+  '[redacted]',
+  'plain text stays: a Bearer header, task-1793772142200, PORT=3000',
+].join('\n'), 'a bare token shape is hidden in any file');
+
+// The AI saw only [redacted]: writing that back would replace the real value, so the write is refused and the file keeps its bytes.
+const write = async (name, args) => (await client.callTool({ name, arguments: { ...args, path: envFile, receipt } })).content.map((c) => c.text).join('\n');
+assert.ok((await write('aki__write_file', { content: env })).includes('holds values the tools show as [redacted]'), 'write_file of the redacted text is refused');
+assert.ok((await write('aki__edit_file', { edits: [{ oldText: 'PORT=3000', newText: 'PORT=3000\nAPI_KEY=[redacted]' }] })).includes('holds values the tools show as [redacted]'), 'so is an edit that adds the marker');
+await write('aki__edit_file', { edits: [{ oldText: 'PORT=3000', newText: 'PORT=3001' }] });
+const onDisk = fs.readFileSync(envFile, 'utf8');
+assert.ok(onDisk.includes(botToken) && onDisk.includes('PORT=3001\n'), 'a plain line stays editable and the token survives');
+
 await client.close();
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log('PASS: credential values are redacted from every tool result');

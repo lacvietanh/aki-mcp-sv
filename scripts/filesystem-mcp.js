@@ -14,7 +14,7 @@ import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { createTwoFilesPatch } from 'diff';
 import { z } from 'zod';
-import { getRoots, resolveRealUnderRoot, resolveRealWritable, resolveRealWritableDir } from './roots.js';
+import { getRoots, resolveRealUnderRoot, resolveRealWritable, resolveRealWritableDir, refuseRedactedWrite } from './roots.js';
 import { ok, fail } from './mcp-tool.js';
 import { acceptSessionPath, shapeNote } from './session-file.js';
 
@@ -139,6 +139,7 @@ async function applyFileEdits(filePath, edits, dryRun) {
     }
     if (!matched) throw new Error(`could not find exact match for edit:\n${edit.oldText}`);
   }
+  refuseRedactedWrite(original, content);
 
   const diff = createUnifiedDiff(original, content, filePath);
   let fence = 3;
@@ -191,6 +192,7 @@ export function register(server) {
     async ({ path: p, content }) => {
       try {
         const real = await resolveRealWritable(p);
+        refuseRedactedWrite(await fs.readFile(real, 'utf-8').catch(() => null), content);
         await writeFileAtomic(real, content);
         return ok(withSessionLine(real, `wrote ${real}`, content));
       } catch (e) {

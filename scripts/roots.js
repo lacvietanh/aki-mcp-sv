@@ -139,14 +139,32 @@ function credentialSecrets() {
   } catch {}
   return [...found];
 }
-const redactWith = (secrets, text) => secrets.reduce((t, secret) => t.split(secret).join('[redacted]'), text);
+// A secret akimcp does not own (a project's .env, a pasted token) has no file to read it from, so it is known by its shape (docs/feat/security.md).
+const SECRET_WORD = 'TOKEN|SECRET|KEY|APIKEY|PASSWORD|PASSWD|PASS|PWD|PASSPHRASE|CREDENTIAL|AUTH|SID|COOKIE|PRIVATE|DSN';
+const SECRET_SHAPES = [
+  // NAME=value as .env and shell write it; a $reference stays visible, so a script that reads the secret stays editable.
+  [new RegExp(`\\b((?:[A-Z0-9]+_)*(?:${SECRET_WORD})S?(?:_[A-Z0-9]+)*=)(?!["']?\\$)("[^"\\n]+"|'[^'\\n]+'|[^\\s"']+)`, 'g'), '$1[redacted]'],
+  [/(?<![\w-])\d{8,10}:[A-Za-z0-9_-]{35}(?![\w-])/g, '[redacted]'], // Telegram bot
+  [/(?<![\w-])(?:sk-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,}|xox[abposr]-[A-Za-z0-9-]{10,}|PMAK-[A-Za-z0-9-]{20,}|AIza[A-Za-z0-9_-]{35})/g, '[redacted]'], // OpenAI/Anthropic, GitHub, Slack, Postman, Google
+  [/(?<![A-Za-z0-9])AKIA[0-9A-Z]{16}(?![A-Za-z0-9])/g, '[redacted]'], // AWS access key id
+  [/\b(Bearer\s+)(?!\$)[A-Za-z0-9._~+/=-]{16,}/gi, '$1[redacted]'],
+  [/(\b[a-z][a-z0-9+.-]*:\/\/[^\s:/@]+:)(?!\$)[^\s@/]+(?=@)/gi, '$1[redacted]'], // scheme://user:password@host
+  [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, '[redacted]'],
+];
+const redactWith = (secrets, text) => SECRET_SHAPES.reduce((t, [shape, to]) => t.replace(shape, to), secrets.reduce((t, secret) => t.split(secret).join('[redacted]'), text));
 // Also called before an output is cut (output-shape.js), so a cut cannot split a secret into halves the result pass no longer recognizes.
 export const redactText = (text) => redactWith(credentialSecrets(), text);
 export function redactResult(result) {
   if (!Array.isArray(result?.content)) return result;
   const secrets = credentialSecrets();
-  if (!secrets.length) return result;
   return { ...result, content: result.content.map((c) => (c.type === 'text' && typeof c.text === 'string' ? { ...c, text: redactWith(secrets, c.text) } : c)) };
+}
+// The AI sees [redacted], not the value, so writing that marker into a file that holds a hidden value would destroy the value.
+export function refuseRedactedWrite(original, next) {
+  const markers = (text) => text.split('[redacted]').length - 1;
+  if (original !== null && markers(next) > markers(original) && redactText(original) !== original) {
+    throw new Error('this file holds values the tools show as [redacted]; writing [redacted] back would replace the real value. Edit only the other lines, or change that value in an editor');
+  }
 }
 // A handler that throws skips redactResult: the SDK builds the error result from the message, so the message is redacted and the same error rethrown.
 export function redactError(error) {
