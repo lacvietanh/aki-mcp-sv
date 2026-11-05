@@ -1,13 +1,13 @@
 # Session file (ss)
 
-> updated 2026-11-03 · v4.1.0
+> updated 2026-11-06 · v4.1.0
 
 One Markdown file per chat that holds where its work stands, so a successor, another client or the same chat after a compaction resumes without the owner re-explaining. AkiMCP names the file and reports on it; only the chat writes it. Decided in `plan/done/ss-session-file.md` (v1 and v2).
 
 ## Path and name
 
 - `<data dir>/ss/<project>/<YYYY.MM.DD-HHMM>-<label>.md`. `<data dir>` is `AKI_MCP_DATA_DIR`, else `~/.aki/mcpsv` (`mcpsv-dev` in dev), joined per OS (`scripts/userdata.js`). Time is the AkiMCP machine's local clock.
-- `<project>`: basename of the nearest folder holding `.git` (folder or file, so worktrees and submodules count), walking up from `workingPath` and stopping at the allowed root, so the folder survives a repo move. With no `.git` on that walk, the working folder's real path with every character outside `[A-Za-z0-9._-]` turned into `-`, the key Claude Code uses (`/Volumes/DEV/labs` → `-Volumes-DEV-labs`, `C:\Users\x` → `C--Users-x`). No `workingPath` gives `_`. The frontmatter `repo:` is the truth for the project, the folder is only where the file was minted.
+- `<project>`: basename of the nearest project folder at or above `workingPath`, walking up and stopping at the allowed root, so the folder survives a repo move. A project folder is a git working tree or a folder holding Aki Dev Sync's `.akidevsync/project.json`. A linked worktree (`.git` file whose common dir is a `.git` folder) counts as its main working tree, so every worktree of `aiobox` mints under `aiobox`; a submodule keeps its own name. With no project folder on that walk, the working folder's real path with every character outside `[A-Za-z0-9._-]` turned into `-`, the key Claude Code uses (`/Volumes/DEV/labs` → `-Volumes-DEV-labs`, `C:\Users\x` → `C--Users-x`). No `workingPath` gives `_`. The basename, not Aki Dev Sync's `name`, so the folder matches the ss already there and the council project folder. The frontmatter `repo:` is the truth for the project, the folder is only where the file was minted.
 - `<label>`: the optional `label` input folded to ASCII, lowercased, spaces and underscores to `-`, other symbols dropped, at most 24 characters cut at the last `-` inside them (`council-secretary-tachnhac` → `council-secretary`), a label with no `-` cut at 24; empty gives 2 random base36 characters. A taken name gets 2 more.
 - Existing names are never renamed: their paths are cited.
 
@@ -15,12 +15,13 @@ One Markdown file per chat that holds where its work stands, so a successor, ano
 
 Tool names here use the default prefix `aki__`. A server with another Tool prefix serves the same tools under that prefix; panel section 1 shows yours.
 
-`aki__akidevrule_context` hands out the path and creates nothing (`scripts/session-file.js`). No `ss` input mints one; an `ss` input that is an ss path or a council seat file is kept, whether or not the file exists, so a re-call after a compaction or a rule change never starts a second file. The line follows the receipt line, outside the receipt hash, and the same values sit in `structuredContent.ss`:
+`aki__akidevrule_context` hands out the path and creates nothing (`scripts/session-file.js`). No `ss` input mints one; an `ss` input that is an ss path or a council seat file is kept, whether or not the file exists, so a re-call after a compaction or a rule change never starts a second file. One exception: a kept ss under the ss folder that is not created yet and sits in another folder than the project of the call's `workingPath` (not `_`) is re-minted with the same minute and label in that project's folder, so a first call without a path does not leave the chat under `_`. A created file never moves. The line follows the receipt line, outside the receipt hash, and the same values sit in `structuredContent.ss`:
 
 | State | Line |
 |---|---|
 | minted | `ss: <path> · new · folder ready` or `· folder missing` (create the folder first) |
 | kept | `ss: <path> · kept`, plus `· not created yet` when the file does not exist |
+| moved | `ss: <new path> · moved from <old project>, not created yet · folder ready` or `· folder missing` |
 | working path inside a council room, no `ss` input | `ss: none minted · <room> is a council room; its seat file is this chat's ss` |
 | input not an ss path | `ss: <path> · new (the ss given was ignored: not an ss path)` |
 | data dir outside the allowed folders | `ss: unavailable · <data dir> is outside the allowed folders; add it under Folders in the panel` |
@@ -99,7 +100,7 @@ All of these are facts about a file, never orders.
 
 - **On a write**: a `write_file` or `edit_file` of an ss ends with `ss file written: <path> · shape ok`, or `· shape: missing <keys and headings>` naming each missing frontmatter key and heading. The write always succeeds (`scripts/filesystem-mcp.js`).
 - **On an acting call**: acting tools take an optional `ss` beside `receipt`. When the call did not write that file itself, the result ends with `ss: <path> · not created yet` (file missing) or `ss: <path> · last written N min ago` (15 minutes or more behind); an invalid `ss` gets `ss: not an ss path, ignored` (`scripts/rule-gate.js`). A seat file counts as an ss here.
-- **In the call log** (`tool-calls.jsonl`, `scripts/tool-call-log.js`): gated calls carry `ss` (a valid ss or seat file was passed) and `ssAge` (minutes since its last write, `-1` when missing, `null` on any other read error); context calls carry `ssState` (`new`, `kept`, `council`, `ignored`, `unavailable`); ss writes carry `ssShape` (`ok` or the count missing). No path is logged.
+- **In the call log** (`tool-calls.jsonl`, `scripts/tool-call-log.js`): gated calls carry `ss` (a valid ss or seat file was passed) and `ssAge` (minutes since its last write, `-1` when missing, `null` on any other read error); context calls carry `ssState` (`new`, `kept`, `moved`, `council`, `ignored`, `unavailable`); ss writes carry `ssShape` (`ok` or the count missing). No path is logged.
 
 ## Finding open sessions
 

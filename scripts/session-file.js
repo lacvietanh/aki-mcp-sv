@@ -17,12 +17,13 @@ const SEAT_NAME = /^[a-z0-9-]+\.md$/;
 const LABEL_MAX = 24;
 const SS_NAME = new RegExp(`^\\d{4}\\.\\d{2}\\.\\d{2}-\\d{4}-[a-z0-9-]{1,${LABEL_MAX + 3}}\\.md$`);
 const PROJECT_NAME = /^[A-Za-z0-9._-]+$/;
+const AKI_DEV_SYNC_PROJECT = path.join('.akidevsync', 'project.json');
 
 const random2 = () => randomInt(36 * 36).toString(36).padStart(2, '0');
 const two = (n) => String(n).padStart(2, '0');
 const sanitizeProject = (name) => (/^\.*$/.test(name) ? '_' : name.replace(/[^A-Za-z0-9._-]/g, '-'));
 
-// D3, v2 B3: the nearest `.git` folder's name, else the working folder as Claude Code keys it, else `_` (docs/arch/rule-context-delivery.md).
+// ss-project-folder D1, D2: the nearest git working tree or Aki Dev Sync project at or under the root, else the working folder as Claude Code keys it, `_` only without a path.
 export function projectKey(workingPath, workingRoot) {
   if (!workingPath) return '_';
   const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
@@ -31,10 +32,25 @@ export function projectKey(workingPath, workingRoot) {
   for (let dir = here; stop; dir = path.dirname(dir)) {
     const rel = path.relative(stop, dir);
     if (rel.startsWith('..') || path.isAbsolute(rel)) break;
-    if (fs.existsSync(path.join(dir, '.git'))) return sanitizeProject(path.basename(dir));
+    const folder = gitWorkingTree(dir) ?? (fs.existsSync(path.join(dir, AKI_DEV_SYNC_PROJECT)) ? dir : null);
+    if (folder) return sanitizeProject(path.basename(folder));
     if (rel === '') break;
   }
   return sanitizeProject(fs.statSync(here, { throwIfNoEntry: false })?.isFile() ? path.dirname(here) : here);
+}
+
+// A linked worktree's `.git` file names <repo>/.git/worktrees/<n>, whose `commondir` leads back to <repo>/.git; a submodule's has none, so it names itself.
+function gitWorkingTree(dir) {
+  const dotGit = path.join(dir, '.git');
+  if (!fs.existsSync(dotGit)) return null;
+  if (fs.statSync(dotGit).isDirectory()) return dir;
+  try {
+    const gitDir = path.resolve(dir, /^gitdir: (.+)$/m.exec(fs.readFileSync(dotGit, 'utf8'))[1].trim());
+    const common = path.resolve(gitDir, fs.readFileSync(path.join(gitDir, 'commondir'), 'utf8').trim());
+    return path.basename(common) === '.git' ? path.dirname(common) : dir;
+  } catch {
+    return dir;
+  }
 }
 
 // D4, v2 D7: folded to ASCII and lowercased; spaces and underscores become `-`, other symbols drop (`P37·W8` → `p37w8`), at most LABEL_MAX characters, cut at the last whole word.
@@ -137,17 +153,30 @@ export function staleLine(ss, now = Date.now()) {
   return age * 60_000 >= SS_STALE_MS ? `ss: ${file} · last written ${age} min ago` : null;
 }
 
-// D5: the ss a context call hands back with its header line: the one passed in when it is an ss path or a seat file (kept), none inside a council room (v2 P9), else a new one. `unavailable` when the file tools cannot write the data dir (F8).
+// D5: the ss a context call returns: the ss or seat file passed in (kept, or moved: ss-project-folder D3), none in a council room (v2 P9), else a new one; `unavailable` per F8.
 export function sessionFor({ ss, label, workingPath, workingRoot, now = new Date() }) {
   if (!getRoots().some((root) => containedIn(SS_DIR, root))) {
     return { path: null, state: 'unavailable', line: `ss: unavailable · ${path.resolve(USER_DIR)} is outside the allowed folders; add it under Folders in the panel` };
   }
   const given = typeof ss === 'string' && ss !== '';
   const kept = given ? acceptChatFile(ss) : null;
-  if (kept) return { path: kept, state: 'kept', line: `ss: ${kept} · kept${fs.existsSync(kept) ? '' : ' · not created yet'}` };
+  const project = projectKey(workingPath, workingRoot);
+  if (kept) return keep(kept, project);
   const room = councilRoomOf(workingPath);
   if (room) return { path: null, state: 'council', line: `ss: none minted · ${room} is a council room; its seat file is this chat's ss` };
-  const file = mintSessionPath({ project: projectKey(workingPath, workingRoot), label, now });
+  const file = mintSessionPath({ project, label, now });
   if (given) return { path: file, state: 'ignored', line: `ss: ${file} · new (the ss given was ignored: not an ss path)` };
-  return { path: file, state: 'new', line: `ss: ${file} · new · folder ${fs.existsSync(path.dirname(file)) ? 'ready' : 'missing'}` };
+  return { path: file, state: 'new', line: `ss: ${file} · new · ${folderNote(file)}` };
+}
+
+const folderNote = (file) => `folder ${fs.existsSync(path.dirname(file)) ? 'ready' : 'missing'}`;
+
+// ss-project-folder D3: an ss not created yet is no session yet, so it follows the project of a later working path, with its minute and label.
+function keep(file, project) {
+  const from = path.basename(path.dirname(file));
+  const created = fs.existsSync(file);
+  if (created || project === '_' || project === from || !acceptSessionPath(file)) return { path: file, state: 'kept', line: `ss: ${file} · kept${created ? '' : ' · not created yet'}` };
+  const [, y, mo, d, h, mi, label] = /^(\d{4})\.(\d{2})\.(\d{2})-(\d{2})(\d{2})-(.+)\.md$/.exec(path.basename(file));
+  const moved = mintSessionPath({ project, label, now: new Date(+y, mo - 1, +d, +h, +mi) });
+  return { path: moved, state: 'moved', line: `ss: ${moved} · moved from ${from}, not created yet · ${folderNote(moved)}` };
 }

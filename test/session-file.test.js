@@ -13,19 +13,29 @@ const at = new Date(2026, 9, 24, 18, 12);
 const cwdKey = (p) => p.replace(/[^A-Za-z0-9._-]/g, '-');
 const minutesAgo = (file, n) => { const t = new Date(Date.now() - n * 60_000); fs.utimesSync(file, t, t); };
 
-test('projectKey is the basename of the nearest git folder at or under the root, else the working folder as Claude Code keys it, and _ only without a path', () => {
+test('projectKey is the basename of the project folder: the nearest git working tree or Aki Dev Sync project at or under the root, a linked worktree naming its main tree, else the working folder as Claude Code keys it, and _ only without a path', () => {
   const root = path.join(tmp, 'roots');
   const repo = path.join(root, 'my repo');
-  fs.mkdirSync(path.join(repo, '.git'), { recursive: true });
+  fs.mkdirSync(path.join(repo, '.git', 'worktrees', 'wt'), { recursive: true });
   fs.mkdirSync(path.join(repo, 'src', 'deep'), { recursive: true });
   assert.equal(projectKey(path.join(repo, 'src', 'deep'), root), 'my-repo', 'a character outside [A-Za-z0-9._-] becomes -');
   assert.equal(projectKey(path.join(repo, 'src', 'not-yet', 'a.md'), root), 'my-repo', 'a path not created yet walks up the same way');
+  fs.writeFileSync(path.join(repo, '.git', 'worktrees', 'wt', 'commondir'), '../..\n');
   const worktree = path.join(root, 'wt');
-  fs.mkdirSync(worktree);
-  fs.writeFileSync(path.join(worktree, '.git'), 'gitdir: elsewhere\n');
-  assert.equal(projectKey(worktree, root), 'wt', '.git as a file (worktree, submodule) counts');
+  fs.mkdirSync(path.join(worktree, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(worktree, '.git'), `gitdir: ${path.join(repo, '.git', 'worktrees', 'wt')}\n`);
+  assert.equal(projectKey(path.join(worktree, 'src'), root), 'my-repo', 'a linked worktree names its main working tree');
+  const sub = path.join(root, 'sub');
+  fs.mkdirSync(sub);
+  fs.writeFileSync(path.join(sub, '.git'), 'gitdir: ../my repo/.git/modules/sub\n');
+  assert.equal(projectKey(sub, root), 'sub', 'a .git file with no commondir behind it (a submodule) names its own folder');
+  const synced = path.join(root, 'labs', 'motion');
+  fs.mkdirSync(path.join(synced, '.akidevsync'), { recursive: true });
+  fs.mkdirSync(path.join(synced, 'pj', 'kinhdich'), { recursive: true });
+  fs.writeFileSync(path.join(synced, '.akidevsync', 'project.json'), '{"name":"Motion studio"}');
+  assert.equal(projectKey(path.join(synced, 'pj', 'kinhdich'), root), 'motion', 'a folder without git that Aki Dev Sync holds is the project, named by its folder');
   fs.mkdirSync(path.join(root, 'plain'));
-  assert.equal(projectKey(path.join(root, 'plain'), root), cwdKey(path.join(root, 'plain')), 'no .git on the walk: the working folder path, every other character -');
+  assert.equal(projectKey(path.join(root, 'plain'), root), cwdKey(path.join(root, 'plain')), 'no project folder on the walk: the working folder path, every other character -');
   const outer = path.join(tmp, 'outer');
   fs.mkdirSync(path.join(outer, '.git'), { recursive: true });
   fs.mkdirSync(path.join(outer, 'inner'));
@@ -142,6 +152,22 @@ test('projectKey keys a no-git file by its folder, like a folder', () => {
   fs.writeFileSync(file, 'x');
   assert.equal(projectKey(file), cwdKey(dir));
   assert.equal(projectKey(dir), cwdKey(dir));
+});
+
+test('sessionFor moves an ss not created yet under the project of a later working path', () => {
+  const repo = path.join(tmp, 'move-repo');
+  fs.mkdirSync(path.join(repo, '.git'), { recursive: true });
+  const first = sessionFor({ label: 'Move me', now: at });
+  assert.equal(first.path, path.join(SS_DIR, '_', '2026.10.24-1812-move-me.md'));
+  const target = path.join(SS_DIR, 'move-repo', '2026.10.24-1812-move-me.md');
+  const moved = sessionFor({ ss: first.path, workingPath: path.join(repo, 'src'), workingRoot: tmp });
+  assert.deepEqual(moved, { path: target, state: 'moved', line: `ss: ${target} · moved from _, not created yet · folder missing` }, 'same minute and label, under the project');
+  assert.equal(sessionFor({ ss: moved.path, workingPath: repo, workingRoot: tmp }).state, 'kept', 'in its own project it stays');
+  assert.equal(sessionFor({ ss: moved.path }).state, 'kept', 'a call without a path never sends it back to _');
+  const written = sessionFor({ label: 'Written', now: at }).path;
+  fs.mkdirSync(path.dirname(written), { recursive: true });
+  fs.writeFileSync(written, '# t\n');
+  assert.equal(sessionFor({ ss: written, workingPath: repo, workingRoot: tmp }).line, `ss: ${written} · kept`, 'a file the chat has written never moves: AkiMCP writes no file');
 });
 
 test('shapeOf names what an ss lacks of the v2 frontmatter and headings, and reports a v1 file instead of refusing it', () => {

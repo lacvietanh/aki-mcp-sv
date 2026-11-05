@@ -1,6 +1,6 @@
 # Rule context delivery architecture
 
-> updated 2026-11-03 · v4.1.0
+> updated 2026-11-06 · v4.1.0
 
 ## Decision
 
@@ -78,7 +78,7 @@ All surfaces share one pure context-assembler module so path resolution, import 
 }
 ```
 
-`ss` and `label` stay outside the rule input, so they never change the receipt. Without a valid `ss` the tool mints `<data dir>/ss/<project>/<YYYY.MM.DD-HHMM>-<label>.md` (`<project>` = basename of the nearest git folder, else the working folder's real path with every character outside `[A-Za-z0-9._-]` as `-`, Claude Code's key; `_` only without a `workingPath`); a valid one is returned as it is. It creates no file and no folder (`scripts/session-file.js`).
+`ss` and `label` stay outside the rule input, so they never change the receipt. Without a valid `ss` the tool mints `<data dir>/ss/<project>/<YYYY.MM.DD-HHMM>-<label>.md` (`<project>` = basename of the nearest git working tree, a linked worktree counted as its main one, or folder holding `.akidevsync/project.json`; else the working folder's real path in Claude Code's key; `_` only without a `workingPath`); a valid one is returned as it is, except one not created yet in another project's folder, which is re-minted under the `workingPath`'s project. It creates no file and no folder (`scripts/session-file.js`).
 
 `effective` is the normal mode and returns the context required for work.
 
