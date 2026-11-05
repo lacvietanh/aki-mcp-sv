@@ -4,6 +4,8 @@ Status: P1–P3 done 2026-11-04, D2 revised 2026-11-06 (P2b); P4 waits on the re
 
 Related, not a pair: aiobox `docs/plan/projects.md` is a separate future feature (Projects in AIObox), kept as context only. Nothing here waits on it. The reason for this plan is the ss of every client, not AIObox (`CLAUDE.md` § Stable core).
 
+> Decided (2026-11-06, chat P54·W8, default from coordinator P14·W102 after the owner's "tự quyết"): `aki__aiobox op=whoami` is how AIObox joins a window's ss to a project (projects.md step 4 adds `project` and `ss`; not built), the ss folder name is not a contract; the Sessions page keeps listing `ss/<project>/*.md` under its tolerant contract row; recorded in `feat/session-file.md` § Path and name; aiobox told as low-priority backlog · because the folder rule changed in 3.1.0 and again here (D1, D2), and projects.md plans to join the folder to Aki Dev Sync's `local_path` by basename · rejected: the folder name as a contract (freezes this plan's rule for every client, Stable core), AIObox resolving projects from ss paths itself · reopen if: AIObox needs project grouping before `whoami` carries it.
+
 ## Why: the ss folders on this machine, 2026-11-04
 
 `~/.aki/mcpsv/ss` holds 34 project folders: 11 named after a repo (`aiobox`, `aki-mcp-sv`, `AkiDevRule`, …), 22 a working path in Claude Code's key, 1 `_`.
