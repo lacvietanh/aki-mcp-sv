@@ -72,4 +72,51 @@ async function testCdpExtensions() {
   console.log('cdp-extensions.test.js: ok');
 }
 
+// Two CDP clients on one tab (IMPORTANT-shared-cdp-profiles.md): a call leaves a client already on the tab connected.
+async function testCallsLeaveOtherClientsOnTheTab() {
+  const pageHttp = http.createServer((req, res) => res.end(protocol));
+  const page = new WebSocketServer({ server: pageHttp });
+  const connections = [];
+  page.on('connection', (socket) => {
+    const seen = { methods: [], closed: new Promise((resolve) => socket.on('close', resolve)) };
+    connections.push(seen);
+    socket.on('message', (raw) => {
+      const { id, method } = JSON.parse(raw);
+      seen.methods.push(method);
+      const result = method === 'Runtime.evaluate' ? { result: { type: 'number', value: 2 } } : method === 'Page.captureScreenshot' ? { data: 'iVBORw0KGgo=' } : {};
+      socket.send(JSON.stringify({ id, result }));
+    });
+  });
+  await new Promise((resolve) => pageHttp.listen(0, '127.0.0.1', resolve));
+  const { port } = pageHttp.address();
+  const target = { id: 'T-SHARED', url: 'https://claude.ai/chat/x', title: 'shared', webSocketDebuggerUrl: `ws://127.0.0.1:${port}/devtools/page/T-SHARED` };
+
+  const WebSocket = requireFromCri('ws');
+  const watcher = new WebSocket(target.webSocketDebuggerUrl);
+  await new Promise((resolve, reject) => { watcher.once('open', resolve); watcher.once('error', reject); });
+  const ask = (id, method) => new Promise((resolve) => {
+    watcher.once('message', (raw) => resolve(JSON.parse(raw)));
+    watcher.send(JSON.stringify({ id, method, params: {} }));
+  });
+  assert.equal((await ask(1, 'Network.enable')).id, 1);
+
+  assert.equal((await cdp.evaluate({ port, target, expression: '1 + 1' })).value, 2);
+  assert.equal((await cdp.screenshot({ port, target })).data, 'iVBORw0KGgo=');
+  const [, evaluated, shot] = connections;
+  assert.equal(connections.length, 3, 'one connection per call, beside the watcher');
+  assert.deepEqual(evaluated.methods, ['Runtime.enable', 'Runtime.evaluate']);
+  assert.deepEqual(shot.methods, ['Page.enable', 'Page.captureScreenshot']);
+  await Promise.all([evaluated.closed, shot.closed]);
+  assert.equal(watcher.readyState, WebSocket.OPEN, 'the watcher keeps its connection');
+  assert.equal((await ask(2, 'Runtime.evaluate')).id, 2, 'and still gets answers');
+  assert.deepEqual(connections[0].methods, ['Network.enable', 'Runtime.evaluate']);
+
+  watcher.terminate();
+  for (const socket of page.clients) socket.terminate();
+  pageHttp.closeAllConnections();
+  await new Promise((resolve) => pageHttp.close(resolve));
+  console.log('cdp-extensions.test.js: shared tab ok');
+}
+
 await testCdpExtensions();
+await testCallsLeaveOtherClientsOnTheTab();
