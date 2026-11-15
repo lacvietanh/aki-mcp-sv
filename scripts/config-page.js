@@ -6,6 +6,7 @@ import { aioboxInstalled, AIOBOX_PANEL, AIOBOX_CONNECT } from './aiobox-guide.js
 import { IDENTITY, appliedKeys } from './mcp-name.js';
 import { renderIdentityField } from './identity-panel.js';
 import { TEMP_TTL_MS, TEMP_EXTEND_MS } from './oauth.js';
+import { listRefused } from './oauth-callbacks.js';
 import { gatePort } from './userdata.js';
 
 const CLAUDE_DIR = path.join(os.homedir(), '.claude');
@@ -313,6 +314,7 @@ ${secretField('Passphrase', passphrase)}
 ${secretField('Access token', accessToken)}
 <div class="acts"><button data-act="rollToken">Roll token</button><button data-act="rollTokenHard">Roll &amp; sign out all clients</button><button data-act="rollPassphrase">Roll passphrase</button><span class="msg" id="msgRoll"></span></div>
 <p class="helptext">One access token serves every client. <strong>Roll token</strong> replaces it: AIs connected with the passphrase refresh on their own (ClickUp may need one reconnect), but a token pasted as a fixed bearer (a local snippet below) stops working until it is pasted again. Connect Notion with the passphrase like the other web AIs, never with a pasted token. <strong>Roll &amp; sign out all clients</strong> also revokes refresh, so every AI must reconnect with the passphrase; use it if the token may have leaked. <strong>Roll passphrase</strong> issues a new one: the old passphrase stops authorizing new connections, while already-connected AIs keep working; use it if the passphrase may have leaked. Temporary tokens (Web → Any HTTP chat) expire on their own or are revoked one by one; <strong>Roll &amp; sign out all clients</strong> revokes them too.</p>
+${listRefused().some((row) => row.callbacks.some((c) => !c.reason)) ? `<p class="helptext">An AI tried to sign in through an address AkiMCP does not allow yet. <button type="button" data-act="openOtherAi">Open Web → Other AI (sign-in)</button></p>` : ''}
 
 <div class="tier-switch" role="group" aria-label="Connector tier">
   <button type="button" class="tier-btn active" data-tier="local" aria-pressed="true" aria-controls="tabs-local"><span class="tier-title">Local · direct</span><span class="tier-sub">On this computer · 127.0.0.1 or stdio · no tunnel</span></button>
@@ -330,6 +332,7 @@ ${secretField('Access token', accessToken)}
 
 <nav class="tabs" id="tabs-web" data-tier-tabs="web" aria-label="Web connectors">
   <button class="tab" data-tab="httpchat"><img src="/img/providers/http.svg" class="provider-icon" alt="">Any HTTP chat</button>
+  <button class="tab" data-tab="otherai"><i class="fa-solid fa-right-to-bracket" aria-hidden="true"></i>Other AI (sign-in)</button>
   <button class="tab" data-tab="claude"><img src="/img/providers/claude.png" class="provider-icon" alt="">Claude</button>
   <button class="tab" data-tab="grok"><img src="/img/providers/grok.png" class="provider-icon" alt="">Grok</button>
   <button class="tab" data-tab="chatgpt"><img src="/img/providers/gpt.png" class="provider-icon" alt="">ChatGPT</button>
@@ -430,6 +433,29 @@ ${secretField('Access token', accessToken)}
   <p class="helptext" id="tempKickoffNote" hidden>Shown once: copy it now. After a reload only the row below remains, not the token.</p>
   <div id="tempList"></div>
   <div class="acts"><button data-act="revokeAllTemp" id="revokeAllTemp" hidden>Revoke all temporary tokens</button></div>
+</div>
+
+<div class="tabpane" id="tab-otherai">
+  <ol class="steps">
+    <li>In your AI, add a custom connector with the <strong>MCP URL</strong> above.</li>
+    <li>If it cannot connect, its refused sign-in address shows below: click <strong>Add</strong>.</li>
+    <li>Connect again and enter the <strong>Passphrase</strong>.</li>
+  </ol>
+  <p class="helptext">Adding a new AI needs this computer once.</p>
+  <div class="acts"><button data-act="refreshCallbacks">Refresh</button><span class="msg" id="msgCallbacks"></span></div>
+  <h3 class="subh">Refused since AkiMCP started</h3>
+  <div id="refusedCallbacks"></div>
+  <h3 class="subh">Your sign-in addresses</h3>
+  <p class="helptext" id="callbacksReadError" hidden></p>
+  <div id="ownCallbacks"></div>
+  <div id="skippedCallbacks"></div>
+  <p class="helptext"><strong>Remove</strong> stops new sign-ins through that address. To cut off an AI already connected through it, use <strong>Revoke &amp; roll</strong> on it in <a href="#s7">section 7</a> Clients, or <strong>Roll &amp; sign out all clients</strong>.</p>
+  <div class="acts">
+    <select id="callbackMatch" aria-label="Match"><option value="exact">Exact address</option><option value="prefix">Starts with (prefix)</option></select>
+    <input type="text" id="callbackValue" placeholder="https://example.com/oauth/callback" aria-label="Sign-in address">
+    <button data-act="addCallback">Add</button>
+    <span class="msg" id="msgCallbackForm"></span>
+  </div>
 </div>
 
 <div class="tabpane active" id="tab-anymcp">

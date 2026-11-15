@@ -96,7 +96,7 @@ async function run() {
         assert.equal(res.status, 201, uri);
         assert.ok((await res.json()).client_id, uri);
       }
-      for (const uri of ['https://oauth-redirect.googleusercontent.com.attacker.com', 'http://oauth-redirect.googleusercontent.com', 'https://a@oauth-redirect.googleusercontent.com', 'https://oauth-redirect.googleusercontent.com/r/x#f', 'https://search.clickup-prod.com/other', 'https://search.clickup-prod.com.attacker.com/connect/mcp']) {
+      for (const uri of ['https://oauth-redirect.googleusercontent.com.attacker.com', 'http://oauth-redirect.googleusercontent.com', 'https://a@oauth-redirect.googleusercontent.com', 'https://oauth-redirect.googleusercontent.com/r/x#f', 'https://search.clickup-prod.com/other', 'https://search.clickup-prod.com.attacker.com/connect/mcp', 'https://chatgpt.com/connector/oauth/%2e%2e/x', 'https://chatgpt.com/connector/oauth/.%2e/x', 'https://chatgpt.com/connector/oauth/\\..\\..\\x', 'https://grok.com/connectors-oauth-exchange-code/../x', 'https://chatgpt.com/connector/oauth/x#f', 'https://chatgpt.com:8443/connector/oauth/x']) {
         const res = await register(uri);
         assert.equal(res.status, 400, uri);
         assert.equal((await res.json()).error, 'invalid_redirect_uri', uri);

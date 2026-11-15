@@ -359,6 +359,71 @@ async function loadTempTokens() {
   if (!tokens.length) for (const id of ['tempKickoff', 'tempKickoffNote']) document.getElementById(id).hidden = true;
 }
 
+function addCallbackButton(text, match, value, confirmText) {
+  const btn = document.createElement('button');
+  btn.textContent = text;
+  btn.onclick = () => {
+    if (!confirm(confirmText)) return;
+    act(btn, 'msgCallbacks', async () => {
+      const { message } = await api('POST', '/api/oauth-callbacks/add', { match, value });
+      await loadCallbacks();
+      return message;
+    });
+  };
+  return btn;
+}
+const addCallbackConfirm = (what, host) => 'Let AIs sign in through ' + what + '?\n\nAdd it only if you just tried to connect an AI that uses ' + host + '.';
+function refusedAddressCell({ callbacks }) {
+  const box = document.createElement('div');
+  for (const { href, shown, host, prefix, reason } of callbacks) {
+    const line = document.createElement('div');
+    line.className = 'acts';
+    const address = document.createElement('span');
+    address.className = 'mono';
+    address.textContent = shown;
+    line.append(address, reason ? mutedNote('Cannot be added: ' + reason) : addCallbackButton('Add', 'exact', href, addCallbackConfirm(host, host)));
+    if (prefix) line.append(addCallbackButton('Add as prefix', 'prefix', prefix, addCallbackConfirm('every address that starts with ' + prefix, host)));
+    box.append(line);
+  }
+  return box;
+}
+function removeCallbackButton({ match, value, host }) {
+  const btn = document.createElement('button');
+  btn.textContent = 'Remove';
+  btn.onclick = () => {
+    if (!confirm('Stop new sign-ins through ' + host + '?')) return;
+    act(btn, 'msgCallbacks', async () => {
+      const { message } = await api('POST', '/api/oauth-callbacks/remove', { match, value });
+      await loadCallbacks();
+      return message;
+    });
+  };
+  return btn;
+}
+const CALLBACK_MATCH_LABEL = { exact: 'exact address', prefix: 'starts with' };
+function renderCallbacks({ entries, skipped, readError, refused }) {
+  renderTable('refusedCallbacks', [
+    ['Sign-in address', refusedAddressCell, NOT_SORTABLE],
+    ['Name it gave itself', (r) => r.clientName || '—', { sortValue: (r) => r.clientName }],
+    ['First', (r) => timeCell(r.firstAt), { sortValue: (r) => r.firstAt }],
+    ['Last', (r) => timeCell(r.lastAt), { sortValue: (r) => r.lastAt }],
+    ['Tries', (r) => String(r.count), { sortValue: (r) => r.count }],
+  ], refused, 'Nothing refused since AkiMCP started. If your AI still cannot connect, it never reached AkiMCP: check section 0.');
+  const notice = document.getElementById('callbacksReadError');
+  notice.hidden = !readError;
+  notice.textContent = readError ? 'setting.json cannot be read (' + readError + '), so only the built-in addresses apply. Fix or remove the file, then press Refresh.' : '';
+  renderTable('ownCallbacks', [
+    ['Host', (e) => e.host, { sortValue: (e) => e.host }],
+    ['Match', (e) => CALLBACK_MATCH_LABEL[e.match], { sortValue: (e) => e.match }],
+    ['Address', (e) => e.value, { sortValue: (e) => e.value }],
+    ['', removeCallbackButton, NOT_SORTABLE],
+  ], entries, 'No sign-in addresses added yet.');
+  document.getElementById('skippedCallbacks').replaceChildren(...skipped.map(({ entry, reason }) => mutedNote('Skipped in setting.json: ' + entry + ': ' + reason)));
+}
+async function loadCallbacks() {
+  renderCallbacks(await api('GET', '/api/oauth-callbacks'));
+}
+
 let limitDefaults = {};
 const limitInputs = () => [...document.querySelectorAll('[data-limit]')];
 function fillLimits(limits) {
@@ -748,6 +813,18 @@ const ACTIONS = {
     await loadTempTokens();
     return `${copied ? 'copied: paste it into your chat' : 'select the block and copy it'}, valid until ${new Date(expires).toLocaleTimeString()}`;
   }),
+  refreshCallbacks: (btn) => act(btn, 'msgCallbacks', async () => { await loadCallbacks(); return 'refreshed'; }),
+  addCallback: (btn) => act(btn, 'msgCallbackForm', async () => {
+    const input = document.getElementById('callbackValue');
+    const { message } = await api('POST', '/api/oauth-callbacks/add', { match: document.getElementById('callbackMatch').value, value: input.value.trim() });
+    input.value = '';
+    await loadCallbacks();
+    return message;
+  }),
+  openOtherAi: () => {
+    document.querySelector('#s1 .tier-btn[data-tier="web"]').click();
+    document.querySelector('#s1 .tab[data-tab="otherai"]').click();
+  },
   revokeAllTemp: (btn) => act(btn, 'msgTemp', async () => {
     const { message } = await api('POST', '/api/temp-token/revoke', { all: true });
     await loadTempTokens();
@@ -816,6 +893,7 @@ document.querySelectorAll('.tabs').forEach((nav) => {
   }));
 });
 document.querySelectorAll('.tab.active').forEach((tab) => (tab.ariaCurrent = 'true'));
+document.querySelector('#s1 .tab[data-tab="otherai"]').addEventListener('click', () => loadCallbacks().catch((e) => say('msgCallbacks', e.message, false)));
 
 // One bar shows at a time, so the active tab always sits on the bar that touches its pane.
 document.querySelectorAll('.tier-switch').forEach((bar) => {

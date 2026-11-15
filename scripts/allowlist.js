@@ -30,13 +30,31 @@ const PLATFORM_EXTRA =
 const toMap = (entries) => Object.fromEntries(entries.map((e) => (Array.isArray(e) ? [e[0], e.slice(1)] : [e, null])));
 export const DEFAULT_ALLOWLIST = toMap([...UNIX_DEFAULT, ...PLATFORM_EXTRA]);
 
-export function readSettings() {
-  try {
-    return JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf8'));
-  } catch (e) {
-    if (e.code !== 'ENOENT') process.stderr.write(`[allowlist] ignoring malformed ${SETTINGS_PATH}: ${e.message}\n`);
-    return {};
+export const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+// Settings are read on every request, so one broken file would otherwise print the same warning each time.
+const warnedErrors = new Set();
+function settingsError(message) {
+  if (!warnedErrors.has(message)) {
+    warnedErrors.add(message);
+    process.stderr.write(`[allowlist] ignoring malformed ${SETTINGS_PATH}: ${message}\n`);
   }
+  return { settings: {}, error: message };
+}
+
+// A missing file is a fresh install, not an error; anything else unreadable is reported so a caller can refuse to overwrite it.
+export function readSettingsChecked() {
+  let settings;
+  try {
+    settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf8'));
+  } catch (e) {
+    return e.code === 'ENOENT' ? { settings: {}, error: null } : settingsError(e.message);
+  }
+  return isPlainObject(settings) ? { settings, error: null } : settingsError('setting.json is not a JSON object');
+}
+
+export function readSettings() {
+  return readSettingsChecked().settings;
 }
 
 // Atomic (temp file + rename) so a reader never sees a half-written setting.json, which readSettings would treat as empty.
@@ -46,8 +64,6 @@ export function writeSettings(settings) {
   fs.writeFileSync(tmp, `${JSON.stringify(settings, null, 2)}\n`);
   fs.renameSync(tmp, SETTINGS_PATH);
 }
-
-const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
 // Normalizes three stored shapes to { overrides, revoked }: v3 { added:[entries], revoked }, v2 { overrides:{bin:null|array}, revoked }, v1 flat map. `revoked` records a removed default that an absent key cannot (the P0 bug). Format detail: docs/plan/done/shell-allowlist.md.
 function normalizeStored(stored) {

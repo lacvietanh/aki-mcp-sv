@@ -1,6 +1,6 @@
 # aki-mcp-sv (`@akinet/akimcp`)
 
-Turn web AIs (Claude, ChatGPT, Grok, Notion, ClickUp, Buda), Postman and any web chat that can send HTTP requests into secure operators for your local machine. AkiMCP v4 exposes a governed suite of 38 tools for files, shell, search, Git, SQLite, browser automation, DevTools, background tasks, localhost services, clipboard, notifications, ports, Postman control, and AIObox windows through one OAuth-gated MCP endpoint. *(Gemini support remains experimental.)*
+Turn web AIs (Claude, ChatGPT, Grok, Notion, ClickUp, Buda, and any other AI that signs in with OAuth), Postman and any web chat that can send HTTP requests into secure operators for your local machine. AkiMCP v4 exposes a governed suite of 38 tools for files, shell, search, Git, SQLite, browser automation, DevTools, background tasks, localhost services, clipboard, notifications, ports, Postman control, and AIObox windows through one OAuth-gated MCP endpoint. *(Gemini support remains experimental.)*
 
 One command opens a much larger operating surface: build and edit projects from the browser, inspect databases and local APIs, drive browser workflows, manage long-running jobs, debug through DevTools, and control Postman without giving every client unrestricted shell access.
 
@@ -8,7 +8,7 @@ One command opens a much larger operating surface: build and edit projects from 
 
 [![Version](https://img.shields.io/badge/version-4.1.0-blue.svg)](CHANGELOG.md) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) [![npm version](https://img.shields.io/npm/v/@akinet/akimcp.svg)](https://www.npmjs.com/package/@akinet/akimcp) [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)](#install--run)
 
-**Contents:** [Why this exists](#why-this-exists) · [When to use & Core Use-Cases](#when-to-use--core-use-cases) · [Install & Run](#install--run) · [Connecting from Claude web](#connecting-from-claude-web) · [Connecting from ChatGPT](#connecting-from-chatgpt) · [Connecting from Grok and Gemini](#connecting-from-grok-and-gemini) · [Connecting from Notion AI](#connecting-from-notion-ai) · [Connecting from ClickUp](#connecting-from-clickup) · [Connecting from Buda](#connecting-from-buda) · [Connecting from Postman](#connecting-from-postman) · [Connecting from any HTTP chat](#connecting-from-any-http-chat) · [Connecting local IDEs](#connecting-local-ides-cursor-claude-code-claude-app-agy-codex) · [Autonomous Cloud Automation](#autonomous-cloud-automation-grok--local-mcp) · [Requirements](#requirements) · [Architecture](#architecture) · [Directory layout](#directory-layout) · [Configuration](#configuration) · [Exposing to the internet](#exposing-to-the-internet) · [Finding files](#finding-files) · [Security](#security)
+**Contents:** [Why this exists](#why-this-exists) · [When to use & Core Use-Cases](#when-to-use--core-use-cases) · [Install & Run](#install--run) · [Connecting from Claude web](#connecting-from-claude-web) · [Connecting from ChatGPT](#connecting-from-chatgpt) · [Connecting from Grok and Gemini](#connecting-from-grok-and-gemini) · [Connecting from Notion AI](#connecting-from-notion-ai) · [Connecting from ClickUp](#connecting-from-clickup) · [Connecting from Buda](#connecting-from-buda) · [Connecting from Postman](#connecting-from-postman) · [Connecting from any HTTP chat](#connecting-from-any-http-chat) · [Connecting from any other AI (sign-in)](#connecting-from-any-other-ai-sign-in) · [Connecting local IDEs](#connecting-local-ides-cursor-claude-code-claude-app-agy-codex) · [Autonomous Cloud Automation](#autonomous-cloud-automation-grok--local-mcp) · [Requirements](#requirements) · [Architecture](#architecture) · [Directory layout](#directory-layout) · [Configuration](#configuration) · [Exposing to the internet](#exposing-to-the-internet) · [Finding files](#finding-files) · [Security](#security)
 
 ## Why this exists
 
@@ -128,7 +128,7 @@ ChatGPT self-registers via DCR (RFC 7591, PKCE, no secret) from `/.well-known/op
 
 Both ride the same MCP URL and passphrase flow — no separate transport or auth. The connector panel (section 1) lists the steps for each.
 
-**Grok — verified, production-ready:** **self-registers** via the `/register` DCR path like ChatGPT — paste only the MCP URL, no Client ID. Its real `redirect_uri` `https://grok.com/connectors-oauth-exchange-code/` was observed live 2026-08-09 and is allowlisted via `GROK_CALLBACK_PREFIX`. Verified working end to end (`authorize → token` 200). If a future Grok change moves that callback, a rejected registration logs `register REJECTED (redirect_uri not allowlisted): [...]` so the new value can be re-allowlisted.
+**Grok — verified, production-ready:** **self-registers** via the `/register` DCR path like ChatGPT — paste only the MCP URL, no Client ID. Its real `redirect_uri` `https://grok.com/connectors-oauth-exchange-code/` was observed live 2026-08-09 and is a built-in callback (`scripts/oauth-callbacks.js`). Verified working end to end (`authorize → token` 200). If a future Grok change moves that callback, the refused address shows in the panel's [Other AI (sign-in)](#connecting-from-any-other-ai-sign-in) tab, where one click adds it.
 
 **Gemini — experimental, connection works but tool use doesn't (yet)** (paid tiers only — Pro / Business / Enterprise; the free tier may not expose custom apps): **self-registers** via the `/register` DCR path like Claude and ChatGPT — paste the MCP URL, click **Next**, enter the passphrase on the authorization page, click **Approve**. The pre-issued Client ID/Secret in `oauth-client.json` is an optional fallback for a client that wants a static pair. Gemini's redirect goes through Google's OAuth proxy on `oauth-redirect*.googleusercontent.com`, allowlisted by `isAllowedRedirect` in `scripts/oauth.js`. **Caveat:** the OAuth handshake succeeds and Gemini accepts the instruction, but in repeated testing 2026-08-09 it did not reliably discover or drive the MCP tools — connection healthy, tool use unreliable. Claude and Grok are the dependable clients today.
 
@@ -186,6 +186,16 @@ For a web chat with no custom MCP connector whose AI can still send HTTP request
 Each token in the panel list shows when it was last used and from which address and app. **+30 min** beside a live token extends it by 30 minutes, as often as needed; an expired or revoked token stays dead.
 
 A temporary token lasts 4 hours unless extended, lives only in memory (restarting AkiMCP revokes every one) and never touches the shared access token, so your other connectors keep working. **Roll & sign out all clients** also revokes every temporary token.
+
+## Connecting from any other AI (sign-in)
+
+For an AI that has its own custom connector and signs in with OAuth but has no tab of its own in the panel. It needs a public ingress. Adding a new AI needs the computer running AkiMCP once; after that, no AkiMCP update is needed for it.
+
+1. In your AI, add a custom connector with the **MCP URL** from the panel.
+2. If it cannot connect, open the panel, section 1 → **Web · needs ingress** → **Other AI (sign-in)**. Its refused sign-in address shows under **Refused since AkiMCP started**: click **Add**, or **Add as prefix** to allow every address under that folder. An address AkiMCP cannot use (http, localhost, an IP address) shows the reason instead.
+3. Connect again and enter the **Passphrase**. The confirmation page names where the sign-in returns, so check that address before you approve.
+
+If nothing shows as refused, the AI never reached AkiMCP: check section 0. You can also type an address into the form at the bottom of the tab (exact, or a prefix ending in `/`), or write it into `setting.json` under `oauth.callbacks`; the change applies to the next sign-in, no restart. **Remove** stops new sign-ins through that address; to cut off an AI already connected through it, use **Revoke & roll** on it in section 7 Clients, or **Roll & sign out all clients**. Details: [docs/feat/security.md](docs/feat/security.md) § Remote auth.
 
 ## Connecting local IDEs (Cursor, Claude Code, Claude app, AGY, Codex)
 

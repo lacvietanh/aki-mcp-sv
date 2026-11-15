@@ -9,6 +9,7 @@ import { renderPanel, localMcpUrl, httpBearerEntry, stdioEntry, claudeCodeLines,
 import { IDENTITY, IDENTITY_PROBLEM, quoteValue, appliedKeys } from './mcp-name.js';
 import { previewReply, saveIdentity, resetIdentity } from './identity-panel.js';
 import { getOrIssueAccessToken, rotateAccessToken, mintTempToken, listTempTokens, revokeTempTokenById, extendTempTokenById, TEMP_EXTEND_MS, rotatePassphrase, loadOrCreatePassphrase, listClients, removeClient } from './oauth.js';
+import { readUserCallbacks, addUserCallback, removeUserCallback, listRefused } from './oauth-callbacks.js';
 import { logSecurity, readSecurityLog } from './security-log.js';
 import { LOG_DEFAULTS, loadLogSettings, normalizeLogSettings } from './tool-call-log.js';
 import { listCallers } from './callers.js';
@@ -501,6 +502,16 @@ export const ROUTES = {
     if (body.roll !== true) return { ok: true, message: outcome };
     rotateAccessToken({ revokeRefresh: false });
     return { ok: true, message: `${outcome} and rolled the access token. Signed-in OAuth connectors renew on their next request (ClickUp may need one reconnect); Bearer clients (Buda, local Claude Code, Codex and Cursor) need the new token: click Apply again or re-paste.` };
+  },
+  // No restart: /register and /authorize read setting.json on every request, so an added or removed address applies to the next sign-in.
+  'GET /api/oauth-callbacks': async () => ({ ...readUserCallbacks(), refused: listRefused() }),
+  'POST /api/oauth-callbacks/add': async (body) => {
+    const { host, added } = addUserCallback(body);
+    return { ok: true, message: added ? `added: an AI can now sign in through ${host}, so connect it again` : `${host} is already in your list` };
+  },
+  'POST /api/oauth-callbacks/remove': async (body) => {
+    const { host } = removeUserCallback(body);
+    return { ok: true, message: `removed: new sign-ins through ${host} stop now` };
   },
   'POST /api/rate-limit': async (body) => {
     setRateLimit(validateLimits(body.limits));

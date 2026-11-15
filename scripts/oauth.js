@@ -15,18 +15,12 @@ import { logSecurity } from './security-log.js';
 import { readBody, json as httpJson } from './http.js';
 import { esc } from './html.js';
 import { readLimits, clientKey } from './rate-limit.js';
+import { matchCallback, readUserCallbacks, noteRefused, whyNotAddable } from './oauth-callbacks.js';
 
-const CLAUDE_CALLBACK = 'https://claude.ai/api/mcp/auth_callback';
-const CHATGPT_LEGACY_CALLBACK = 'https://chatgpt.com/connector_platform_oauth_redirect';
-const CHATGPT_CALLBACK_PREFIX = 'https://chatgpt.com/connector/oauth/';
-// Grok self-registers (DCR) with this callback, not a /connector/oauth/ path (observed live 2026-08-09).
-const GROK_CALLBACK_PREFIX = 'https://grok.com/connectors-oauth-exchange-code/';
-// Notion DCR self-registers as a confidential client on one of these hosts, matched on the parsed hostname so lookalikes fail (verified live 2026-09-22).
-const NOTION_CALLBACK_HOSTS = new Set(['notion.so', 'www.notion.so', 'app.notion.so', 'notion.com', 'www.notion.com', 'app.notion.com', 'mcp.notion.com']);
-// Gemini DCR registers Google's OAuth proxy hosts with no path, not gemini.google.com; matched on the parsed hostname so lookalikes fail.
-const GEMINI_CALLBACK_HOSTS = new Set(['oauth-redirect.googleusercontent.com', 'oauth-redirect-sandbox.googleusercontent.com', 'oauth-redirect-test.googleusercontent.com']);
-// ClickUp DCR registers this exact callback, the one its MCP Server form names (observed live 2026-10-21).
-const CLICKUP_CALLBACK = 'https://search.clickup-prod.com/connect/mcp';
+const CALLBACKS_PANEL_PATH = 'section 1 → Web → Other AI (sign-in)';
+const REFUSED_CALLBACK_HINT = `This AI's sign-in address is not allowed yet. On the computer running AkiMCP, open the control panel, ${CALLBACKS_PANEL_PATH}, click Add, then connect again.`;
+const NO_CALLBACK_HINT = 'This AI sent no sign-in address (redirect_uris), so AkiMCP cannot sign it in.';
+const RECLAIMABLE_ID = /^[0-9a-f]{32}$/;
 const CLIENT_AUTH_METHODS = ['none', 'client_secret_post', 'client_secret_basic'];
 const CODE_TTL_MS = 5 * 60 * 1000;
 const PENDING_CLIENT_TTL_MS = 3600_000;
@@ -66,23 +60,7 @@ function loadRetiredTokens() {
   }
 }
 
-function isAllowedRedirect(uri) {
-  if (typeof uri !== 'string' || !uri) return false;
-  if (uri === CLAUDE_CALLBACK || uri === CHATGPT_LEGACY_CALLBACK || uri === CLICKUP_CALLBACK) return true;
-  return uri.startsWith(CHATGPT_CALLBACK_PREFIX)
-    || uri.startsWith(GROK_CALLBACK_PREFIX)
-    || isHttpsCallbackOnHosts(uri, GEMINI_CALLBACK_HOSTS)
-    || isHttpsCallbackOnHosts(uri, NOTION_CALLBACK_HOSTS);
-}
-
-function isHttpsCallbackOnHosts(uri, hosts) {
-  try {
-    const url = new URL(uri);
-    return url.protocol === 'https:' && !uri.includes('#') && !url.username && !url.password && hosts.has(url.hostname);
-  } catch {
-    return false;
-  }
-}
+const isAllowedRedirect = (uri) => !!matchCallback(uri);
 
 // Tokens survive restarts: the connector is a long-lived file-access grant, and losing it on every
 // `npm start` forces a full re-authorize (passphrase) instead of the silent refresh the flow supports.
@@ -317,7 +295,7 @@ export function metadataHandlers(origin) {
   };
 }
 
-// RFC 7591 — ChatGPT calls this once per connector instance. Only Claude/ChatGPT redirect URIs are accepted.
+// RFC 7591: each AI calls this once per connector instance. Every redirect URI must be a built-in or user-added callback (scripts/oauth-callbacks.js).
 export async function handleRegister(req, res) {
   let body;
   try {
@@ -328,11 +306,19 @@ export async function handleRegister(req, res) {
   // null, [] and scalars are valid JSON too; reading metadata off them would crash on an unauthenticated request.
   if (!body || typeof body !== 'object' || Array.isArray(body)) return json(res, 400, { error: 'invalid_client_metadata' });
   const redirectUris = body.redirect_uris;
-  if (!Array.isArray(redirectUris) || !redirectUris.length || !redirectUris.every(isAllowedRedirect)) {
+  if (!Array.isArray(redirectUris) || !redirectUris.length) {
+    log('[oauth] register REJECTED (no redirect_uris)');
+    return json(res, 400, { error: 'invalid_redirect_uri', error_description: NO_CALLBACK_HINT });
+  }
+  const { entries: userCallbacks } = readUserCallbacks();
+  const refusedUris = redirectUris.filter((uri) => !matchCallback(uri, userCallbacks));
+  if (refusedUris.length) {
     // Log only the origin, enough to allowlist an unknown client's real callback without logging its path or query.
-    const origins = Array.isArray(redirectUris) ? redirectUris.map((uri) => { try { return new URL(uri).origin; } catch { return '(invalid URL)'; } }) : [];
-    log(`[oauth] register REJECTED (redirect_uri not allowlisted): ${JSON.stringify(origins)}`);
-    return json(res, 400, { error: 'invalid_redirect_uri' });
+    const origins = redirectUris.map((uri) => { try { return new URL(uri).origin; } catch { return '(invalid URL)'; } });
+    const unusable = refusedUris.map(whyNotAddable).find(Boolean);
+    log(`[oauth] register REJECTED (redirect_uri not allowlisted): ${JSON.stringify(origins)}${unusable ? '' : `; add it in the control panel, ${CALLBACKS_PANEL_PATH}`}`);
+    noteRefused(refusedUris, typeof body.client_name === 'string' && body.client_name.trim() ? cut(body.client_name) : null);
+    return json(res, 400, { error: 'invalid_redirect_uri', error_description: unusable ? `This AI's sign-in address cannot be used with AkiMCP (${unusable}).` : REFUSED_CALLBACK_HINT });
   }
   const authMethod = body.token_endpoint_auth_method || 'none';
   if (!CLIENT_AUTH_METHODS.includes(authMethod)) {
@@ -398,7 +384,7 @@ function errorPage(title, message) {
 
 // An unknown 32-hex client_id on an allowlisted callback is rebuilt, stored only after the passphrase passes (docs/feat/security.md § Remote auth).
 function reclaimClient(clientId, redirectUri) {
-  if (!/^[0-9a-f]{32}$/.test(clientId ?? '') || !isAllowedRedirect(redirectUri)) return null;
+  if (!RECLAIMABLE_ID.test(clientId ?? '') || !isAllowedRedirect(redirectUri)) return null;
   return { clientId, clientSecret: null, redirectUris: [redirectUri], tokenEndpointAuthMethod: 'none', clientName: 'MCP client', firstSeenAt: Date.now() };
 }
 
@@ -419,9 +405,12 @@ export async function handleAuthorize(req, res, passphrase, origin) {
   const codeChallengeMethod = q.get('code_challenge_method');
   const state = q.get('state') || '';
   const scope = (q.get('scope') || '').trim();
-  const client = resolveClient(clientId) ?? reclaimClient(clientId, redirectUri);
-  // DCR clients are pinned to their registered redirect_uri; the static client accepts any allowlisted callback because several providers share it.
-  const redirectOk = !!client && (client.redirectUris.includes(redirectUri) || (client.isStatic && isAllowedRedirect(redirectUri)));
+  const callback = matchCallback(redirectUri);
+  const known = resolveClient(clientId);
+  const client = known ?? reclaimClient(clientId, redirectUri);
+  // Re-checked for every client so a removed user address stops new sign-ins; the static client takes any allowed callback because several providers share it.
+  const redirectOk = !!client && !!callback && (client.isStatic || client.redirectUris.includes(redirectUri));
+  if (!callback && (known?.isStatic || (!known && RECLAIMABLE_ID.test(clientId ?? '')))) noteRefused([redirectUri]);
 
   if (!redirectOk || codeChallengeMethod !== 'S256' || !codeChallenge) {
     log(`[oauth] authorize REJECTED (${req.method}): client_ok=${!!client} redirect_ok=${redirectOk} method=${codeChallengeMethod === 'S256' ? 'S256' : 'unsupported'} hasChallenge=${!!codeChallenge}`);
@@ -432,12 +421,15 @@ export async function handleAuthorize(req, res, passphrase, origin) {
 
   if (req.method === 'GET') {
     const clientLabel = client.clientName ? `An app called "${esc(client.clientName)}"` : 'An MCP client';
+    const destination = new URL(redirectUri);
+    const addedBy = callback.builtIn ? `built in: ${esc([callback.entry.name, callback.entry.via].filter(Boolean).join(', '))}` : 'added in your AkiMCP panel';
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Confirm MCP connection</title><link rel="icon" href="/favicon/favicon.ico" sizes="any"><link rel="icon" type="image/png" href="/favicon/icon-192.png"><link rel="apple-touch-icon" href="/favicon/apple-touch-icon.png"><link rel="manifest" href="/favicon/manifest.json"><meta name="theme-color" content="#ff4800">
 <style>${PAGE_STYLE}</style></head><body>
 <form class="card" method="POST" onsubmit="this.btn.disabled=true;this.btn.textContent='Confirming…'">
 <h1>Confirm MCP connection</h1>
 <p>${clientLabel} wants to connect.</p>
+<p>After you approve, the sign-in returns to <strong>${esc(destination.origin + destination.pathname)}</strong> (${addedBy}).</p>
 <p>Enter the passphrase shown in the control panel (section 1 · Connectors) to grant access — or read it from <code>${PASSPHRASE_DISPLAY_PATH}</code>.</p>
 <input type="hidden" name="redirect_uri" value="${esc(redirectUri)}">
 <input type="hidden" name="client_id" value="${esc(clientId)}">
