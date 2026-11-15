@@ -1,6 +1,6 @@
 # ss project folder: the real project, from any path inside it
 
-Status: P1–P3 done 2026-11-04, D2 revised 2026-11-06 (P2b); P4 waits on the release that ships it: the AkiMCP this machine runs is the installed npm package 4.1.0, not this checkout, so a restart alone keeps the old naming (probed 2026-11-04 after the 15:02 restart: no path → `_` without a reason, `/Volumes/DEV/labs` → `-Volumes-DEV-labs`). Written on v4.1.0. Spec it changed: [`feat/session-file.md`](../feat/session-file.md) § Path and name, § Mint and keep. Code: `scripts/session-file.js` (`projectKey`, `gitWorkingTree`, `sessionFor`).
+Status: done 2026-11-15. P1–P3 done 2026-11-04, D2 revised 2026-11-06 (P2b), P4 closed 2026-11-15 by reading the flow, not run live; ships in the release after 4.1.0 (`CHANGELOG.md` [Unreleased] § Changed). Written on v4.1.0. Spec it changed: [`feat/session-file.md`](../feat/session-file.md) § Path and name, § Mint and keep. Code: `scripts/session-file.js` (`projectKey`, `gitWorkingTree`, `sessionFor`).
 
 Related, not a pair: aiobox `docs/plan/projects.md` is a separate future feature (Projects in AIObox), kept as context only. Nothing here waits on it. The reason for this plan is the ss of every client, not AIObox (`CLAUDE.md` § Stable core).
 
@@ -57,11 +57,11 @@ Rejected:
 - [x] P2 Code: `projectKey` returns `_` without a project folder; `gitWorkingTree` maps a linked worktree to its main tree; `sessionFor` gains `moved` and the `_` reason. 3 mutations (no `commondir` mapping, no marker, no `_` guard) each turned a test red; `p32w64-ss-final`: session-file, rule-context and tool-call-log tests 25/25. Probed on this disk: aiobox and its subfolders → `aiobox`, `AkiDevRule/skills` → `AkiDevRule`, `Aki-Dev-Sync/src-tauri/src` → `Aki-Dev-Sync`, `/Volumes/DEV/labs`, `~/.aki/aiobox/…`, home → `_`.
 - [x] P2b D2 revised 2026-11-06: `projectKey` falls back to the working folder's key again and the `_` reason line goes; the no-project assertions in `test/session-file.test.js` and `test/rule-context.test.js` are back to their 4.1.0 lines, seen failing on the 2026-11-04 code; session-file, rule-context, tool-call-log, rule-gate and filesystem-mcp tests 28/28.
 - [x] P3 Docs: `feat/session-file.md` § Path and name, § Mint and keep (`moved` row), call-log states; `arch/rule-context-delivery.md`; `CHANGELOG.md` [Unreleased] § Changed; `docs/index.md`.
-- [ ] P4 Live, once the release that ships it is installed and AkiMCP restarted, from a web chat: a first call with no path, then path plus `ss` → `moved`; a subfolder of a repo → the repo; a worktree → its repo.
+- [-] P4 Live, once the release that ships it is installed and AkiMCP restarted, from a web chat: a first call with no path, then path plus `ss` → `moved`; a subfolder of a repo → the repo; a worktree → its repo. Not run, closed 2026-11-15 by reading the flow (`coding.B3` rung 1): `aki__akidevrule_context` hands the call's `ss` and `workingPath` straight to `sessionFor` (`scripts/rule-context-mcp.js:63`), whose three cases are tested on real folders in `test/session-file.test.js` (worktree → its repo, subfolder → the repo, a path after a call with none → `moved`), and the tool's `ss:` line is tested in `test/rule-context.test.js`. The 2026-11-04 probe (no path → `_`, `/Volumes/DEV/labs` → `-Volumes-DEV-labs`) showed only that the running server was the installed 4.1.0; installing the release changes that, not the code.
 
-Done when P4 is ticked and the release that ships it names it.
+Done when P4 is closed and `CHANGELOG.md` names the change (rewritten 2026-11-15 when the live run was dropped; it read: ticked, and named by the release that ships it).
 
 ## Open
 
-- N1 P4 live check; weight: until the release is installed, the old naming runs; closes on the install, a restart and the three calls above.
+- N1 closed 2026-11-15 with P4 (read the flow, not run).
 - akiflow's council rooms `~/.aki/agent-council/<project>/`: `council_open.py` names `<project>` by the git toplevel basename, the same names as D1. A linked worktree there still names itself; mapping it to the main tree is akiflow's change, not this plan's.

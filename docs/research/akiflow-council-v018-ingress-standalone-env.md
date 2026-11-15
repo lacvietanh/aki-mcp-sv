@@ -16,7 +16,7 @@ Multi-seat akiflow council: makers implement one plan doc each, declaring target
 - [x] I6 — independent final review reconciling the merged diff against the original prompt
 - [x] I8 — Option 3 (ingress tab 3) rebuilt as a real domain-purchase-request UX + footer utm/style cleanup
 - [x] I9 — round-2 adversarial UX audit (repo entry through panel Step 0-4), fix pass shipped
-- [ ] I7 — release v0.18 — NOT executed, explicitly blocked by the owner
+- [-] I7 — release v0.18 — NOT executed, explicitly blocked by the owner
 
 ## Result
 Three plan docs shipped as code, plus two feature/UX rounds the owner requested mid-session; the release itself did not run.

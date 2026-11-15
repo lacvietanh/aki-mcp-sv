@@ -25,7 +25,7 @@ Bối cảnh: single-process, một `McpServer` dùng chung mọi client qua m�
 - [x] Xác nhận SDK 1.30.0 có `annotations` trong config `registerTool` và `RegisteredTool.enable()/disable()` (`node_modules/@modelcontextprotocol/sdk/dist/esm/server/mcp.d.ts` dòng 271–277).
 - [x] Grep `aki__` trong aiobox (`desktop/`, `docs/`).
 - [x] Web: spec annotations, ChatGPT developer mode, Anthropic tool search, OpenAI schema root.
-- [ ] Chưa làm: đo byte thật của `tools/list` phía server (P0 của plan); kiểm hành vi trên từng client.
+- [-] Chưa làm trong lần này: đo byte thật của `tools/list` phía server (sau đó thành `test/tool-surface.test.js`, baseline 27207 ký tự đo 2026-10-02); kiểm hành vi trên từng client (P0 của `plan/per-client-tool-surface.md`).
 
 ## Result
 

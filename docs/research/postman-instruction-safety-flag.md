@@ -13,7 +13,7 @@ Send candidates into fresh chats over CDP and read the banner, repeating each be
 - [x] Compare subagent wordings, several runs each
 - [x] Halve the wording the owner proposed and keep its ideas
 - [x] Try the owner-requested "context, not a request" form (declarative, "your own tools + akimcp as an addition"): flagged, not adopted
-- [ ] Re-run after the next Postman update
+- [-] Re-run after the next Postman update — not scheduled (2026-11-15): each run spends Postman AI quota; rerun when a new chat shows the safety banner on the shipped line
 
 ## Method and traps
 

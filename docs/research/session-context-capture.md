@@ -25,9 +25,9 @@ Enumerate every place the full conversation could live, and probe each one live 
 - [x] Enumerate localStorage keys related to chat/agent/conversation.
 - [x] Enumerate IndexedDB databases, then open `postman-app` and list every object store.
 - [x] Walk React fibers upward from the conversation container looking for a messages array.
-- [ ] Walk fibers **downward/children** (not done — handed to the follow-up).
+- [-] Walk fibers **downward/children** (not done — handed to the follow-up; not pursued: the DOM char-length bar was kept instead, restored 2026-09-27, see Amendments).
 - [x] Inspect the chat request/response bodies on the wire in detail — re-verified live 2026-09-07 across 3 turns of one fresh conversation on a dedicated experiment window (probe `tmp-probe-newwin.js`).
-- [ ] Inspect a redux/mobx-style store if one is reachable from `window.pm` or a module.
+- [-] Inspect a redux/mobx-style store if one is reachable from `window.pm` or a module (not pursued, same reason).
 
 ## 5. Result
 
