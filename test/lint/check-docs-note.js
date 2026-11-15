@@ -5,7 +5,6 @@ import { fileURLToPath } from 'node:url'
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
-const EXEMPT_FILES = ['docs/plan/per-client-tool-surface.md']
 const EXEMPT_DIRS = ['docs/plan/done/', 'docs/research/']
 const NOTE = /default prefix .aki__|aki__. by default/
 
@@ -23,7 +22,7 @@ try {
 const missing = listed
   .split('\n')
   .filter(Boolean)
-  .filter((file) => !EXEMPT_FILES.includes(file) && !EXEMPT_DIRS.some((dir) => file.startsWith(dir)))
+  .filter((file) => !EXEMPT_DIRS.some((dir) => file.startsWith(dir)))
   .filter((file) => !NOTE.test(readFileSync(resolve(repoRoot, file), 'utf8')))
 
 for (const file of missing) console.log(file)
