@@ -1,5 +1,7 @@
 # Rule presence check — soundness and proportionality review
 
+Status: amended 2026-11-15
+
 **Start time:** 2026-10-21
 
 **Initial purpose:** should [`plan/done/rule-presence-check.md`](../plan/done/rule-presence-check.md) be built as written (per-issuance receipts, in-memory delivery ledger, 15-min "8 words after this anchor" check, leak scan, `proof` argument on `akidevrule_context`, route-map pushes)? Sub-questions: does it move the outcome or a proxy; does each D1–D10 hold against today's code, the tool-definition cost (plan F9) and `CLAUDE.md`; critique; proportionality; recommendation. Context: AkiMCP 3.0.1, HEAD `5cab91d`; the P3 tool-definition bundle already shipped in 3.0.0 (`CHANGELOG.md:58`); route map deployed (AkiDevRule `bfba186`). Read-only, server not started, no paid API.
@@ -44,3 +46,7 @@
 - **Rejected/closed:** the plan's original D6, `proof` on `akidevrule_context` (a definition change after the one-time P3 bundle; the receipt string carries the proof, § R5; the amended plan reuses the number D6 for the proof on the retried gated call); D9 (moot without the original D6); D7 as a content scan (replaced by a path flag, § R7).
 - **No action yet:** a `run_cmd` refusal of destructive git arguments for the irreversible tail (§ R12) would be its own plan touching `scripts/shell-mcp.js` and `scripts/allowlist.js`; none is opened, because it is outside the rule presence check.
 - **Cross-references:** `docs/feat/tools.md` § Rule receipt gate; `docs/plan/done/akimcp-tool-refactor.md` D23 (kept in Stage A, replaced in Stage B); `docs/plan/done/rule-receipt-gate.md` § Limits; `scripts/tool-call-log.js` (new in scope).
+
+## Amendments
+
+- 2026-11-15 · § R9: web chats no longer write `~/.aki/mcpsv/task/<slug>/*.md`; since 3.1.0 (2026-10-26) a chat writes its session file under `~/.aki/mcpsv/ss/<project>/` and a council seat writes under `~/.aki/agent-council/<project>/<room>/`. In the 21 days to 2026-11-15 those held 7 (`task/`), 1154 (`ss/`) and 808 (council) modified `.md` files. The Stage B rerun therefore counts [WRAP] with `scythe.py --all` over the `.md` files modified in the 21 days before the run under `ss/` and `agent-council/`, not `task/`. The baseline of 31 of 143 files (22%) stays, read with one confound: an ss has a fixed section shape that a `working.md` did not.
