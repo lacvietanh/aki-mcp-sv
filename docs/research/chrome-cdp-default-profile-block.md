@@ -1,6 +1,6 @@
 # Chrome remote debugging blocked on the default profile
 
-Status: amended 2026-10-04 · the finding still holds (Chrome 136+ ignores the debugging switches on the default user-data dir), and `scripts/chrome.js` was removed as decided here; Chrome control came back in 3.0.0 on non-default directories only: `aki__chrome_launch` opens or attaches to AIObox's cloned profiles (`docs/plan/IMPORTANT-shared-cdp-profiles.md`), never the default profile.
+Status: amended 2026-10-04 · the finding still holds (Chrome 136+ ignores the debugging switches on the default user-data dir), and `scripts/chrome.js` was removed as decided here; Chrome control came back in 3.0.0 on non-default directories only: `aki__chrome_launch` opens or attaches to AIObox's cloned profiles (`docs/plan/done/IMPORTANT-shared-cdp-profiles.md`), never the default profile.
 
 **Start time:** 2026-08-08
 

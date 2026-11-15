@@ -138,7 +138,7 @@ const BROWSER_IDS = ['chrome', 'brave', 'edge'];
 // Files Chrome leaves behind after a crash; only these are cleared, and only once the lock owner is proven gone.
 const STALE_FILES = ['SingletonLock', 'SingletonSocket', 'SingletonCookie', 'DevToolsActivePort'];
 
-// Shared with AIObox (docs/plan/IMPORTANT-shared-cdp-profiles.md): AIObox provisions clones here, AkiMCP only opens or attaches.
+// Shared with AIObox (docs/plan/done/IMPORTANT-shared-cdp-profiles.md): AIObox provisions clones here, AkiMCP only opens or attaches.
 export function profilesRoot() {
   return process.env.AKI_CDP_PROFILES_DIR || path.join(os.homedir(), '.aki', 'cdp', 'profiles');
 }
