@@ -469,7 +469,6 @@ export const ROUTES = {
     setEnabled(body.id, body.enabled);
     return listProviders();
   },
-  // AIObox reads clients[] and callers[] here with x-panel-token (docs/plan/done/IMPORTANT-akimcp-aiobox-contract.md).
   'GET /api/log': async () => ({ settings: loadLogSettings(), defaults: LOG_DEFAULTS }),
   'POST /api/log': async (body) => {
     const settings = readSettings();
@@ -477,6 +476,7 @@ export const ROUTES = {
     writeSettings(settings);
     return { ok: true, message: 'saved — the next logged call uses it; past lines keep their shape' };
   },
+  // AIObox reads clients[] and callers[] here with x-panel-token (docs/plan/done/IMPORTANT-akimcp-aiobox-contract.md).
   'GET /api/security': async () => ({ limits: readLimits(), defaults: LIMIT_DEFAULTS, blocked: failures.blockedList(), clients: listClients(), callers: listCallers(), log: readSecurityLog() }),
   // AIObox's connect and readiness read the bearer token here with x-panel-token instead of tokens.json, so that file's format stays free (docs/plan/done/akimcp-aiobox-boundary-plan.md § 4 I4).
   'GET /api/access-token': async () => ({ accessToken: getOrIssueAccessToken() }),
