@@ -388,10 +388,11 @@ function sendTerm(pid) {
   }
 }
 
-// A crashed Chrome leaves its lock behind and the pid can be reused, so on macOS and Linux the process must still carry this profile's flag as a whole argument (`.../chrome-profile-1` is a prefix of `.../chrome-profile-14`); a failed ps counts as not ours.
+// The flag must be a whole argument (`.../chrome-profile-1` is a prefix of `.../chrome-profile-14`); null means ps could not run, which says nothing about the pid.
 function runsProfile(pid, dir) {
   const ps = spawnSync('ps', ['-ww', '-o', 'command=', '-p', String(pid)], { encoding: 'utf8', timeout: 5000 });
-  if (ps.error || ps.status !== 0) return false;
+  if (ps.error) return null;
+  if (ps.status !== 0) return false;
   const flag = `--user-data-dir=${dir}`;
   const command = ps.stdout;
   for (let at = command.indexOf(flag); at >= 0; at = command.indexOf(flag, at + 1)) {
@@ -425,7 +426,9 @@ export function stopChrome({ pid } = {}) {
   const owner = readOwner(session.targetDir);
   if (owner.state === 'unknown') return { stopped: false, ...owned, detail: `${owner.detail}; nothing was signalled and the session is kept` };
   const gone = owner.state === 'none' || owner.state === 'dead' || (owner.pid != null && owner.pid !== session.pid);
-  if (gone || (process.platform !== 'win32' && !runsProfile(session.pid, session.targetDir))) {
+  const runs = gone || process.platform === 'win32' ? true : runsProfile(session.pid, session.targetDir);
+  if (runs === null) return { stopped: false, ...owned, detail: 'could not check whether its Chrome is still running; nothing was signalled and the session is kept' };
+  if (gone || !runs) {
     setSession(null);
     return { stopped: false, ...owned, detail: 'its Chrome is already gone' };
   }
