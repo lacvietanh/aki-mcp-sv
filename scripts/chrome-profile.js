@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { USER_DIR } from './userdata.js';
 import { served } from './mcp-name.js';
 import { pidAlive } from './pid-alive.js';
@@ -388,7 +388,21 @@ function sendTerm(pid) {
   }
 }
 
-/** Default stop signals a Chrome this server spawned only while its profile lock still names that pid (a pid can be reused); an attached session is just forgotten. An explicit pid is killed as asked. */
+// A crashed Chrome leaves its lock behind and the pid can be reused, so on macOS and Linux the process must still carry this profile's flag as a whole argument (`.../chrome-profile-1` is a prefix of `.../chrome-profile-14`); a failed ps counts as not ours.
+function runsProfile(pid, dir) {
+  const ps = spawnSync('ps', ['-ww', '-o', 'command=', '-p', String(pid)], { encoding: 'utf8', timeout: 5000 });
+  if (ps.error || ps.status !== 0) return false;
+  const flag = `--user-data-dir=${dir}`;
+  const command = ps.stdout;
+  for (let at = command.indexOf(flag); at >= 0; at = command.indexOf(flag, at + 1)) {
+    const before = command[at - 1];
+    const after = command[at + flag.length];
+    if ((before === undefined || /\s/.test(before)) && (after === undefined || /\s/.test(after))) return true;
+  }
+  return false;
+}
+
+/** Default stop signals a Chrome this server spawned only while its profile lock still names that pid and, off Windows, the process still carries that profile's folder (a pid can be reused); an attached session is just forgotten. An explicit pid is killed as asked. */
 export function stopChrome({ pid } = {}) {
   const session = activeSession || readSavedSession();
   if (pid) {
@@ -410,7 +424,8 @@ export function stopChrome({ pid } = {}) {
   }
   const owner = readOwner(session.targetDir);
   if (owner.state === 'unknown') return { stopped: false, ...owned, detail: `${owner.detail}; nothing was signalled and the session is kept` };
-  if (owner.state === 'none' || owner.state === 'dead' || (owner.pid != null && owner.pid !== session.pid)) {
+  const gone = owner.state === 'none' || owner.state === 'dead' || (owner.pid != null && owner.pid !== session.pid);
+  if (gone || (process.platform !== 'win32' && !runsProfile(session.pid, session.targetDir))) {
     setSession(null);
     return { stopped: false, ...owned, detail: 'its Chrome is already gone' };
   }

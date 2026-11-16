@@ -80,8 +80,9 @@ async function closedPort() {
 let fakeChromePid;
 const sleepers = [];
 
-function sleeper() {
-  const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { stdio: 'ignore' });
+// `extra` lands in the child's argv after `--`, which is where ps shows it, as it would show Chrome's own flags.
+function sleeper(...extra) {
+  const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)', '--', ...extra], { stdio: 'ignore' });
   sleepers.push(child);
   return child;
 }
@@ -272,12 +273,33 @@ s.listen(0, '127.0.0.1', () => fs.writeFileSync(dir + '/DevToolsActivePort', s.a
     assert.ok(isAlive(legacy.pid));
   });
 
-  await t.test('a lock that names the session pid ends that process and says only that the signal was sent', async () => {
-    const owned = sleeper();
+  await t.test('a lock that names the session pid, whose argv carries the exact profile flag, ends that process and says only that the signal was sent', async () => {
+    const owned = sleeper(`--user-data-dir=${stopDir}`, '--remote-debugging-port=0');
     saveOwned(owned);
     lock(stopDir, `${os.hostname()}-${owned.pid}`);
     assert.deepEqual(stopChrome(), { stopped: true, owned: true, pid: owned.pid, detail: 'signal sent' });
     await endsWithin(owned);
+    assert.equal(exists(sessionFile), false);
+  });
+
+  await t.test('a live process the lock names but whose argv has no profile flag is not signalled: the pid was reused', () => {
+    const reused = sleeper('--remote-debugging-port=0');
+    saveOwned(reused);
+    lock(stopDir, `${os.hostname()}-${reused.pid}`);
+    assert.deepEqual(stopChrome(), { stopped: false, owned: true, pid: reused.pid, detail: 'its Chrome is already gone' });
+    assert.ok(isAlive(reused.pid));
+    assert.equal(exists(sessionFile), false);
+  });
+
+  await t.test('a profile folder that only starts like another one (chrome-profile-1 against chrome-profile-14) is not taken for it', () => {
+    const shortDir = makeProfile('chrome-profile-1');
+    const longDir = makeProfile('chrome-profile-14');
+    assert.ok(longDir.startsWith(shortDir));
+    const ofTheLonger = sleeper(`--user-data-dir=${longDir}`);
+    saveOwned(ofTheLonger, { targetDir: shortDir });
+    lock(shortDir, `${os.hostname()}-${ofTheLonger.pid}`);
+    assert.deepEqual(stopChrome(), { stopped: false, owned: true, pid: ofTheLonger.pid, detail: 'its Chrome is already gone' });
+    assert.ok(isAlive(ofTheLonger.pid));
     assert.equal(exists(sessionFile), false);
   });
 
