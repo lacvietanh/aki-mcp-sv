@@ -2,7 +2,7 @@
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning per [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [4.2.0] - 2026-11-17
 
 ### Added
 - **A council seat file is kept as that seat's session file (ss)** (`scripts/session-file.js`, `scripts/tool-call-log.js`, `test/session-file.test.js`, `docs/feat/session-file.md`): in an /akiflow council session the seat file `~/.aki/agent-council/<project>/<YYYY.MM.DD-HHMM>-<slug>/<seat>.md` is that chat's ss, as the rule text already says. Before, `aki__akidevrule_context` took `ss=<seat file>` for "not an ss path" and minted a new ss, and a seat whose `workingPath` was its room got a new ss in a folder named after the room: the call logs of 2026-10-26 to 2026-11-02 show seats minting ss in all 4 council rooms opened since the opener named the seat file. Now `ss=<seat file>` is `kept`, an acting call that carries it ends with the `last written N min ago` line when the file falls behind, and the call log counts the call as carrying `ss`. A context call whose `workingPath` is inside a council room mints nothing and answers `ss: none minted · <room> is a council room; its seat file is this chat's ss`, with `ssState` `council`. A seat file write gets no `ss file written` line, because the room's format is akiflow's, not the ss shape. Tool definitions are unchanged. Tested in `test/session-file.test.js` (seat accepted, `kept`, `council`); the stale line and the log count read the same check, not tested on their own.

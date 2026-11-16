@@ -1,6 +1,6 @@
 # Custom OAuth callbacks — any AI with its own sign-in connects without a new AkiMCP release
 
-Status: approved 2026-11-15, in progress. Owner direction: "để mở rộng sự linh hoạt tối đa, ta cần tìm cách để người ta custom tối đa được, như cách ta đã mở rộng kiến trúc linh hoạt custom provider/macro bên aiobox vậy. và cả đợt akimcp v4 cho phép custom cả đống name prefix"; then "lên plan chi tiết … rồi thực hiện bằng các subagent akimaker … không hỏi lại gì nữa nhé". An advisor weighed the options and two challenger passes attacked the direction and then this design the same day; their findings are folded into the Decisions and Rejected below. D9's Remove wording corrected 2026-11-15 after review: a roll alone does not cut a refresh-capable client.
+Status: approved 2026-11-15; P1–P4 released in 4.2.0 (2026-11-17), P5 (live check with a real AI) open. Owner direction: "để mở rộng sự linh hoạt tối đa, ta cần tìm cách để người ta custom tối đa được, như cách ta đã mở rộng kiến trúc linh hoạt custom provider/macro bên aiobox vậy. và cả đợt akimcp v4 cho phép custom cả đống name prefix"; then "lên plan chi tiết … rồi thực hiện bằng các subagent akimaker … không hỏi lại gì nữa nhé". An advisor weighed the options and two challenger passes attacked the direction and then this design the same day; their findings are folded into the Decisions and Rejected below. D9's Remove wording corrected 2026-11-15 after review: a roll alone does not cut a refresh-capable client.
 
 ## Why
 

@@ -1,6 +1,6 @@
 # ss project folder: the real project, from any path inside it
 
-Status: done 2026-11-15. P1–P3 done 2026-11-04, D2 revised 2026-11-06 (P2b), P4 closed 2026-11-15 by reading the flow, not run live; ships in the release after 4.1.0 (`CHANGELOG.md` [Unreleased] § Changed). Written on v4.1.0. Spec it changed: [`feat/session-file.md`](../feat/session-file.md) § Path and name, § Mint and keep. Code: `scripts/session-file.js` (`projectKey`, `gitWorkingTree`, `sessionFor`).
+Status: done 2026-11-15. P1–P3 done 2026-11-04, D2 revised 2026-11-06 (P2b), P4 closed 2026-11-15 by reading the flow, not run live; released in 4.2.0 (`CHANGELOG.md` [4.2.0] § Changed). Written on v4.1.0. Spec it changed: [`feat/session-file.md`](../feat/session-file.md) § Path and name, § Mint and keep. Code: `scripts/session-file.js` (`projectKey`, `gitWorkingTree`, `sessionFor`).
 
 Related, not a pair: aiobox `docs/plan/projects.md` is a separate future feature (Projects in AIObox), kept as context only. Nothing here waits on it. The reason for this plan is the ss of every client, not AIObox (`CLAUDE.md` § Stable core).
 
