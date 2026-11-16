@@ -378,23 +378,42 @@ export async function launchChrome(profile = 'Default', {
   return { status: 'ready', owned: true, port, wsPath, pid: child.pid, profileId: id, browser: browserName, url: url || 'about:blank' };
 }
 
-/** Default stop ends only a Chrome this server spawned; an attached session is just forgotten. An explicit pid is killed as asked. */
+// `stopped: true` means the signal was delivered, not that the process has exited.
+function sendTerm(pid) {
+  try {
+    process.kill(pid, 'SIGTERM');
+    return { stopped: true, detail: 'signal sent' };
+  } catch (e) {
+    return { stopped: false, detail: e.code === 'ESRCH' ? 'no such process' : String(e.code ?? e.message) };
+  }
+}
+
+/** Default stop signals a Chrome this server spawned only while its profile lock still names that pid (a pid can be reused); an attached session is just forgotten. An explicit pid is killed as asked. */
 export function stopChrome({ pid } = {}) {
   const session = activeSession || readSavedSession();
   if (pid) {
-    try {
-      process.kill(pid, 'SIGTERM');
-    } catch {}
+    const sent = sendTerm(pid);
     if (!session || session.pid === pid) setSession(null);
-    return { stopped: true, pid };
+    return { ...sent, pid };
   }
-  setSession(null);
-  if (!session) return { stopped: false, pid: null, detail: 'no active session' };
+  if (!session) {
+    setSession(null);
+    return { stopped: false, pid: null, detail: 'no active session' };
+  }
   if (session.owned !== true) {
+    setSession(null);
     return { stopped: false, owned: false, pid: session.pid ?? null, detail: `attached session to ${session.profileId} cleared; its owner process keeps running` };
   }
-  try {
-    process.kill(session.pid, 'SIGTERM');
-  } catch {}
-  return { stopped: true, owned: true, pid: session.pid };
+  const owned = { owned: true, pid: session.pid };
+  if (!session.targetDir) {
+    return { stopped: false, ...owned, detail: `this session was saved without its profile folder, so its owner cannot be checked and nothing was signalled; stop it with ${served('chrome_stop')} pid=${session.pid}` };
+  }
+  const owner = readOwner(session.targetDir);
+  if (owner.state === 'unknown') return { stopped: false, ...owned, detail: `${owner.detail}; nothing was signalled and the session is kept` };
+  if (owner.state === 'none' || owner.state === 'dead' || (owner.pid != null && owner.pid !== session.pid)) {
+    setSession(null);
+    return { stopped: false, ...owned, detail: 'its Chrome is already gone' };
+  }
+  setSession(null);
+  return { ...sendTerm(session.pid), ...owned };
 }

@@ -6,7 +6,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import http from 'node:http';
-import { spawnSync } from 'node:child_process';
+import { once } from 'node:events';
+import { spawn, spawnSync } from 'node:child_process';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'aki-chrome-profile-'));
 const root = path.join(tmp, 'profiles');
@@ -77,6 +78,15 @@ async function closedPort() {
 }
 
 let fakeChromePid;
+const sleepers = [];
+
+function sleeper() {
+  const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], { stdio: 'ignore' });
+  sleepers.push(child);
+  return child;
+}
+
+const endsWithin = (child, ms = 5000) => once(child, 'exit', { signal: AbortSignal.timeout(ms) });
 
 async function runTests(t) {
   // Browser and source-profile discovery
@@ -204,9 +214,10 @@ s.listen(0, '127.0.0.1', () => fs.writeFileSync(dir + '/DevToolsActivePort', s.a
   assert.ok(args.includes('https://example.com/b'));
   assert.equal(await getActivePort(), launched.port);
 
-  // Stopping an owned session terminates it.
+  // Stopping an owned session terminates it while the profile lock still names its pid.
+  lock(dir, `${os.hostname()}-${launched.pid}`);
   const stopOwned = stopChrome();
-  assert.deepEqual(stopOwned, { stopped: true, owned: true, pid: launched.pid });
+  assert.deepEqual(stopOwned, { stopped: true, owned: true, pid: launched.pid, detail: 'signal sent' });
   for (let i = 0; i < 50 && isAlive(launched.pid); i++) await new Promise((r) => setTimeout(r, 100));
   assert.equal(isAlive(launched.pid), false);
   // A url that Chrome would read as a flag is refused before anything is spawned.
@@ -219,6 +230,64 @@ s.listen(0, '127.0.0.1', () => fs.writeFileSync(dir + '/DevToolsActivePort', s.a
 
   assert.deepEqual(stopChrome(), { stopped: false, pid: null, detail: 'no active session' });
 
+  // A saved owned session names a pid that may have been reused: the default stop signals it only while the profile lock names it.
+  const stopDir = makeProfile('chrome-profile-stop');
+  const saveOwned = (child, extra = {}) => fs.writeFileSync(sessionFile, JSON.stringify({ port: dead, pid: child.pid, owned: true, profileId: 'chrome-profile-stop', targetDir: stopDir, ...extra }));
+
+  await t.test('a saved owned session whose profile lock is gone signals nothing and is cleared', () => {
+    const stranger = sleeper();
+    saveOwned(stranger);
+    assert.deepEqual(stopChrome(), { stopped: false, owned: true, pid: stranger.pid, detail: 'its Chrome is already gone' });
+    assert.ok(isAlive(stranger.pid), 'an unrelated process that took the pid is untouched');
+    assert.equal(exists(sessionFile), false);
+  });
+
+  await t.test('a lock that names another pid signals nothing and clears the session', () => {
+    const stranger = sleeper();
+    saveOwned(stranger);
+    lock(stopDir, `${os.hostname()}-${process.pid}`);
+    assert.deepEqual(stopChrome(), { stopped: false, owned: true, pid: stranger.pid, detail: 'its Chrome is already gone' });
+    assert.ok(isAlive(stranger.pid));
+    assert.equal(exists(sessionFile), false);
+  });
+
+  await t.test('a lock whose host cannot be verified signals nothing and keeps the session', () => {
+    const keeper = sleeper();
+    saveOwned(keeper);
+    lock(stopDir, `other-host.invalid-${keeper.pid}`);
+    const answer = stopChrome();
+    assert.equal(answer.stopped, false);
+    assert.equal(answer.pid, keeper.pid);
+    assert.match(answer.detail, /other-host\.invalid is not this machine \(.+\); nothing was signalled and the session is kept/);
+    assert.ok(isAlive(keeper.pid));
+    assert.equal(JSON.parse(fs.readFileSync(sessionFile, 'utf8')).pid, keeper.pid);
+  });
+
+  await t.test('a session saved without its profile folder signals nothing and names the explicit stop', () => {
+    const legacy = sleeper();
+    saveOwned(legacy, { targetDir: undefined });
+    const answer = stopChrome();
+    assert.equal(answer.stopped, false);
+    assert.match(answer.detail, new RegExp(`chrome_stop pid=${legacy.pid}`));
+    assert.ok(isAlive(legacy.pid));
+  });
+
+  await t.test('a lock that names the session pid ends that process and says only that the signal was sent', async () => {
+    const owned = sleeper();
+    saveOwned(owned);
+    lock(stopDir, `${os.hostname()}-${owned.pid}`);
+    assert.deepEqual(stopChrome(), { stopped: true, owned: true, pid: owned.pid, detail: 'signal sent' });
+    await endsWithin(owned);
+    assert.equal(exists(sessionFile), false);
+  });
+
+  await t.test('an explicit pid is killed as asked, and a pid that does not exist is reported as not stopped', async () => {
+    const target = sleeper();
+    assert.deepEqual(stopChrome({ pid: target.pid }), { stopped: true, pid: target.pid, detail: 'signal sent' });
+    await endsWithin(target);
+    assert.deepEqual(stopChrome({ pid: 2147483646 }), { stopped: false, pid: 2147483646, detail: 'no such process' });
+  });
+
   console.log('chrome-profile.test.js: ok');
 }
 
@@ -226,6 +295,7 @@ test('chrome profile discovery and POSIX lock/launch', async (t) => {
   try {
     await runTests(t);
   } finally {
+    for (const child of sleepers) child.kill('SIGKILL');
     if (fakeChromePid) {
       try { process.kill(fakeChromePid, 'SIGKILL'); } catch {}
     }
