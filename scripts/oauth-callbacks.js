@@ -53,7 +53,7 @@ const MAX_VALUE_LENGTH = 2048;
 const IP_LITERAL = /^[\d.]+$|[[:]/;
 
 /** `{ entry }` in stored form, or `{ reason }` the panel shows as is. A user entry has no name: whoever registered could choose it, and the consent page would show it as a trust label. */
-export function checkUserCallback(raw) {
+function checkUserCallback(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { reason: 'an entry needs a match and an address' };
   if (raw.match !== 'exact' && raw.match !== 'prefix') return { reason: 'match must be "exact" or "prefix"' };
   if (typeof raw.value !== 'string' || !raw.value) return { reason: 'the address is missing' };

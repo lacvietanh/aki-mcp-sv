@@ -94,7 +94,7 @@ function runInPage(expression) {
   }
 }
 
-// Two CDP clients on one tab (IMPORTANT-shared-cdp-profiles.md): a call leaves a client already on the tab connected. The same page also answers chrome_interact type: only an input or textarea takes text.
+// Two CDP clients on one tab (plan done/IMPORTANT-shared-cdp-profiles.md): a call leaves the other client connected; the same page checks that type takes only an input or textarea.
 async function testCallsLeaveOtherClientsOnTheTab() {
   const pageHttp = http.createServer((req, res) => res.end(protocol));
   const page = new WebSocketServer({ server: pageHttp });

@@ -150,7 +150,7 @@ async function applyFileEdits(filePath, edits, dryRun) {
   return { diff: formatted, content };
 }
 
-// D9 (docs/plan/done/ss-session-file.md): an ss write is named as a fact, never an order; host firewalls stop on orders in tool output. v2 D6: it also says whether the content just written has the shape. A council seat file gets no line: the room's format is akiflow's (v2 D4).
+// docs/plan/done/ss-session-file.md D9, v2 D4 and D6: the line states a fact, never an order (host firewalls stop on orders); a council seat file gets none.
 const withSessionLine = (real, text, content) => (acceptSessionPath(real) ? `${text}\nss file written: ${real} · ${shapeNote(content)}` : text);
 
 export const provider = { id: 'filesystem', title: 'Filesystem', required: true, register };
