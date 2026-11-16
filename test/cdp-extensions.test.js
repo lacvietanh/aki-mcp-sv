@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import './setup.js';
 import assert from 'node:assert/strict';
+import { mock } from 'node:test';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -35,16 +36,24 @@ async function testCdpExtensions() {
   // A page that never answers (frozen tab): evaluate gives up at its own bound with a message naming the cause, instead of hanging until the bridge timeout.
   const frozenHttp = http.createServer((req, res) => res.end(protocol));
   const frozen = new WebSocketServer({ server: frozenHttp });
+  const pageWasAsked = new Promise((resolve) => frozen.on('connection', (socket) => socket.once('message', resolve)));
   await new Promise((resolve) => frozenHttp.listen(0, '127.0.0.1', resolve));
   const { port } = frozenHttp.address();
   const target = { id: 'T-FROZEN', url: 'https://example.com/', title: 'frozen', webSocketDebuggerUrl: `ws://127.0.0.1:${port}/devtools/page/T-FROZEN` };
-  const startedAt = Date.now();
-  await assert.rejects(cdp.evaluate({ port, target, expression: '1', timeoutMs: 50 }), (e) => {
-    assert.match(e.message, /the page did not answer within 0\.05s \(the tab is frozen.*; code timeout; next: the script may have run: check with a short read-only expression before running it again/);
-    assert.deepEqual([e.code, e.timedOut], ['timeout', true]);
-    return true;
-  });
-  assert.ok(Date.now() - startedAt < 3000);
+  // The bound covers the connect too, so the clock is held until the page has received its first command (sent right after the connect) and then moved past the bound by hand.
+  mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    const rejected = assert.rejects(cdp.evaluate({ port, target, expression: '1', timeoutMs: 50 }), (e) => {
+      assert.match(e.message, /the page did not answer within 0\.05s \(the tab is frozen.*; code timeout; next: the script may have run: check with a short read-only expression before running it again/);
+      assert.deepEqual([e.code, e.timedOut], ['timeout', true]);
+      return true;
+    });
+    await pageWasAsked;
+    mock.timers.tick(50);
+    await rejected;
+  } finally {
+    mock.timers.reset();
+  }
   // One call ends within its bound end to end, under the client's ~60 s: 50 s by default, and a screenshot of a frozen tab too.
   assert.equal(cdp.CALL_BOUND_MS, 50_000);
   const shotAt = Date.now();
