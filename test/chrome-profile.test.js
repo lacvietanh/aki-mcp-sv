@@ -303,6 +303,21 @@ s.listen(0, '127.0.0.1', () => fs.writeFileSync(dir + '/DevToolsActivePort', s.a
     assert.equal(exists(sessionFile), false);
   });
 
+  await t.test('a ps that cannot run counts as not ours: nothing is signalled and the session is cleared', () => {
+    const owned = sleeper(`--user-data-dir=${stopDir}`);
+    saveOwned(owned);
+    lock(stopDir, `${os.hostname()}-${owned.pid}`);
+    const realPath = process.env.PATH;
+    process.env.PATH = fs.mkdtempSync(path.join(tmp, 'no-ps-'));
+    try {
+      assert.deepEqual(stopChrome(), { stopped: false, owned: true, pid: owned.pid, detail: 'its Chrome is already gone' });
+    } finally {
+      process.env.PATH = realPath;
+    }
+    assert.ok(isAlive(owned.pid));
+    assert.equal(exists(sessionFile), false);
+  });
+
   await t.test('an explicit pid is killed as asked, and a pid that does not exist is reported as not stopped', async () => {
     const target = sleeper();
     assert.deepEqual(stopChrome({ pid: target.pid }), { stopped: true, pid: target.pid, detail: 'signal sent' });
