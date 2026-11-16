@@ -8,6 +8,7 @@ import { register } from '../scripts/cdp-mcp.js';
 import cdp from '../scripts/cdp-engine.js';
 import { NO_CDP_PORT_MESSAGE } from '../scripts/chrome-profile.js';
 import http from 'node:http';
+import vm from 'node:vm';
 import { createRequire } from 'node:module';
 
 // ws is chrome-remote-interface's own dependency, resolved from there so the test adds none.
@@ -118,5 +119,25 @@ async function testCallsLeaveOtherClientsOnTheTab() {
   console.log('cdp-extensions.test.js: shared tab ok');
 }
 
+// chrome_interact type runs its page expression against a stub document: only an input or textarea takes a value.
+function testTypeNeedsATextField() {
+  const run = (tagName, value, args) => {
+    const el = { tagName, value, form: null, scrollIntoView() {}, focus() {}, dispatchEvent() {} };
+    class Ev { constructor(type, init) { this.type = type; Object.assign(this, init); } }
+    const document = { querySelector: () => el };
+    return vm.runInNewContext(cdp.typeExpression({ selector: '#f', ...args }), { document, Event: Ev, KeyboardEvent: Ev });
+  };
+  for (const tag of ['DIV', 'BUTTON', 'SELECT', 'A']) {
+    assert.throws(() => run(tag, undefined, { text: 'hi' }), new RegExp(`Element <${tag.toLowerCase()}> is not a text field: typing needs an input or textarea`), `${tag} is refused`);
+  }
+  const typedInto = (tag, value, args) => { const r = run(tag, value, args); return [r.typed, r.tagName, r.valueLength]; };
+  assert.deepEqual(typedInto('INPUT', 'abc', { text: 'xy' }), [true, 'INPUT', 5]);
+  assert.deepEqual(typedInto('TEXTAREA', 'abc', { text: 'xy' }), [true, 'TEXTAREA', 5]);
+  assert.deepEqual(typedInto('INPUT', 'abc', { text: 'xy', clear: true }), [true, 'INPUT', 2], 'clear replaces what was there');
+  assert.throws(() => vm.runInNewContext(cdp.typeExpression({ selector: '#f', text: 'x' }), { document: { querySelector: () => null } }), /Element not found for selector: #f/);
+  console.log('cdp-extensions.test.js: type ok');
+}
+
 await testCdpExtensions();
 await testCallsLeaveOtherClientsOnTheTab();
+testTypeNeedsATextField();

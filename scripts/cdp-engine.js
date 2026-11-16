@@ -203,19 +203,15 @@ async function click({
   return evaluate({ host, port, target, filter, expression });
 }
 
-async function type({
-  host = DEFAULT_HOST, port, target, filter, selector, text, clear = false, enter = false,
-} = {}) {
-  if (!selector) throw new Error('type requires selector');
-  const expression = `
+// Only an input or textarea takes a typed value; any other element (a button, a select, a div, contenteditable) is refused instead of being given a value property it does not read.
+function typeExpression({ selector, text, clear = false, enter = false }) {
+  return `
     (() => {
       const el = document.querySelector(${JSON.stringify(selector)});
       if (!el) throw new Error("Element not found for selector: " + ${JSON.stringify(selector)});
+      if (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA') throw new Error('Element <' + el.tagName.toLowerCase() + '> is not a text field: typing needs an input or textarea');
       el.scrollIntoView({ behavior: 'instant', block: 'center' });
       el.focus();
-      if (${clear ? 'true' : 'false'}) {
-        el.value = '';
-      }
       const val = ${JSON.stringify(text || '')};
       el.value = (${clear ? 'true' : 'false'} ? '' : (el.value || '')) + val;
       el.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
@@ -235,7 +231,13 @@ async function type({
       };
     })()
   `;
-  return evaluate({ host, port, target, filter, expression });
+}
+
+async function type({
+  host = DEFAULT_HOST, port, target, filter, selector, text, clear = false, enter = false,
+} = {}) {
+  if (!selector) throw new Error('type requires selector');
+  return evaluate({ host, port, target, filter, expression: typeExpression({ selector, text, clear, enter }) });
 }
 
 async function openTab({ host = DEFAULT_HOST, port, url = 'about:blank' } = {}) {
@@ -304,6 +306,7 @@ export default {
   screenshot,
   click,
   type,
+  typeExpression,
   openTab,
   closeTab,
   activateTab,
