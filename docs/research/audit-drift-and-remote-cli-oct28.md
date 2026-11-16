@@ -104,8 +104,8 @@ Adapting the ecosystem's table rules (`AdminToolbar` + `AdminColumn` + `useTable
 - [docs/plan/done/single-access-token.md](../plan/done/single-access-token.md) (lines 11–20)
 - [docs/plan/done/client-activity-and-security-log.md](../plan/done/client-activity-and-security-log.md) (`D1`–`D5`, lines 29–80)
 - [docs/feat/security.md](../feat/security.md) (lines 59, 114–122, 146–154)
-- [docs/plan/ss-session-file.md](../plan/ss-session-file.md) (`F12`, line 33; `D2`, line 43; `D3`, line 45; line numbers at `a022952`)
-- `docs/plan/v2-ss-session-file.md` (line 3; `D6`, lines 64–66; at `a022952`), merged 2026-10-28 into [docs/plan/ss-session-file.md](../plan/ss-session-file.md) § v2
+- [docs/plan/done/ss-session-file.md](../plan/done/ss-session-file.md) (`F12`, line 33; `D2`, line 43; `D3`, line 45; line numbers at `a022952`)
+- `docs/plan/v2-ss-session-file.md` (line 3; `D6`, lines 64–66; at `a022952`), merged 2026-10-28 into [docs/plan/done/ss-session-file.md](../plan/done/ss-session-file.md) § v2
 - [docs/plan/done/audit-tool-drift-oct25.md](../plan/done/audit-tool-drift-oct25.md) (`D9`, line 95; `§ P6 gate state`, line 189)
 - [scripts/config-page.js](../../scripts/config-page.js) (lines 8, 13, 145–171, 294, 301–323, 441–479, 563–577)
 - [scripts/panel.js](../../scripts/panel.js) (lines 52–140, 328–345, 383–422)

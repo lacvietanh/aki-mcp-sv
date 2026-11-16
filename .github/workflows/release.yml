@@ -1,6 +1,6 @@
 name: Release
 
-# Deliberate release tags only — bare semver (CLAUDE.md § Release process), never on every push. Publish design: docs/plan/npm-trusted-publishing.md.
+# Deliberate release tags only — bare semver (CLAUDE.md § Release process), never on every push. Publish design: docs/plan/done/npm-trusted-publishing.md.
 on:
   push:
     tags:

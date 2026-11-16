@@ -4,7 +4,7 @@
 2026-10-31, against aki-mcp-sv HEAD `33cad9e` (unreleased 4.0.0 work on top of 3.3.1).
 
 ## Initial purpose
-Close `docs/plan/v4-custom-name.md` P0 and P8 V1/V2. P0: source the client limits `scripts/mcp-name.js` relies on (the 64 `CEILING`, the 28 + 29 split, the Server ID and Tool prefix charset, the `mcp__` composition), which Appendix B carried as ASSUMPTION. V1/V2: decide whether a renamed prefix still reaches the rule receipt (V1) and keeps Postman's first message unflagged (V2) without a live run, since both runs spend AI session quota. Constraint: no code change unless a source contradicts a constant.
+Close `docs/plan/done/v4-custom-name.md` P0 and P8 V1/V2. P0: source the client limits `scripts/mcp-name.js` relies on (the 64 `CEILING`, the 28 + 29 split, the Server ID and Tool prefix charset, the `mcp__` composition), which Appendix B carried as ASSUMPTION. V1/V2: decide whether a renamed prefix still reaches the rule receipt (V1) and keeps Postman's first message unflagged (V2) without a live run, since both runs spend AI session quota. Constraint: no code change unless a source contradicts a constant.
 
 ## Strategy
 P0: vendor pages first, vendor repositories and staff statements second (`coding.B3` rung 3); a claim with no page found stays ASSUMPTION. V1/V2: trace the served path in this tree (rung 1) per `METHOD-audit-flow.md`, then attack the conclusion (`METHOD-deep-think.md` B3) and run live only what reading cannot settle.
@@ -50,9 +50,9 @@ The bundled `prompts/postman.md` is `Could you use the {serverId} tools ({prefix
 **Action:**
 - [`ref/fact-client-tool-names.md`](../ref/fact-client-tool-names.md) holds R1 to R4 as facts; unsourced rows stay ASSUMPTION there.
 - `scripts/mcp-name.js`: the `CEILING` comment cites the fact doc instead of saying ASSUMPTION; no value changes (R5).
-- `docs/plan/v4-custom-name.md`: P0 done; V1 and V2 closed by R6 and R7 with no live run; C3 and C10 in Appendix C read "verified by flow".
+- `docs/plan/done/v4-custom-name.md`: P0 done; V1 and V2 closed by R6 and R7 with no live run; C3 and C10 in Appendix C read "verified by flow".
 - `CHANGELOG.md` `[Unreleased]`: the two "not yet checked" clauses on the rename entries say what was verified and how.
 
 **Reopen:** V1 when a renamed server's chat is seen refused more than once in a row for a missing receipt; V2 when a non-default prefix is flagged in normal use (then drop the parenthetical first, as the safety-flag research already says); P0 when a client in the budget rows publishes a cap under 64 or a new client composes a longer name.
 
-**Cross-references:** `docs/plan/v4-custom-name.md` Appendix B, Appendix C (C3, C5, C7, C10); `research/postman-instruction-safety-flag.md`; `ref/fact-agy-mcp-config.md` CLI-5.
+**Cross-references:** `docs/plan/done/v4-custom-name.md` Appendix B, Appendix C (C3, C5, C7, C10); `research/postman-instruction-safety-flag.md`; `ref/fact-agy-mcp-config.md` CLI-5.
