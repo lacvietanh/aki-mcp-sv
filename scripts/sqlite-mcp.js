@@ -7,7 +7,29 @@ import { z } from 'zod';
 import { ok, err, fail } from './mcp-tool.js';
 import { resolveUnderRoot } from './roots.js';
 
-const DISALLOWED_SQL_WORDS = /^\s*(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|ATTACH|DETACH|REPLACE|VACUUM|REINDEX)\b/i;
+const READ_ONLY_FIRST_WORD = /^(?:SELECT|WITH|EXPLAIN|PRAGMA|VALUES)\b/i;
+const SQL_BLANKS = ' \t\n\r\f';
+
+// An allowlist, because VACUUM INTO and ATTACH pass a read-only connection; one linear scan, never a regex over the query (nested quantifiers backtrack exponentially).
+function firstStatementWord(sql) {
+  let i = 0;
+  while (i < sql.length) {
+    if (SQL_BLANKS.includes(sql[i])) {
+      i += 1;
+    } else if (sql.startsWith('--', i)) {
+      const end = sql.indexOf('\n', i);
+      if (end === -1) return '';
+      i = end + 1;
+    } else if (sql.startsWith('/*', i)) {
+      const end = sql.indexOf('*/', i + 2);
+      if (end === -1) return '';
+      i = end + 2;
+    } else {
+      break;
+    }
+  }
+  return sql.slice(i, i + 8);
+}
 
 export const provider = { id: 'sqlite', title: 'SQLite (read-only)', register };
 
@@ -63,8 +85,8 @@ export function register(server) {
       let db = null;
       try {
         const trimmed = (query || '').trim();
-        if (DISALLOWED_SQL_WORDS.test(trimmed)) {
-          return err('Write and DDL operations are not permitted. sqlite_query is strictly read-only.');
+        if (!READ_ONLY_FIRST_WORD.test(firstStatementWord(trimmed))) {
+          return err('Only SELECT, WITH, EXPLAIN, PRAGMA and VALUES statements are allowed. sqlite_query is strictly read-only.');
         }
 
         const abs = resolveUnderRoot(dbPath);

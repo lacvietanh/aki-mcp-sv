@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import './setup.js';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -63,6 +63,39 @@ async function testSqliteMcp() {
     }
     const afterRefusals = await call('sqlite_query', { dbPath, query: 'SELECT count(*) AS n FROM users' });
     assert.deepEqual(JSON.parse(afterRefusals.text).rows, [{ n: 2 }], 'the refused statements changed nothing');
+
+    const vacuumOut = path.join(outsideDir, 'c.db');
+    const bypasses = [
+      `/**/VACUUM INTO '${vacuumOut}'`,
+      `-- x\nVACUUM INTO '${vacuumOut}'`,
+      `vacuum into '${vacuumOut}'`,
+      `/* a */ ATTACH '${outsidePath}' AS z`,
+      `/**/ATTACH '${outsidePath}' AS z`,
+    ];
+    for (const query of bypasses) {
+      const refused = await call('sqlite_query', { dbPath, query });
+      assert.ok(refused.isError && /strictly read-only/.test(refused.text), `a comment or case in front does not get ${query} past the refusal`);
+      assert.equal(existsSync(vacuumOut), false, `${query} wrote no file`);
+    }
+
+    for (const query of ['SELECT 1 AS n', '/* c */ SELECT 1 AS n', '-- c\nSELECT 1 AS n', 'WITH x AS (SELECT 1 AS n) SELECT * FROM x', 'PRAGMA table_info(users)', 'EXPLAIN SELECT 1', 'VALUES (1)']) {
+      const allowed = await call('sqlite_query', { dbPath, query });
+      assert.equal(allowed.isError, false, query);
+    }
+
+    for (const query of ['/**/' + ' '.repeat(200000) + 'x', '-- ' + 'x'.repeat(200000), '/*' + 'x'.repeat(200000)]) {
+      const started = Date.now();
+      const refused = await call('sqlite_query', { dbPath, query });
+      assert.ok(refused.isError && /strictly read-only/.test(refused.text), `${query.slice(0, 6)} of ${query.length} characters is refused`);
+      assert.ok(Date.now() - started < 500, `${query.slice(0, 6)} of ${query.length} characters is refused in linear time`);
+    }
+
+    const trailing = await call('sqlite_query', { dbPath, query: `SELECT 1; VACUUM INTO '${vacuumOut}'` });
+    assert.equal(existsSync(vacuumOut), false, `a statement after the first writes no file (answered: ${trailing.text.slice(0, 60)})`);
+
+    await call('sqlite_query', { dbPath, query: 'PRAGMA user_version=7' });
+    const userVersion = await call('sqlite_query', { dbPath, query: 'PRAGMA user_version' });
+    assert.deepEqual(JSON.parse(userVersion.text).rows, [{ user_version: 0 }], 'a PRAGMA cannot write through the read-only connection');
 
     for (const [tool, args] of [['sqlite_schema', { dbPath: outsidePath }], ['sqlite_query', { dbPath: outsidePath, query: 'SELECT 1' }]]) {
       const refused = await call(tool, args);
