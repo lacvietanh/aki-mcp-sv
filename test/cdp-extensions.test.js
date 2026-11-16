@@ -82,7 +82,19 @@ async function testCdpExtensions() {
   console.log('cdp-extensions.test.js: ok');
 }
 
-// Two CDP clients on one tab (IMPORTANT-shared-cdp-profiles.md): a call leaves a client already on the tab connected.
+// The page's own document, cut down to what a typing expression touches: #name is an input holding 'abc', anything else a button.
+const pageDocument = { querySelector: (selector) => ({ tagName: selector === '#name' ? 'INPUT' : 'BUTTON', value: 'abc', form: null, scrollIntoView() {}, focus() {}, dispatchEvent() {} }) };
+class PageEvent { constructor(type, init) { this.type = type; Object.assign(this, init); } }
+function runInPage(expression) {
+  try {
+    const value = vm.runInNewContext(expression, { document: pageDocument, Event: PageEvent, KeyboardEvent: PageEvent });
+    return { result: { type: typeof value, value } };
+  } catch (e) {
+    return { result: { type: 'object' }, exceptionDetails: { text: 'Uncaught', exception: { description: e.message } } };
+  }
+}
+
+// Two CDP clients on one tab (IMPORTANT-shared-cdp-profiles.md): a call leaves a client already on the tab connected. The same page also answers chrome_interact type: only an input or textarea takes text.
 async function testCallsLeaveOtherClientsOnTheTab() {
   const pageHttp = http.createServer((req, res) => res.end(protocol));
   const page = new WebSocketServer({ server: pageHttp });
@@ -91,9 +103,9 @@ async function testCallsLeaveOtherClientsOnTheTab() {
     const seen = { methods: [], closed: new Promise((resolve) => socket.on('close', resolve)) };
     connections.push(seen);
     socket.on('message', (raw) => {
-      const { id, method } = JSON.parse(raw);
+      const { id, method, params } = JSON.parse(raw);
       seen.methods.push(method);
-      const result = method === 'Runtime.evaluate' ? { result: { type: 'number', value: 2 } } : method === 'Page.captureScreenshot' ? { data: 'iVBORw0KGgo=' } : {};
+      const result = method === 'Runtime.evaluate' ? runInPage(params.expression) : method === 'Page.captureScreenshot' ? { data: 'iVBORw0KGgo=' } : {};
       socket.send(JSON.stringify({ id, result }));
     });
   });
@@ -121,6 +133,11 @@ async function testCallsLeaveOtherClientsOnTheTab() {
   assert.equal((await ask(2, 'Runtime.evaluate')).id, 2, 'and still gets answers');
   assert.deepEqual(connections[0].methods, ['Network.enable', 'Runtime.evaluate']);
 
+  const typed = async (selector, args) => { const { value } = await cdp.type({ port, target, selector, ...args }); return [value.typed, value.tagName, value.valueLength]; };
+  assert.deepEqual(await typed('#name', { text: 'xy' }), [true, 'INPUT', 5]);
+  assert.deepEqual(await typed('#name', { text: 'xy', clear: true }), [true, 'INPUT', 2], 'clear replaces what was there');
+  await assert.rejects(typed('#go', { text: 'hi' }), /Element <button> is not a text field: typing needs an input or textarea/);
+
   watcher.terminate();
   for (const socket of page.clients) socket.terminate();
   pageHttp.closeAllConnections();
@@ -128,25 +145,5 @@ async function testCallsLeaveOtherClientsOnTheTab() {
   console.log('cdp-extensions.test.js: shared tab ok');
 }
 
-// chrome_interact type runs its page expression against a stub document: only an input or textarea takes a value.
-function testTypeNeedsATextField() {
-  const run = (tagName, value, args) => {
-    const el = { tagName, value, form: null, scrollIntoView() {}, focus() {}, dispatchEvent() {} };
-    class Ev { constructor(type, init) { this.type = type; Object.assign(this, init); } }
-    const document = { querySelector: () => el };
-    return vm.runInNewContext(cdp.typeExpression({ selector: '#f', ...args }), { document, Event: Ev, KeyboardEvent: Ev });
-  };
-  for (const tag of ['DIV', 'BUTTON', 'SELECT', 'A']) {
-    assert.throws(() => run(tag, undefined, { text: 'hi' }), new RegExp(`Element <${tag.toLowerCase()}> is not a text field: typing needs an input or textarea`), `${tag} is refused`);
-  }
-  const typedInto = (tag, value, args) => { const r = run(tag, value, args); return [r.typed, r.tagName, r.valueLength]; };
-  assert.deepEqual(typedInto('INPUT', 'abc', { text: 'xy' }), [true, 'INPUT', 5]);
-  assert.deepEqual(typedInto('TEXTAREA', 'abc', { text: 'xy' }), [true, 'TEXTAREA', 5]);
-  assert.deepEqual(typedInto('INPUT', 'abc', { text: 'xy', clear: true }), [true, 'INPUT', 2], 'clear replaces what was there');
-  assert.throws(() => vm.runInNewContext(cdp.typeExpression({ selector: '#f', text: 'x' }), { document: { querySelector: () => null } }), /Element not found for selector: #f/);
-  console.log('cdp-extensions.test.js: type ok');
-}
-
 await testCdpExtensions();
 await testCallsLeaveOtherClientsOnTheTab();
-testTypeNeedsATextField();

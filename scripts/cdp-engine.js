@@ -306,7 +306,6 @@ export default {
   screenshot,
   click,
   type,
-  typeExpression,
   openTab,
   closeTab,
   activateTab,
