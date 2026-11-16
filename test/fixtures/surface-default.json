@@ -1298,7 +1298,7 @@
       {
         "name": "aki__sqlite_query",
         "title": "Execute read-only SQL query on SQLite database",
-        "description": "Execute a read-only SQL query (SELECT, PRAGMA, EXPLAIN, WITH) on a local SQLite database. Writes and DDL are strictly rejected. Output capped at 100 rows.",
+        "description": "Execute a read-only SQL query (SELECT, PRAGMA, EXPLAIN, WITH, VALUES) on a local SQLite database. Writes and DDL are strictly rejected. Output capped at 100 rows.",
         "inputSchema": {
           "type": "object",
           "properties": {

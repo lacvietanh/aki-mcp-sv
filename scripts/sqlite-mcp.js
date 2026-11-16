@@ -74,7 +74,7 @@ export function register(server) {
       title: 'Execute read-only SQL query on SQLite database',
       annotations: { readOnlyHint: true, openWorldHint: false },
       description:
-        'Execute a read-only SQL query (SELECT, PRAGMA, EXPLAIN, WITH) on a local SQLite database. Writes and DDL are strictly rejected. Output capped at 100 rows.',
+        'Execute a read-only SQL query (SELECT, PRAGMA, EXPLAIN, WITH, VALUES) on a local SQLite database. Writes and DDL are strictly rejected. Output capped at 100 rows.',
       inputSchema: {
         dbPath: z.string().describe('Path to SQLite database file within allowed roots'),
         query: z.string().describe('Read-only SQL query to execute'),
