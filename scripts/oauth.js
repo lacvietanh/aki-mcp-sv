@@ -99,7 +99,7 @@ function dropRefreshTokens(shouldDrop) {
 // AIObox reads the token through GET /api/access-token and keeps this file as a fallback until its A3 step, so the format is free after that (docs/plan/done/akimcp-aiobox-boundary-plan.md § 4 I4).
 function saveTokens() {
   const body = { access: Object.fromEntries(accessTokens), refresh: Object.fromEntries(refreshTokens) };
-  writeFileSync(TOKENS_FILE, JSON.stringify(body), { mode: 0o600 });
+  writeFileAtomic(TOKENS_FILE, JSON.stringify(body));
 }
 
 loadTokens();
@@ -250,10 +250,11 @@ function resolveClient(clientId) {
 }
 
 export function loadOrCreatePassphrase() {
-  if (existsSync(PASSPHRASE_FILE)) return readFileSync(PASSPHRASE_FILE, 'utf8').trim();
+  const saved = existsSync(PASSPHRASE_FILE) ? readFileSync(PASSPHRASE_FILE, 'utf8').trim() : '';
+  if (saved) return saved;
   const p = Array.from({ length: PASSPHRASE_LENGTH }, () => PASSPHRASE_ALPHABET[randomInt(PASSPHRASE_ALPHABET.length)]).join('');
   // AIObox reads this one-line file to fill the authorize page (docs/plan/done/IMPORTANT-akimcp-aiobox-contract.md).
-  writeFileSync(PASSPHRASE_FILE, p, { mode: 0o600 });
+  writeFileAtomic(PASSPHRASE_FILE, p);
   return p;
 }
 
@@ -591,7 +592,7 @@ function retireAccessTokens() {
   for (const token of accessTokens.keys()) retiredTokens.push(tokenHash(token));
   retiredTokens.splice(0, Math.max(0, retiredTokens.length - RETIRED_TOKEN_LIMIT));
   accessTokens.clear();
-  writeFileSync(RETIRED_TOKENS_FILE, JSON.stringify(retiredTokens), { mode: 0o600 });
+  writeFileAtomic(RETIRED_TOKENS_FILE, JSON.stringify(retiredTokens));
 }
 
 // Soft roll leaves refresh tokens alone, so it does not evict a holder of a leaked one; `revokeRefresh` signs every client out.
