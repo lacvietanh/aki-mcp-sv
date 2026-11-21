@@ -15,6 +15,7 @@ import {
   readLocalPlanTier,
   readLocalQuotaFrame,
   explainMissingModel,
+  runUsageProbe,
   probe,
   capabilities,
   refresh,
@@ -337,6 +338,48 @@ async function runTests() {
   assert.ok(MODEL_COMPLAINT.test('Error: model claude-sonnet-4.5 not found'));
   assert.ok(!MODEL_COMPLAINT.test('Rate limit: quota exhausted for model claude-sonnet-4.5'));
   assert.ok(!MODEL_COMPLAINT.test('Command failed: kiro-cli chat --no-interactive --model claude-sonnet-4.5 --trust-tools=fs_read hello'));
+
+  // runUsageProbe timeout/SIGKILL branch: kills hung child and removes tmpDir cleanly after close.
+  const probeTmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agy-probe-timeout-')));
+  const probeBin = path.join(probeTmp, 'bin');
+  const markerFile = path.join(probeTmp, 'marker.json');
+  fs.mkdirSync(probeBin, { recursive: true });
+  const stubJs = path.join(probeBin, 'agy-hang.cjs');
+  fs.writeFileSync(stubJs, "const fs = require('node:fs');\nconst path = require('node:path');\nconst args = process.argv.slice(2);\nconst idx = args.indexOf('--log-file');\nconst logFile = idx !== -1 ? args[idx + 1] : null;\nif (logFile) {\n  fs.writeFileSync(logFile, 'probe started\\n');\n  fs.writeFileSync(process.env.FAKE_PROBE_MARKER, JSON.stringify({ tmpDir: path.dirname(logFile), pid: process.pid }));\n}\nsetTimeout(() => {}, 15000);\n");
+  fs.writeFileSync(path.join(probeBin, 'agy'), "#!/bin/sh\nLOG=\"\"\nwhile [ \"$#\" -gt 0 ]; do\n  if [ \"$1\" = \"--log-file\" ]; then LOG=\"$2\"; shift 2; continue; fi\n  shift\ndone\nif [ -n \"$LOG\" ]; then\n  printf 'probe started\\n' > \"$LOG\"\n  printf '{\"tmpDir\":\"%s\",\"pid\":%s}\\n' \"$(dirname \"$LOG\")\" \"$$\" > \"$FAKE_PROBE_MARKER\"\nfi\nexec sleep 15\n", { mode: 0o755 });
+  fs.writeFileSync(path.join(probeBin, 'agy.cmd'), '@"' + process.execPath + '" "' + stubJs + '" %*\r\n');
+  const prevPath = process.env.PATH;
+  const prevMarker = process.env.FAKE_PROBE_MARKER;
+  let recorded = null;
+  try {
+    process.env.PATH = probeBin + path.delimiter + prevPath;
+    process.env.FAKE_PROBE_MARKER = markerFile;
+    const t0 = Date.now();
+    const probeRes = await runUsageProbe({ timeoutMs: 1500 });
+    const elapsed = Date.now() - t0;
+    assert.equal(probeRes.ok, false, 'timed-out runUsageProbe must return ok: false');
+    assert.ok(elapsed < 6000, 'timed-out runUsageProbe must abort promptly, got ' + elapsed + 'ms');
+    const waitDeadline = Date.now() + 2000;
+    while (Date.now() < waitDeadline) {
+      if (fs.existsSync(markerFile)) {
+        recorded = JSON.parse(fs.readFileSync(markerFile, 'utf8'));
+        let alive = false;
+        try { process.kill(recorded.pid, 0); alive = true; } catch {}
+        if (!alive && !fs.existsSync(recorded.tmpDir)) break;
+      }
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    assert.ok(recorded && recorded.tmpDir && recorded.pid, 'fake hanging agy stub must have started');
+    let stillAlive = false;
+    try { process.kill(recorded.pid, 0); stillAlive = true; } catch {}
+    assert.equal(stillAlive, false, 'hung probe process must be killed by SIGKILL');
+    assert.equal(fs.existsSync(recorded.tmpDir), false, 'probe tmpDir must be cleaned up after SIGKILL/close');
+  } finally {
+    if (recorded?.pid) { try { process.kill(recorded.pid, 'SIGKILL'); } catch {} }
+    process.env.PATH = prevPath;
+    if (prevMarker === undefined) delete process.env.FAKE_PROBE_MARKER; else process.env.FAKE_PROBE_MARKER = prevMarker;
+    fs.rmSync(probeTmp, { recursive: true, force: true });
+  }
 
   console.log('agy-capabilities.test.js: ok');
 }

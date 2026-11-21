@@ -134,7 +134,9 @@ export function applyAgySummary(task) {
     task.emptyOutput = true;
     task.agySummary = null;
     if (task.status === 'completed') task.status = 'failed';
-    task.emptyOutputHint = 'agy returned no stdout — the call may have been silently denied rather than a clean empty result. Re-check errTail and prompt/scope.';
+    if (task.status !== 'stopped') {
+      task.emptyOutputHint = 'agy returned no stdout — the call may have been silently denied rather than a clean empty result. Re-check errTail and prompt/scope.';
+    }
     return true;
   }
 
@@ -156,7 +158,9 @@ export function applyAgySummary(task) {
     task.emptyOutput = true;
     task.agySummary = null;
     if (task.status === 'completed') task.status = 'failed';
-    task.emptyOutputHint = 'agy returned no stdout — the call may have been silently denied rather than a clean empty result. Re-check errTail and prompt/scope.';
+    if (task.status !== 'stopped') {
+      task.emptyOutputHint = 'agy returned no stdout — the call may have been silently denied rather than a clean empty result. Re-check errTail and prompt/scope.';
+    }
     return true;
   }
 
@@ -171,7 +175,7 @@ export function applyAgySummary(task) {
     const responseText = typeof parsed?.response === 'string' ? parsed.response : null;
     const isEmptyResponse = responseText !== null && !responseText.trim();
     task.emptyOutput = isEmptyResponse;
-    if (isEmptyResponse && task.status === 'completed') {
+    if (isEmptyResponse && (task.status === 'completed' || task.status === 'exited')) {
       task.emptyOutputHint = 'agy JSON response field is empty — possible silent denial; inspect errTail and tail_logs.';
     }
     task.agySummary = {
@@ -235,10 +239,10 @@ export async function startBackgroundProcess({
   const errLogFile = separateStderr ? path.join(TASK_LOGS_DIR, `${taskId}.err.log`) : null;
   // 'w', not 'a': Git for Windows' Unix tools cannot write to an append-only handle and exit at once with an empty log.
   const outFd = fs.openSync(logFile, 'w');
-  const errFd = errLogFile ? fs.openSync(errLogFile, 'w') : outFd;
-
+  let errFd = outFd;
   let child;
   try {
+    if (errLogFile) errFd = fs.openSync(errLogFile, 'w');
     child = spawn(...launchOf(bin, args), {
       cwd,
       detached: true,
@@ -246,8 +250,10 @@ export async function startBackgroundProcess({
       windowsHide: true,
     });
   } finally {
-    fs.closeSync(outFd);
-    if (errFd !== outFd) fs.closeSync(errFd);
+    try { fs.closeSync(outFd); } catch {}
+    if (errFd !== outFd) {
+      try { fs.closeSync(errFd); } catch {}
+    }
   }
 
   const pid = child.pid;

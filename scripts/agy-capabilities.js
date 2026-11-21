@@ -293,9 +293,11 @@ export function runUsageProbe({ timeoutMs = PROBE_TIMEOUT_MS } = {}) {
       killProcessGroup(child.pid, 'SIGKILL');
       finish(false);
     }, timeoutMs);
+    timer.unref?.();
 
     child.once('error', () => finish(false));
     child.once('close', (code) => finish(code === 0));
+    child.once('close', cleanup);
   });
 }
 

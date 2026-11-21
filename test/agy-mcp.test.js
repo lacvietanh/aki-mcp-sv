@@ -222,11 +222,55 @@ try {
   assert.equal(fifth.isError, true, '5th concurrent agy background task must be refused (B4b)');
   assert.match(textOf(fifth), /concurrency limit/i);
 
-  for (const id of bgIds) {
+  for (let i = 0; i < bgIds.length; i++) {
+    const id = bgIds[i];
     const stopped = JSON.parse(textOf(await callManage({ action: 'stop', taskId: id })));
     assert.equal(stopped.stopped, true);
+    if (i === 0) {
+      const stoppedStatus = JSON.parse(textOf(await callManage({ action: 'status', taskId: id })));
+      assert.equal(stoppedStatus.status, 'stopped');
+      assert.equal(stoppedStatus.agySummaryExtracted, true);
+      assert.equal(stoppedStatus.emptyOutput, true);
+      assert.equal(stoppedStatus.emptyOutputHint, undefined, 'user-stopped task must not claim silent denial');
+    }
     await callManage({ action: 'delete', taskId: id });
   }
+
+  // 9. applyAgySummary edge cases: exited gets emptyOutputHint; stopped never gets silently-denied hint.
+  const { applyAgySummary } = await import('../scripts/task-mcp.js');
+  const emptyJsonLog = path.join(tmp, 'empty-json.log');
+  fs.writeFileSync(emptyJsonLog, JSON.stringify({ status: 'SUCCESS', response: '   ', duration_seconds: 1, num_turns: 1, usage: { total_tokens: 10 } }));
+  const exitedEmptyJsonTask = { kind: 'agy', status: 'exited', outputFormat: 'json', logFile: emptyJsonLog };
+  assert.equal(applyAgySummary(exitedEmptyJsonTask), true);
+  assert.equal(exitedEmptyJsonTask.emptyOutput, true);
+  assert.match(exitedEmptyJsonTask.emptyOutputHint, /empty.*silent denial/i, 'exited task with empty JSON response must attach emptyOutputHint');
+
+  const zeroLog = path.join(tmp, 'zero.log');
+  fs.writeFileSync(zeroLog, '');
+  const exitedZeroTask = { kind: 'agy', status: 'exited', outputFormat: 'json', logFile: zeroLog };
+  assert.equal(applyAgySummary(exitedZeroTask), true);
+  assert.equal(exitedZeroTask.emptyOutput, true);
+  assert.match(exitedZeroTask.emptyOutputHint, /silently denied/i, 'exited task with empty stdout must attach emptyOutputHint');
+
+  const stoppedZeroTask = { kind: 'agy', status: 'stopped', outputFormat: 'json', logFile: zeroLog };
+  assert.equal(applyAgySummary(stoppedZeroTask), true);
+  assert.equal(stoppedZeroTask.status, 'stopped');
+  assert.equal(stoppedZeroTask.emptyOutput, true);
+  assert.equal(stoppedZeroTask.emptyOutputHint, undefined, 'stopped task with empty stdout must not attach silently-denied hint');
+
+  const wsLog = path.join(tmp, 'ws.log');
+  fs.writeFileSync(wsLog, '   \n  ');
+  const stoppedWsTask = { kind: 'agy', status: 'stopped', outputFormat: 'json', logFile: wsLog };
+  assert.equal(applyAgySummary(stoppedWsTask), true);
+  assert.equal(stoppedWsTask.status, 'stopped');
+  assert.equal(stoppedWsTask.emptyOutput, true);
+  assert.equal(stoppedWsTask.emptyOutputHint, undefined, 'stopped task with whitespace stdout must not attach silently-denied hint');
+
+  const stoppedEmptyJsonTask = { kind: 'agy', status: 'stopped', outputFormat: 'json', logFile: emptyJsonLog };
+  assert.equal(applyAgySummary(stoppedEmptyJsonTask), true);
+  assert.equal(stoppedEmptyJsonTask.status, 'stopped');
+  assert.equal(stoppedEmptyJsonTask.emptyOutput, true);
+  assert.equal(stoppedEmptyJsonTask.emptyOutputHint, undefined, 'stopped task with empty JSON response must not attach silently-denied hint');
 
   console.log('agy-mcp.test.js: ok');
 } finally {
