@@ -1,4 +1,4 @@
-// The one place that knows what the agy CLI offers: it runs `agy --version`, `agy models`, `agy --help` and 0-token `agy -p "/usage" --output-format json`, parses them, and caches per authenticated account (docs/plan/agy-run-tier-and-long-run.md). agy-mcp.js holds no model list, no effort/mode/output-format enum — this module reads them live so a new agy release needs no AkiMCP edit.
+// The one place that knows what the agy CLI offers: it runs `agy --version`, `agy models`, `agy --help` and 0-token `agy -p "/usage" --output-format json`, parses them, and caches per authenticated account (docs/plan/done/agy-run-tier-and-long-run.md). agy-mcp.js holds no model list, no effort/mode/output-format enum — this module reads them live so a new agy release needs no AkiMCP edit.
 // The model list is server-side and plan-scoped: each account's cache lives 1 h (1 min when the models probe failed), /usage has a 30 s micro-TTL (bypassed on refresh()), and a probe that fails leaves its field null (pass-through).
 import { execFile, spawn as spawnProcess } from 'node:child_process';
 import fs from 'node:fs';

@@ -1,7 +1,7 @@
 # `agy_run`: nhận biết gói tài khoản, chạy lượt dài và mặc định theo agy 1.5.13+
 > Tool names below use the default prefix `aki__` (`served(...)` in code follows the configured Tool prefix).
 
-Status: draft 2026-11-21 — chờ Challenger (`P59·W7`) phản biện và Lead (`P59·W2`) chốt trước khi triển khai. Nguồn nhiệm vụ: `.akidevsync/notes.json` (`task-1795179091165`). Baseline đo trên `aki-mcp-sv` v4.2.0, `agy` live `1.5.14`, working tree `main` sạch.
+Status: done 2026-11-22 — P1–P5 triển khai tại commit `b638605` (194/194 test pass), audit hậu triển khai vòng 2 `PASS` bởi Challenger `P59·W7` (0 Blocking). Nguồn nhiệm vụ: `.akidevsync/notes.json` (`task-1795179091165`). Baseline đo trên `aki-mcp-sv` v4.2.0, `agy` live `1.5.14`, working tree `main` sạch.
 
 ## Mục tiêu (Goal chain — `think.B1`)
 

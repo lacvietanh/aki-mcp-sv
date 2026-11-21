@@ -1,4 +1,4 @@
-// MCP provider for the local Antigravity CLI (`agy`). Contract: docs/plan/done/audit-tool-drift-oct25.md and docs/plan/agy-run-tier-and-long-run.md.
+// MCP provider for the local Antigravity CLI (`agy`). Contract: docs/plan/done/audit-tool-drift-oct25.md and docs/plan/done/agy-run-tier-and-long-run.md.
 // Runs `agy` directly with execFile / detached spawn (never through a shell), defaults to --mode plan (read-only by mechanism), and discovers models/modes/effort/formats plus account/tier/quota live via agy-capabilities.js.
 import { execFile } from 'node:child_process';
 import { z } from 'zod';

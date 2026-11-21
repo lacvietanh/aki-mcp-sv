@@ -117,7 +117,7 @@ export function readLogTail(logPath, maxBytes = 10240, maxLines = null) {
   return text;
 }
 
-// Idempotent summary extractor for finished background agy tasks (docs/plan/agy-run-tier-and-long-run.md B4a).
+// Idempotent summary extractor for finished background agy tasks (docs/plan/done/agy-run-tier-and-long-run.md B4a).
 // Runs on exit and lazily in status() after a server restart or after list() flipped status to exited.
 export function applyAgySummary(task) {
   if (!task || task.kind !== 'agy' || task.agySummaryExtracted) return false;
