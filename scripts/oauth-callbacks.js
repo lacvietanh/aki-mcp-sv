@@ -1,4 +1,4 @@
-// Where an OAuth code may go: the built-in callbacks plus the owner's own entries in setting.json `oauth.callbacks`, one shape for both (docs/plan/custom-oauth-callbacks.md D1–D4, D8).
+// Where an OAuth code may go: the built-in callbacks plus the owner's own entries in setting.json `oauth.callbacks`, one shape for both (docs/plan/done/custom-oauth-callbacks.md D1–D4, D8).
 import { isPlainObject, readSettingsChecked, writeSettings } from './allowlist.js';
 import { logSecurity } from './security-log.js';
 
