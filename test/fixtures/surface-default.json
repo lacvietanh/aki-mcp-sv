@@ -1095,7 +1095,7 @@
       {
         "name": "aki__task_manage",
         "title": "Manage Background Tasks",
-        "description": "Manage background tasks started with aki__task_start: inspect status/liveness, tail logs without loading full files into memory, stop process trees cleanly across platforms, list tasks, or delete finished records.",
+        "description": "Manage background tasks started with aki__task_start or aki__agy_run: inspect status/liveness (with stderr tail and agy JSON summary), tail logs without loading full files into memory, stop process trees cleanly, list tasks, or delete finished records.",
         "inputSchema": {
           "type": "object",
           "properties": {

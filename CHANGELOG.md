@@ -2,6 +2,14 @@
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning per [SemVer](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **`agy_run` reports active account, plan tier and quota, checks plan mismatches, and supports long-running background execution through `task_manage`** (`scripts/agy-capabilities.js`, `scripts/agy-mcp.js`, `scripts/task-mcp.js`, `test/agy-capabilities.test.js`, `test/agy-mcp.test.js`, `test/tool-surface.test.js`, `test/fixtures/surface-default.json`, `test/fixtures/surface-default-aiobox.json`, `test/fixtures/surface-default-optin.json`, `docs/ref/harness-fact.md`, `docs/feat/tools.md`, `docs/plan/agy-run-tier-and-long-run.md`): `list="models"` and `list="capabilities"` now include the authenticated `account` (read from `agy --log-file` during a 0-token `/usage` probe, rather than `google_accounts.json`), `planTier` (from `~/.gemini/antigravity-cli/aki-plan-tier/<email>` with `.frame` fallback), and `quota` by group (30 s micro-TTL, bypassed on error refresh, with `.frame` fallback ≤ 6 h), while caching capabilities per account for 1 h so switching accounts never serves stale models. Requesting a plan-gated model unavailable on the current plan refreshes once and returns an explicit tier-mismatch error naming the current plan and required plans instead of a generic CLI failure. Long runs over 120 s now accept `timeoutSec` (10..600 s synchronous; 10..1800 s with `background: true`) and `background: true` (detached via the shared task store, up to 4 concurrent `agy` runs, default `outputFormat="json"`, separated stdout/stderr logs, redacted `errTail` ≤ 2 KB and idempotent `agySummary`/`emptyOutput` extraction in `task_manage action="status"`; refused before spawn if the `task` provider is disabled). **Tool definitions changed** for `aki__agy_run` (opt-in `agy` provider: updated description plus `background` and `timeoutSec` parameters) and `aki__task_manage` (`task` provider: description synced to cover `agy_run` background runs and stderr/summary reporting): restart AkiMCP and reconnect or refresh tool definitions in MCP clients to pick up the new schemas. Tested in `test/agy-capabilities.test.js`, `test/agy-mcp.test.js`, `test/task-mcp.test.js`, `test/tool-surface.test.js` and `test/identity-served.test.js`.
+
+### Changed
+- **`agy_run` default discovery tier switches from Flash medium to Flash high (`defaultFlashModel`)** (`scripts/agy-capabilities.js`, `scripts/agy-mcp.js`, `test/agy-capabilities.test.js`, `docs/ref/harness-fact.md`): selects the newest `gemini-<n>-flash-high` reported by `agy models` (falling back to `-flash-medium` if `-high` is absent), aligning with the `akidevrule` Flash-high rule; the unused `newestFlashMedium` export was removed.
+
 ## [4.2.0] - 2026-11-17
 
 ### Added

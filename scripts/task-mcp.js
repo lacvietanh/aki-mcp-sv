@@ -1,5 +1,5 @@
 // Background Task Runner for aki-mcp-sv.
-// Executes allowlist-approved shell commands in detached background processes,
+// Executes allowlist-approved shell commands and long-running CLI tasks in detached background processes,
 // streams stdout/stderr directly to disk to prevent memory bloating,
 // tracks PID/liveness with process-group teardown, and tails logs on demand.
 import { spawn, spawnSync } from 'node:child_process';
@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
 import { USER_DIR } from './userdata.js';
-import { resolveUnderRoot, refuseCredentialArgs } from './roots.js';
+import { resolveUnderRoot, refuseCredentialArgs, redactText } from './roots.js';
 import { Shell } from './shell-mcp.js';
 import { ok, fail } from './mcp-tool.js';
 import { pidAlive } from './pid-alive.js';
@@ -16,6 +16,8 @@ import { launchOf } from './find-on-path.js';
 
 const TASKS_FILE = path.join(USER_DIR, 'tasks.json');
 const TASK_LOGS_DIR = path.join(USER_DIR, 'task-logs');
+const MAX_AGY_SUMMARY_BYTES = 4 * 1024 * 1024;
+const MAX_ERR_TAIL_BYTES = 2048;
 
 function loadTasks() {
   if (!fs.existsSync(TASKS_FILE)) return {};
@@ -47,13 +49,14 @@ function saveTask(task) {
   saveTasks(tasks);
 }
 
-function killProcessGroup(pid, signal = 'SIGTERM') {
-  if (!pid || typeof pid !== 'number' || pid <= 0) return;
-  if (process.platform === 'win32') {
+// Platform teardown table: keeps process-group killing OS-agnostic with no inline platform branches.
+const KILL_PROCESS_GROUP = {
+  win32: (pid) => {
     try {
       spawnSync('taskkill', ['/pid', String(pid), '/t', '/f'], { windowsHide: true });
     } catch {}
-  } else {
+  },
+  posix: (pid, signal) => {
     try {
       process.kill(-pid, signal);
     } catch (e) {
@@ -62,7 +65,19 @@ function killProcessGroup(pid, signal = 'SIGTERM') {
         process.kill(pid, signal);
       } catch {}
     }
-  }
+  },
+};
+
+const DETACHED_PROCESS_GROUP = {
+  win32: false,
+};
+
+export const supportsDetachedProcessGroup = () => DETACHED_PROCESS_GROUP[process.platform] ?? true;
+
+export function killProcessGroup(pid, signal = 'SIGTERM') {
+  if (!pid || typeof pid !== 'number' || pid <= 0) return;
+  const killer = KILL_PROCESS_GROUP[process.platform] || KILL_PROCESS_GROUP.posix;
+  killer(pid, signal);
 }
 
 const MAX_TAIL_BYTES = 1024 * 1024; // the tail goes to the model; a larger ask is cut here rather than buffered whole
@@ -102,12 +117,92 @@ export function readLogTail(logPath, maxBytes = 10240, maxLines = null) {
   return text;
 }
 
-export async function taskStart({ command, cwd, taskId: requestedId }) {
-  if (!command || typeof command !== 'string' || !command.trim()) {
-    throw new Error('command is required');
+// Idempotent summary extractor for finished background agy tasks (docs/plan/agy-run-tier-and-long-run.md B4a).
+// Runs on exit and lazily in status() after a server restart or after list() flipped status to exited.
+export function applyAgySummary(task) {
+  if (!task || task.kind !== 'agy' || task.agySummaryExtracted) return false;
+  task.agySummaryExtracted = true;
+
+  let size = 0;
+  try {
+    size = fs.statSync(task.logFile).size;
+  } catch {
+    size = 0;
   }
 
-  const taskId = requestedId || `task_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  if (size === 0) {
+    task.emptyOutput = true;
+    task.agySummary = null;
+    if (task.status === 'completed') task.status = 'failed';
+    task.emptyOutputHint = 'agy returned no stdout — the call may have been silently denied rather than a clean empty result. Re-check errTail and prompt/scope.';
+    return true;
+  }
+
+  if (size > MAX_AGY_SUMMARY_BYTES) {
+    task.emptyOutput = false;
+    task.agySummary = { parseSkipped: `stdout log exceeds ${MAX_AGY_SUMMARY_BYTES} bytes`, logBytes: size };
+    return true;
+  }
+
+  let raw = '';
+  try {
+    raw = fs.readFileSync(task.logFile, 'utf8');
+  } catch {
+    task.agySummary = { parseError: 'unable to read stdout log' };
+    return true;
+  }
+
+  if (!raw.trim()) {
+    task.emptyOutput = true;
+    task.agySummary = null;
+    if (task.status === 'completed') task.status = 'failed';
+    task.emptyOutputHint = 'agy returned no stdout — the call may have been silently denied rather than a clean empty result. Re-check errTail and prompt/scope.';
+    return true;
+  }
+
+  if (task.outputFormat !== 'json') {
+    task.emptyOutput = false;
+    task.agySummary = { responseChars: raw.length };
+    return true;
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    const responseText = typeof parsed?.response === 'string' ? parsed.response : null;
+    const isEmptyResponse = responseText !== null && !responseText.trim();
+    task.emptyOutput = isEmptyResponse;
+    if (isEmptyResponse && task.status === 'completed') {
+      task.emptyOutputHint = 'agy JSON response field is empty — possible silent denial; inspect errTail and tail_logs.';
+    }
+    task.agySummary = {
+      status: typeof parsed?.status === 'string' ? parsed.status : null,
+      durationSeconds: typeof parsed?.duration_seconds === 'number' ? parsed.duration_seconds : null,
+      numTurns: typeof parsed?.num_turns === 'number' ? parsed.num_turns : null,
+      usage: parsed?.usage && typeof parsed.usage === 'object' ? parsed.usage : null,
+      responseChars: responseText !== null ? responseText.length : 0,
+    };
+  } catch {
+    task.emptyOutput = false;
+    task.agySummary = { parseError: 'stdout is not valid JSON', responseChars: raw.length };
+  }
+  return true;
+}
+
+// Shared detached background process launcher for task_start and background CLI runners (e.g. agy_run).
+export async function startBackgroundProcess({
+  bin,
+  args,
+  cwd,
+  command,
+  taskId: requestedId,
+  kind = null,
+  meta = {},
+  storeArgs = true,
+  separateStderr = false,
+  maxConcurrentKind = null,
+}) {
+  const prefix = kind ? `${kind}_` : 'task_';
+  const taskId = requestedId || `${prefix}${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
   if (!/^[a-zA-Z0-9_-]+$/.test(taskId)) {
     throw new Error('taskId must only contain alphanumeric characters, hyphens, and underscores');
   }
@@ -117,27 +212,42 @@ export async function taskStart({ command, cwd, taskId: requestedId }) {
     throw new Error(`Task "${taskId}" is already running (PID ${tasks[taskId].pid})`);
   }
 
-  const shell = new Shell();
-  const { bin, args } = shell.parse(command);
-  shell.checkPermission(bin, args);
-  const dir = resolveUnderRoot(cwd);
-  refuseCredentialArgs(args, dir);
+  if (kind && typeof maxConcurrentKind === 'number' && maxConcurrentKind > 0) {
+    let prunedStale = false;
+    const active = [];
+    for (const t of Object.values(tasks)) {
+      if (t.kind !== kind || t.status !== 'running') continue;
+      if (pidAlive(t.pid)) {
+        active.push(t.taskId);
+      } else {
+        t.status = 'exited';
+        prunedStale = true;
+      }
+    }
+    if (prunedStale) saveTasks(tasks);
+    if (active.length >= maxConcurrentKind) {
+      throw new Error(`At concurrency limit (${maxConcurrentKind} active ${kind} background tasks: ${active.join(', ')}). Wait for one to finish or stop one with ${served('task_manage')}.`);
+    }
+  }
 
   fs.mkdirSync(TASK_LOGS_DIR, { recursive: true, mode: 0o700 });
   const logFile = path.join(TASK_LOGS_DIR, `${taskId}.log`);
+  const errLogFile = separateStderr ? path.join(TASK_LOGS_DIR, `${taskId}.err.log`) : null;
   // 'w', not 'a': Git for Windows' Unix tools cannot write to an append-only handle and exit at once with an empty log.
   const outFd = fs.openSync(logFile, 'w');
+  const errFd = errLogFile ? fs.openSync(errLogFile, 'w') : outFd;
 
   let child;
   try {
     child = spawn(...launchOf(bin, args), {
-      cwd: dir,
+      cwd,
       detached: true,
-      stdio: ['ignore', outFd, outFd],
+      stdio: ['ignore', outFd, errFd],
       windowsHide: true,
     });
   } finally {
     fs.closeSync(outFd);
+    if (errFd !== outFd) fs.closeSync(errFd);
   }
 
   const pid = child.pid;
@@ -161,11 +271,14 @@ export async function taskStart({ command, cwd, taskId: requestedId }) {
     pid,
     command,
     bin,
-    args,
-    cwd: dir,
+    ...(storeArgs ? { args } : {}),
+    cwd,
     startTime: new Date().toISOString(),
     status: 'running',
     logFile,
+    ...(errLogFile ? { errLogFile } : {}),
+    ...(kind ? { kind } : {}),
+    ...meta,
   };
 
   saveTask(record);
@@ -178,17 +291,21 @@ export async function taskStart({ command, cwd, taskId: requestedId }) {
         currentTasks[taskId].error = e.message;
         saveTasks(currentTasks);
       }
-      fs.appendFileSync(logFile, `\n[error] ${e.message}\n`);
+      fs.appendFileSync(errLogFile || logFile, `\n[error] ${e.message}\n`);
     } catch {}
   });
 
   child.on('exit', (code, signal) => {
     try {
       const currentTasks = loadTasks();
-      if (currentTasks[taskId] && currentTasks[taskId].status === 'running') {
-        currentTasks[taskId].status = code === 0 ? 'completed' : 'exited';
-        currentTasks[taskId].exitCode = code;
-        currentTasks[taskId].exitSignal = signal;
+      const current = currentTasks[taskId];
+      if (current && current.status === 'running') {
+        current.status = code === 0 ? 'completed' : 'exited';
+        current.exitCode = code;
+        current.exitSignal = signal;
+        if (current.kind === 'agy' && !current.agySummaryExtracted) {
+          applyAgySummary(current);
+        }
         saveTasks(currentTasks);
       }
     } catch {}
@@ -198,10 +315,25 @@ export async function taskStart({ command, cwd, taskId: requestedId }) {
     taskId,
     pid,
     command,
-    cwd: dir,
+    cwd,
     logFile,
+    ...(errLogFile ? { errLogFile } : {}),
     status: 'running',
   };
+}
+
+export async function taskStart({ command, cwd, taskId: requestedId }) {
+  if (!command || typeof command !== 'string' || !command.trim()) {
+    throw new Error('command is required');
+  }
+
+  const shell = new Shell();
+  const { bin, args } = shell.parse(command);
+  shell.checkPermission(bin, args);
+  const dir = resolveUnderRoot(cwd);
+  refuseCredentialArgs(args, dir);
+
+  return startBackgroundProcess({ bin, args, cwd: dir, command, taskId: requestedId });
 }
 
 export async function taskManage({ action, taskId, maxBytes = 10240, lines = null }) {
@@ -218,6 +350,7 @@ export async function taskManage({ action, taskId, maxBytes = 10240, lines = nul
       return {
         taskId: t.taskId,
         pid: t.pid,
+        ...(t.kind ? { kind: t.kind } : {}),
         command: t.command,
         cwd: t.cwd,
         startTime: t.startTime,
@@ -241,19 +374,39 @@ export async function taskManage({ action, taskId, maxBytes = 10240, lines = nul
 
   if (action === 'status') {
     const alive = task.status === 'running' && pidAlive(task.pid);
+    let dirty = false;
     if (!alive && task.status === 'running') {
       task.status = 'exited';
-      saveTask(task);
+      dirty = true;
     }
+    if (task.kind === 'agy' && !alive && !task.agySummaryExtracted) {
+      applyAgySummary(task);
+      dirty = true;
+    }
+    if (dirty) saveTask(task);
+
     let logSize = 0;
     try {
       logSize = fs.statSync(task.logFile).size;
     } catch {}
 
+    const extra = {};
+    if (task.errLogFile) {
+      let errLogSize = 0;
+      try {
+        errLogSize = fs.statSync(task.errLogFile).size;
+      } catch {}
+      extra.errLogSize = errLogSize;
+      if (errLogSize > 0) {
+        extra.errTail = redactText(readLogTail(task.errLogFile, MAX_ERR_TAIL_BYTES));
+      }
+    }
+
     return {
       ...task,
       alive,
       logSize,
+      ...extra,
     };
   }
 
@@ -283,11 +436,12 @@ export async function taskManage({ action, taskId, maxBytes = 10240, lines = nul
     }
     delete tasks[taskId];
     saveTasks(tasks);
-    try {
-      if (fs.existsSync(task.logFile)) {
-        fs.unlinkSync(task.logFile);
-      }
-    } catch {}
+    for (const file of [task.logFile, task.errLogFile]) {
+      if (!file) continue;
+      try {
+        if (fs.existsSync(file)) fs.unlinkSync(file);
+      } catch {}
+    }
     return {
       taskId,
       deleted: true,
@@ -325,7 +479,7 @@ export function register(server) {
     {
       title: 'Manage Background Tasks',
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
-      description: 'Manage background tasks started with ' + served('task_start') + ': inspect status/liveness, tail logs without loading full files into memory, stop process trees cleanly across platforms, list tasks, or delete finished records.',
+      description: 'Manage background tasks started with ' + served('task_start') + ' or ' + served('agy_run') + ': inspect status/liveness (with stderr tail and agy JSON summary), tail logs without loading full files into memory, stop process trees cleanly, list tasks, or delete finished records.',
       inputSchema: {
         action: z.enum(['status', 'tail_logs', 'stop', 'list', 'delete']).describe('Task action'),
         taskId: z.string().optional().describe('Task ID (required for status, tail_logs, stop, delete)'),

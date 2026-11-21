@@ -4,7 +4,7 @@
       {
         "name": "aki__agy_run",
         "title": "Antigravity CLI",
-        "description": "Delegate a task to the local agy CLI (read-only retrieval, never judgment). Mode defaults to \"plan\" (read-only by mechanism). Model defaults to the newest Gemini Flash (medium) discovery tier the installed CLI reports, not a pinned id (override: agy.defaultModel in setting.json). list=\"models\"/\"capabilities\" (no prompt) reads the ids, modes, effort levels and formats the installed agy accepts now. model/effort/outputFormat pass straight to agy, which validates them; a rejected value returns agy's error and the live list. Name exact paths in the prompt — agy resolves files outside cwd, so cwd is not a hard boundary. prompt is one verbatim arg, no shell quoting.",
+        "description": "Delegate to local agy CLI. Flash tier (default: newest Flash high, override agy.defaultModel): retrieval/reading only, never judgment. Pro-tier models: single-turn advisory with mode=\"plan\" when the active plan includes them (check list=\"capabilities\" for account/tier/quota). Default mode: \"plan\" (read-only by mechanism). Include a BLOCKED-on-tool-failure clause in prompt and treat empty output as silent denial. Long runs (>2m): set background=true and track via aki__task_manage. Name exact paths (agy resolves outside cwd); prompt is one verbatim arg.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -18,7 +18,7 @@
                 "models",
                 "capabilities"
               ],
-              "description": "read-only: return what the installed agy offers (no prompt spawned)"
+              "description": "read-only: return models/capabilities plus active account, plan tier and quota (no prompt spawned)"
             },
             "mode": {
               "type": "string",
@@ -40,6 +40,16 @@
             "cwd": {
               "type": "string",
               "description": "run inside this project dir; must be under an allowed root"
+            },
+            "background": {
+              "type": "boolean",
+              "description": "run detached in background (defaults outputFormat=\"json\", up to 1800s); track via aki__task_manage"
+            },
+            "timeoutSec": {
+              "type": "integer",
+              "minimum": 10,
+              "maximum": 1800,
+              "description": "timeout in seconds (sync 10..600 default 120; background 10..1800 default 1800)"
             }
           },
           "additionalProperties": false,

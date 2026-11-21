@@ -1,17 +1,24 @@
-// Dedicated MCP tool for the `agy` CLI: passes prompt/model/mode as separate execFile args so no shell-tokenizing step can mis-split a multi-word -p prompt (the reason it is not routed through the generic shell tool). Modes are allowlisted via allowlist.js.
-// The interface holds NO model list and no effort/mode/output-format enum: the valid values are server-side and change without an agy release, so they are read live by scripts/agy-capabilities.js and the values are passed straight to agy, which validates them (docs/plan/done/audit-tool-drift-oct25.md D1-D5). The only pre-spawn checks are AkiMCP's own mode allowlist and that no value starts with "-".
+// MCP provider for the local Antigravity CLI (`agy`). Contract: docs/plan/done/audit-tool-drift-oct25.md and docs/plan/agy-run-tier-and-long-run.md.
+// Runs `agy` directly with execFile / detached spawn (never through a shell), defaults to --mode plan (read-only by mechanism), and discovers models/modes/effort/formats plus account/tier/quota live via agy-capabilities.js.
 import { execFile } from 'node:child_process';
 import { z } from 'zod';
+import { resolveOrFail } from './roots.js';
 import { readSettings } from './allowlist.js';
 import { findOnPath } from './find-on-path.js';
-import { resolveOrFail } from './roots.js';
 import { ok, err, fail } from './mcp-tool.js';
-import { capabilities, refresh, newestFlashMedium } from './agy-capabilities.js';
+import { served } from './mcp-name.js';
+import { capabilities, refresh, defaultFlashModel, explainMissingModel } from './agy-capabilities.js';
+import { startBackgroundProcess } from './task-mcp.js';
 
-// 'plan' is agy's non-mutating mode — the only one enabled out of the box. Anything else must be explicitly opted into via setting.json -> { "agy": { "allowedModes": [...] } }.
 const DEFAULT_MODES = ['plan'];
+const DEFAULT_SYNC_TIMEOUT_SEC = 120;
+const MAX_SYNC_TIMEOUT_SEC = 600;
+const DEFAULT_BG_TIMEOUT_SEC = 1800;
+const MAX_BG_TIMEOUT_SEC = 1800;
+const MIN_TIMEOUT_SEC = 10;
+const MAX_CONCURRENT_AGY_BG = 4;
 
-// A value agy would read as one more flag (`--mode=…` after the allowlisted --mode) is refused before spawn, so the allowlist stays the only way to pick a mode.
+// A caller value starting with "-" would be parsed by agy as another flag. Refusing it before spawn keeps the allowlist the sole way to pick a mode.
 const agyValue = z.string().regex(/^[^-]/, 'must not start with "-"');
 
 function loadAllowedModes() {
@@ -19,20 +26,26 @@ function loadAllowedModes() {
   return Array.isArray(configured) && configured.length ? configured : DEFAULT_MODES;
 }
 
-// D3: the model to pass, resolved at call time. The owner's explicit setting.json pick wins (not pre-validated); else the newest gemini-<n>-flash-medium the probe found; else null, so --model is omitted and agy uses its own default.
-async function resolveModel(explicit, cwd) {
+// Model resolved at call time (D2/B5a): explicit arg wins; else setting.json agy.defaultModel; else newest Flash high (fallback medium) from caps (passed in by list to avoid double-spawn).
+async function resolveModel(explicit, cwd, caps = null) {
   if (explicit) return explicit;
   const configured = readSettings().agy?.defaultModel;
   if (typeof configured === 'string' && configured) return configured;
-  const caps = await capabilities({ cwd });
-  return newestFlashMedium(caps.models);
+  const resolvedCaps = caps ?? await capabilities({ cwd });
+  return defaultFlashModel(resolvedCaps.models);
 }
 
-function run(args, cwd) {
+function run(args, cwd, timeoutMs) {
   return new Promise((resolve) => {
-    execFile('agy', args, { cwd, timeout: 120_000, maxBuffer: 4 * 1024 * 1024 }, (error, stdout, stderr) => {
+    execFile('agy', args, { cwd, timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024 }, (error, stdout, stderr) => {
       if (error) {
-        // agy writes its own errors to stdout, not stderr — check stdout first or real failures show up as Node's generic "Command failed: <cmd>" with no explanation (see shell-mcp.js's same bug).
+        if (error.killed && !stdout?.trim()) {
+          return resolve({
+            result: err(`agy timed out after ${Math.round(timeoutMs / 1000)}s. Retry with a higher timeoutSec (up to ${MAX_SYNC_TIMEOUT_SEC}s) or background=true (track via ${served('task_manage')}).`),
+            said: false,
+          });
+        }
+        // agy writes its own errors to stdout, not stderr — check stdout first so real failures do not show as generic "Command failed".
         return resolve({ result: err(stdout || stderr || error.message), said: Boolean(stdout || stderr) });
       }
       // agy headless can't prompt for permission: a denied action auto-fails but still exits 0 with an empty response (docs/ref/harness-fact.md). Treat empty stdout as inconclusive, not clean.
@@ -44,22 +57,50 @@ function run(args, cwd) {
   });
 }
 
-// agy rejects an unknown model/effort/output-format naming the field (spike 2026-10-25: "invalid model selection … conflicts with --effort"). On such a failure, refresh the probe once (the list may have moved server-side) and return agy's own error plus the live valid values, so the caller sees what agy accepts now without a second tool.
-export const VALUE_COMPLAINT = /invalid (?:model|effort|output)|not a valid|unsupported|conflicts with --|unknown (?:model|effort|output|option|flag)/i;
-async function runWithValueHelp(args, cwd) {
-  const { result, said } = await run(args, cwd);
+// Value/tier complaint detector (B1): anchored to model/tier context so `--mode plan` in a generic "Command failed" line never false-matches.
+export const VALUE_COMPLAINT = /invalid (?:model|effort|output)|not a valid|unsupported|conflicts with --|unknown (?:model|effort|output|option|flag)|(?<!-)\bmodel\b(?:(?!\s--).){0,40}\b(?:not available|not found|requires|plan|tier|entitlement)\b|(?<!mode\s)\b(?:plan|tier|entitlement)\b(?:(?!\s--).){0,40}(?<!-)\bmodel\b/i;
+
+async function runWithValueHelp(args, cwd, timeoutMs, explicitModel) {
+  const { result, said } = await run(args, cwd, timeoutMs);
   if (!result.isError) return result;
   const message = result.content[0].text;
   if (!said || !VALUE_COMPLAINT.test(message)) return result;
   const caps = await refresh({ cwd });
-  const models = caps.models ? caps.models.map((m) => m.id).join(', ') : 'unavailable (agy models did not parse)';
+  const tierHint = explicitModel && Array.isArray(caps.models) && !caps.models.some((m) => m.id === explicitModel)
+    ? `\n\n${explainMissingModel(explicitModel, caps.planTier, caps.models).message}`
+    : '';
   const line = (label, values) => `${label}: ${values ? values.join(', ') : 'unavailable'}`;
-  return err(`${message}\n\nagy rejected a value. Valid now (agy ${caps.version ?? '?'}):\n${line('models', caps.models ? caps.models.map((m) => m.id) : null)}\n${line('modes', caps.modes)}\n${line('effort', caps.efforts)}\n${line('output-format', caps.outputFormats)}\nnext: call agy_run with list="capabilities" for the full table.`);
+  return err(`${message}${tierHint}\n\nagy rejected a value. Valid now (agy ${caps.version ?? '?'}${caps.planTier ? `, plan: ${caps.planTier}` : ''}):\n${line('models', caps.models ? caps.models.map((m) => m.id) : null)}\n${line('modes', caps.modes)}\n${line('effort', caps.efforts)}\n${line('output-format', caps.outputFormats)}\nnext: call ${served('agy_run')} with list="capabilities" for the full table.`);
+}
+
+// Pre-flight check for an explicit model (B2/B3/D3): refreshes once when absent from cache before rejecting with a clear tier/model explanation.
+async function validateExplicitModel(explicitModel, cwd, { verifyAccount }) {
+  if (!explicitModel) return null;
+  let caps = await capabilities({ cwd, verifyAccount });
+  if (!Array.isArray(caps.models)) return null;
+  if (caps.models.some((m) => m.id === explicitModel)) return null;
+  caps = await refresh({ cwd });
+  if (!Array.isArray(caps.models)) return null;
+  if (caps.models.some((m) => m.id === explicitModel)) return null;
+  return err(explainMissingModel(explicitModel, caps.planTier, caps.models).message);
 }
 
 function listReply(kind, caps, defaultModel, allowedModes) {
+  if (kind === 'models') {
+    return ok(JSON.stringify({
+      account: caps.account,
+      planTier: caps.planTier,
+      quota: caps.quota,
+      models: caps.models,
+      resolvedDefaultModel: defaultModel,
+      agyVersion: caps.version,
+    }, null, 2));
+  }
   const body = {
     agyVersion: caps.version,
+    account: caps.account,
+    planTier: caps.planTier,
+    quota: caps.quota,
     models: caps.models,
     modes: caps.modes,
     effort: caps.efforts,
@@ -68,7 +109,6 @@ function listReply(kind, caps, defaultModel, allowedModes) {
     allowedModes,
     probedAt: new Date(caps.at).toISOString(),
   };
-  if (kind === 'models') return ok(JSON.stringify({ models: caps.models, resolvedDefaultModel: defaultModel, agyVersion: caps.version }, null, 2));
   return ok(JSON.stringify(body, null, 2));
 }
 
@@ -80,18 +120,19 @@ export const provider = {
   register,
 };
 
-// D4: the read-only promise is true only while 'plan' is the sole allowed mode; otherwise name the modes that can write. Built at registration from the allowlist; widening the modes takes a restart to redraw it.
+// Built at registration from the allowlist; widening agy.allowedModes takes a restart to redraw description and readOnlyHint (N5).
+// readOnlyHint stays true while 'plan' is the sole allowed mode: background=true writes only bookkeeping/log files under USER_DIR, never repository files (B4b).
 function describe(modes) {
   const readOnly = modes.length === 1 && modes[0] === 'plan';
   const modeClause = readOnly
-    ? 'Mode defaults to "plan" (read-only by mechanism). '
+    ? 'Default mode: "plan" (read-only by mechanism). '
     : `Modes allowed: ${modes.join(', ')} — only "plan" is read-only; it is the default. `;
-  return 'Delegate a task to the local agy CLI (read-only retrieval, never judgment). ' +
+  return 'Delegate to local agy CLI. Flash tier (default: newest Flash high, override agy.defaultModel): retrieval/reading only, never judgment. ' +
+    'Pro-tier models: single-turn advisory with mode="plan" when the active plan includes them (check list="capabilities" for account/tier/quota). ' +
     modeClause +
-    'Model defaults to the newest Gemini Flash (medium) discovery tier the installed CLI reports, not a pinned id (override: agy.defaultModel in setting.json). ' +
-    'list="models"/"capabilities" (no prompt) reads the ids, modes, effort levels and formats the installed agy accepts now. ' +
-    'model/effort/outputFormat pass straight to agy, which validates them; a rejected value returns agy\'s error and the live list. ' +
-    "Name exact paths in the prompt — agy resolves files outside cwd, so cwd is not a hard boundary. prompt is one verbatim arg, no shell quoting.";
+    'Include a BLOCKED-on-tool-failure clause in prompt and treat empty output as silent denial. ' +
+    `Long runs (>2m): set background=true and track via ${served('task_manage')}. ` +
+    'Name exact paths (agy resolves outside cwd); prompt is one verbatim arg.';
 }
 
 export function register(server) {
@@ -104,23 +145,25 @@ export function register(server) {
       description: describe(modes),
       inputSchema: {
         prompt: z.string().optional().describe('the task for agy; required unless list is set'),
-        list: z.enum(['models', 'capabilities']).optional().describe('read-only: return what the installed agy offers (no prompt spawned)'),
+        list: z.enum(['models', 'capabilities']).optional().describe('read-only: return models/capabilities plus active account, plan tier and quota (no prompt spawned)'),
         mode: agyValue.optional().describe('agy --mode (agy validates; "plan" is read-only and the default). Modes beyond the allowlist in setting.json are refused here'),
         model: agyValue.optional().describe('agy --model (agy validates). Omitted → the discovery-tier default; use list="models" to see the ids'),
         effort: agyValue.optional().describe('agy --effort thinking budget (agy validates; use list="capabilities" for the levels)'),
         outputFormat: agyValue.optional().describe('agy --output-format (agy validates; use list="capabilities" for the formats). Use "json" when a program parses the result'),
         cwd: z.string().optional().describe('run inside this project dir; must be under an allowed root'),
+        background: z.boolean().optional().describe('run detached in background (defaults outputFormat="json", up to 1800s); track via ' + served('task_manage')),
+        timeoutSec: z.number().int().min(MIN_TIMEOUT_SEC).max(MAX_BG_TIMEOUT_SEC).optional().describe('timeout in seconds (sync 10..600 default 120; background 10..1800 default 1800)'),
       },
     },
-    async ({ prompt, list, mode, model, effort, outputFormat, cwd }) => {
+    async ({ prompt, list, mode, model, effort, outputFormat, cwd, background, timeoutSec }) => {
       const r = resolveOrFail(cwd);
       if (!r.ok) return fail(r.error);
       const dir = r.dir;
       const allowed = loadAllowedModes();
 
       if (list) {
-        const caps = await capabilities({ cwd: dir });
-        return listReply(list, caps, await resolveModel(undefined, dir), allowed);
+        const caps = await capabilities({ cwd: dir, includeUsage: true });
+        return listReply(list, caps, await resolveModel(undefined, dir, caps), allowed);
       }
       if (!prompt || !String(prompt).trim()) {
         return err('rejected: prompt is required unless list="models" or list="capabilities" is set.');
@@ -131,14 +174,76 @@ export function register(server) {
         return err(`rejected: mode "${useMode}" is not allowlisted (allowed: ${allowed.join(', ')}). Set agy.allowedModes in setting.json to widen it.`);
       }
 
+      if (background) {
+        // Q1 / N1: dynamic import avoids circular dependency with provider-registry.js.
+        const { providerServed } = await import('./provider-registry.js');
+        if (!providerServed('task')) {
+          return err(`rejected: background=true requires the task provider (${served('task_manage')}) to be enabled. Switch "task" on in the control panel (section 4) or run synchronously with timeoutSec (up to ${MAX_SYNC_TIMEOUT_SEC}s).`);
+        }
+
+        const rejected = await validateExplicitModel(model, dir, { verifyAccount: true });
+        if (rejected) return rejected;
+
+        const resolvedModel = await resolveModel(model, dir);
+        const useFormat = outputFormat ?? 'json';
+        const bgTimeoutSec = timeoutSec ?? DEFAULT_BG_TIMEOUT_SEC;
+        const args = ['--mode', useMode];
+        if (resolvedModel) args.push('--model', resolvedModel);
+        if (effort) args.push('--effort', effort);
+        args.push('--output-format', useFormat);
+        args.push('--print-timeout', String(bgTimeoutSec));
+        // -p takes the prompt as its value and must come last (docs/ref/harness-fact.md).
+        args.push('-p', prompt);
+
+        // N2: keep long prompts out of tasks.json — record a compact summary only.
+        const summaryCmd = `agy --mode ${useMode}${resolvedModel ? ` --model ${resolvedModel}` : ''} (prompt: ${prompt.length} chars)`;
+        try {
+          const started = await startBackgroundProcess({
+            bin: 'agy',
+            args,
+            cwd: dir,
+            command: summaryCmd,
+            kind: 'agy',
+            storeArgs: false,
+            separateStderr: true,
+            maxConcurrentKind: MAX_CONCURRENT_AGY_BG,
+            meta: {
+              model: resolvedModel,
+              mode: useMode,
+              outputFormat: useFormat,
+              printTimeoutSec: bgTimeoutSec,
+            },
+          });
+          return ok(JSON.stringify({
+            ...started,
+            kind: 'agy',
+            model: resolvedModel,
+            mode: useMode,
+            outputFormat: useFormat,
+            printTimeoutSec: bgTimeoutSec,
+            next: `poll with ${served('task_manage')} action="status"|"tail_logs"|"stop"`,
+          }, null, 2));
+        } catch (e) {
+          return fail(e);
+        }
+      }
+
+      if (timeoutSec !== undefined && timeoutSec > MAX_SYNC_TIMEOUT_SEC) {
+        return err(`rejected: timeoutSec ${timeoutSec} exceeds the ${MAX_SYNC_TIMEOUT_SEC}s synchronous ceiling. Use background=true (up to ${MAX_BG_TIMEOUT_SEC}s) and track via ${served('task_manage')}.`);
+      }
+
+      const rejected = await validateExplicitModel(model, dir, { verifyAccount: false });
+      if (rejected) return rejected;
+
       const resolvedModel = await resolveModel(model, dir);
+      const syncTimeoutMs = (timeoutSec ?? DEFAULT_SYNC_TIMEOUT_SEC) * 1000;
       const args = ['--mode', useMode];
       if (resolvedModel) args.push('--model', resolvedModel);
       if (effort) args.push('--effort', effort);
       if (outputFormat) args.push('--output-format', outputFormat);
       // -p takes the prompt as its value and must come last — anything after it is silently swallowed as part of the prompt, not parsed as a flag (docs/ref/harness-fact.md, the flag-order trap).
       args.push('-p', prompt);
-      return runWithValueHelp(args, dir);
+      return runWithValueHelp(args, dir, syncTimeoutMs, model);
     },
   );
 }
