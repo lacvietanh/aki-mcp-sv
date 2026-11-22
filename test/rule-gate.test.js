@@ -273,6 +273,62 @@ assert.match(capped, /over the 32 KiB cap; readable with aki__read_text_file\)/)
 assert.doesNotMatch(capped, /follow/i);
 assert.ok(capped.length < 2048, 'a file over the cap is named, not inlined');
 
+// Generic extraRuleFiles(own) seam: pushes files outside narrowed folders (e.g. under ~/.aki/...), blocks @import exfiltration at depth >= 1, accumulates across providers, deduplicates concurrent calls via claimShown, and fails open on callback errors.
+const extraDir = path.join(os.homedir(), '.aki', 'custom-guides');
+const secretInAki = path.join(os.homedir(), '.aki', 'mcpsv', 'auth.json');
+fs.mkdirSync(extraDir, { recursive: true });
+fs.mkdirSync(path.dirname(secretInAki), { recursive: true });
+fs.writeFileSync(secretInAki, 'NEVER_LEAK_THIS_AUTH_SECRET\n');
+const guideA = path.join(extraDir, 'alpha.md');
+const guideB = path.join(extraDir, 'beta.md');
+fs.writeFileSync(guideA, '# alpha provider guide\n@~/.aki/mcpsv/auth.json\n');
+fs.writeFileSync(guideB, '# beta provider guide\n');
+const ranExtra = [];
+const gatedExtra = gate(
+  async (own) => { ranExtra.push(own); return { content: [{ type: 'text', text: `ran:${own.target}` }] }; },
+  true,
+  async (own) => {
+    if (own.target === 'throw') throw new Error('callback boom');
+    if (own.target === 'alpha') return [null, '', guideA, guideA];
+    if (own.target === 'beta') return [guideB];
+    return [];
+  },
+);
+const baseExtraReceipt = (await client.callTool({ name: 'aki__akidevrule_context', arguments: { workingPath: tmp } })).structuredContent.receipt;
+// Concurrent calls to the same uncovered extraRuleFile within SHOWN_MS: one gets the full block, the other gets the compact pointer with the same receipt.
+const [par1, par2] = await Promise.all([
+  gatedExtra({ target: 'alpha', receipt: baseExtraReceipt }),
+  gatedExtra({ target: 'alpha', receipt: baseExtraReceipt }),
+]);
+assert.equal(ranExtra.length, 0, 'neither concurrent call runs before its extraRuleFile is covered');
+const fullPush = par1.content.length === 2 ? par1 : par2;
+const compactPush = par1.content.length === 2 ? par2 : par1;
+assert.equal(fullPush.content.length, 2);
+assert.match(fullPush.content[1].text, /# alpha provider guide/);
+assert.equal(fullPush.content[1].text.includes('NEVER_LEAK_THIS_AUTH_SECRET'), false, 'raw extraRuleFile block never expands @import');
+assert.equal(compactPush.content.length, 1);
+assert.match(compactPush.content[0].text, /went with another call a moment ago/);
+const recAlpha = newReceipt(fullPush);
+assert.ok(recAlpha);
+assert.equal(newReceipt(compactPush), recAlpha, 'both concurrent calls receive the exact same covering receipt');
+const retryAlpha = await gatedExtra({ target: 'alpha', receipt: recAlpha });
+assert.equal(text(retryAlpha), 'ran:alpha');
+assert.equal(ranExtra.length, 1);
+// Multi-provider accumulation: calling beta with recAlpha pushes only beta and issues recAlphaBeta covering both alpha and beta.
+const pushBeta = await gatedExtra({ target: 'beta', receipt: recAlpha });
+assert.equal(pushBeta.content.length, 2);
+assert.match(pushBeta.content[1].text, /# beta provider guide/);
+assert.doesNotMatch(pushBeta.content[1].text, /# alpha provider guide/);
+const recAlphaBeta = newReceipt(pushBeta);
+assert.ok(recAlphaBeta && recAlphaBeta !== recAlpha);
+assert.equal(text(await gatedExtra({ target: 'alpha', receipt: recAlphaBeta })), 'ran:alpha', 'recAlphaBeta still covers alpha');
+assert.equal(text(await gatedExtra({ target: 'beta', receipt: recAlphaBeta })), 'ran:beta', 'recAlphaBeta covers beta');
+// If extraRuleFiles throws, uncovered() fails open and lets the tool handler run.
+assert.equal(text(await gatedExtra({ target: 'throw', receipt: recAlphaBeta })), 'ran:throw');
+// When an extraRuleFile changes on disk, the covering receipt becomes RULE_RECEIPT_STALE.
+fs.writeFileSync(guideA, '# alpha provider guide v2\n');
+assert.match(text(await gatedExtra({ target: 'alpha', receipt: recAlphaBeta })), /^RULE_RECEIPT_STALE:/);
+
 await client.close();
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log('rule-gate.test.js: ok');

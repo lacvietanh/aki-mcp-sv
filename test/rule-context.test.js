@@ -74,6 +74,19 @@ try {
   await assert.rejects(() => assembleRuleContext({ workingPath: home }, deps), (error) => error instanceof RuleContextError && error.code === 'OUTSIDE_ALLOWED_ROOTS');
   await assert.rejects(() => assembleRuleContext({ workingPath: path.join(home, 'new', 'deeper') }, deps), (error) => error instanceof RuleContextError && error.code === 'OUTSIDE_ALLOWED_ROOTS');
 
+  // Server-supplied extraFiles outside narrowed roots load at depth 0, while @import directives inside CLAUDE.md or inside the extraFile itself stay restricted by authorized(real) (globalZones stays ~/.claude + ~/.aki/akidevrule).
+  await fs.mkdir(path.join(home, '.aki', 'mcpsv'), { recursive: true });
+  await fs.mkdir(path.join(home, '.aki', 'external-guides'), { recursive: true });
+  const secretFile = path.join(home, '.aki', 'mcpsv', 'auth.json');
+  const directExtra = path.join(home, '.aki', 'external-guides', 'guide.md');
+  await fs.writeFile(secretFile, 'TOP_SECRET_AUTH_BYTES\n');
+  await fs.writeFile(directExtra, 'DIRECT_EXTRA_GUIDE_BODY\n@~/.aki/mcpsv/auth.json\n');
+  await fs.writeFile(path.join(root, 'CLAUDE.md'), 'allowed-root\n@~/.aki/mcpsv/auth.json\n');
+  const withExtra = await assembleRuleContext({ workingPath: project, extraFiles: [directExtra] }, { ...deps, cache: new Map() });
+  assert.ok(withExtra.context.includes('DIRECT_EXTRA_GUIDE_BODY'), 'top-level server extraFile loads even when outside narrowed project roots');
+  assert.equal(withExtra.context.includes('TOP_SECRET_AUTH_BYTES'), false, '@~/.aki/mcpsv/auth.json must never be loaded via @import');
+  assert.equal(withExtra.warnings.filter((w) => w.code === 'IMPORT_OUTSIDE_TRUST_ZONE').length, 2, 'both CLAUDE.md and extraFile @import of ~/.aki/mcpsv/auth.json are blocked');
+
   const data = path.join(temp, 'custom-identity');
   await fs.mkdir(data);
   await fs.writeFile(path.join(data, 'setting.json'), JSON.stringify({ identity: { name: 'AkiMCP', key: 'akimcp', prefix: 'test__' } }));

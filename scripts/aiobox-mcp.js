@@ -14,6 +14,7 @@ import { aioboxDir, aioboxInstalled, aioboxRunning, windowsFile, GUIDE_URL, AIOB
 const refreshFile = () => path.join(aioboxDir(), 'cdp', 'windows.refresh');
 const stateFile = () => path.join(aioboxDir(), 'akimcp-state.json');
 const guideFile = () => path.join(aioboxDir(), 'guide.md');
+const guideDir = () => path.join(aioboxDir(), 'guide');
 const requestsDir = () => path.join(aioboxDir(), 'requests');
 const runsFile = () => path.join(aioboxDir(), 'automation.sqlite');
 
@@ -435,6 +436,46 @@ const envelope = {
   args: z.record(z.string(), z.any()).optional().describe('op arguments, as the guide says'),
 };
 
+const insideGuideDir = (file, dir) => (process.platform === 'win32'
+  ? file.toLowerCase().startsWith((dir + path.sep).toLowerCase())
+  : file.startsWith(dir + path.sep));
+
+// Provider guides (~/.aki/aiobox/guide/<provider>.md) a write call touches: resolved from args.provider and the target window (falling back to args.like only when neither names a provider), fail-open when AIObox is off or a window is missing so serve('write') answers with its own refusal.
+export function extraRuleFiles(own) {
+  if (!own || typeof own !== 'object') return [];
+  const providers = new Set();
+  const explicit = own.args?.provider;
+  if (typeof explicit === 'string' && FILE_ID.test(explicit)) providers.add(explicit);
+  let map;
+  const getMap = () => (map ??= readMap());
+  const addWindowProvider = (ref) => {
+    if (typeof ref !== 'string' || !ref.trim()) return;
+    try {
+      const p = resolveTab(getMap(), ref)?.provider;
+      if (typeof p === 'string' && FILE_ID.test(p)) providers.add(p);
+    } catch {}
+  };
+  for (const ref of [own.window, own.args?.window]) addWindowProvider(ref);
+  if (!providers.size) addWindowProvider(own.args?.like);
+  if (!providers.size) return [];
+  let realGuideDir;
+  try {
+    realGuideDir = fs.realpathSync(guideDir());
+  } catch {
+    return [];
+  }
+  const out = [];
+  for (const id of providers) {
+    try {
+      const realFile = fs.realpathSync(path.join(realGuideDir, `${id}.md`));
+      if (insideGuideDir(realFile, realGuideDir) && fs.statSync(realFile).isFile()) {
+        out.push(realFile);
+      }
+    } catch {}
+  }
+  return [...new Set(out)].sort();
+}
+
 export function register(server) {
   server.registerTool(
     'aiobox',
@@ -454,6 +495,7 @@ export function register(server) {
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
       description: "AIObox windows, acting. Same envelope as " + served('aiobox') + " plus receipt (the sha256:... from " + served('akidevrule_context') + "); call its op=state first: op, window, expect, args as the guide says. Each op's help in op=state overrides the guide. from = your own window, so AIObox can refuse acting on yourself. One call takes at most 50 s.",
       inputSchema: { ...envelope, from: z.string().optional().describe('your own window') },
+      extraRuleFiles,
     },
     serve('write'),
   );

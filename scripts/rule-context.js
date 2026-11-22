@@ -144,13 +144,13 @@ export async function assembleRuleContext(input = {}, suppliedDeps = {}) {
     || (!!workingRoot && contains(file, workingRoot, pathApi, platform))
     || extraRoots.some((root) => contains(file, root, pathApi, platform));
 
-  async function load(file, kind, depth, requiredSource = false) {
+  async function load(file, kind, depth, requiredSource = false, allowDirect = false) {
     if (depth > limits.maxDepth) { warnings.push({ code: 'IMPORT_DEPTH_LIMIT', path: file }); return; }
     let real;
     try {
       await remember(file);
       real = await fsp.realpath(file);
-      if (!authorized(real)) { warnings.push({ code: 'IMPORT_OUTSIDE_TRUST_ZONE', path: file }); return; }
+      if (!(allowDirect && depth === 0) && !authorized(real)) { warnings.push({ code: 'IMPORT_OUTSIDE_TRUST_ZONE', path: file }); return; }
     } catch (error) {
       if (requiredSource) warnings.push({ code: 'REQUIRED_SOURCE_MISSING', path: file });
       return;
@@ -203,7 +203,7 @@ export async function assembleRuleContext(input = {}, suppliedDeps = {}) {
   } else warnings.push({ code: 'PROJECT_CONTEXT_NOT_LOADED', message: 'No workingPath given; project CLAUDE/AGENTS chain skipped (normal for global-only work).' });
   for (const file of extraFiles) {
     candidates.push(file);
-    try { await remember(file); await load(file, pathApi.basename(file) === 'CLAUDE.local.md' ? 'local' : 'project', 0, false); }
+    try { await remember(file); await load(file, pathApi.basename(file) === 'CLAUDE.local.md' ? 'local' : 'project', 0, false, true); }
     catch { /* a touched rule file that vanished: the receipt no longer covers it */ }
   }
 

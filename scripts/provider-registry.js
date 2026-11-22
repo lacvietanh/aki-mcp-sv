@@ -75,13 +75,14 @@ export function mountProviders(server, prefix) {
       get(target, prop, receiver) {
         if (prop !== 'registerTool') return Reflect.get(target, prop, receiver);
         return (name, config, handler) => {
-          const gated = isGated(config);
-          const hasSchema = config.inputSchema !== undefined;
+          const { extraRuleFiles, ...restConfig } = config;
+          const gated = isGated(restConfig);
+          const hasSchema = restConfig.inputSchema !== undefined;
           // A read tool always runs; one that touched a project with rule files appends a line naming them (D23). The rule tool itself is left as it is.
-          const call = gated ? gate(handler, hasSchema) : (p === rule ? handler : withRules(handler, hasSchema));
+          const call = gated ? gate(handler, hasSchema, extraRuleFiles) : (p === rule ? handler : withRules(handler, hasSchema));
           // Claude requires both readOnlyHint and destructiveHint on every tool (A12), and the MCP default for a missing destructiveHint is true: a read-only tool states false here, once.
-          const a = config.annotations;
-          const declared = a?.readOnlyHint === true && a.destructiveHint === undefined ? { ...config, annotations: { ...a, destructiveHint: false } } : config;
+          const a = restConfig.annotations;
+          const declared = a?.readOnlyHint === true && a.destructiveHint === undefined ? { ...restConfig, annotations: { ...a, destructiveHint: false } } : restConfig;
           const served = gated ? { ...declared, inputSchema: withReceipt(declared.inputSchema) } : declared;
           const handle = target.registerTool(`${prefix}${name}`, served, async (...args) => {
             try {

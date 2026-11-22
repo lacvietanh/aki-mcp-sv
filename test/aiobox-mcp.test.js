@@ -16,7 +16,7 @@ const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'aiobox-mcp-t
 process.env.HOME = home;
 process.env.USERPROFILE = home;
 const { default: cdp } = await import('../scripts/cdp-engine.js');
-const { register, provider, parseHandle, formatHandle, stripHandle, CALL_WAIT_MAX_S, setTimings } = await import('../scripts/aiobox-mcp.js');
+const { register, provider, parseHandle, formatHandle, stripHandle, extraRuleFiles, CALL_WAIT_MAX_S, setTimings } = await import('../scripts/aiobox-mcp.js');
 const { GUIDE_URL } = await import('../scripts/aiobox-guide.js');
 const VERSION = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 const aioboxHome = path.join(home, '.aki', 'aiobox');
@@ -497,6 +497,79 @@ fs.writeFileSync(mapFile, mapText);
 // State with the app up.
 assert.equal(body(await call('aiobox', { op: 'state' })).running, true);
 assert.equal('next' in body(await call('aiobox', { op: 'state' })), false);
+
+// extraRuleFiles & D23 RULE_PUSH gate on aki__aiobox_write: resolves provider guides from args.provider, window, args.window, and fallback args.like (only when primary sources are empty), enforces symlink containment inside ~/.aki/aiobox/guide/, and fails open on errors.
+const guideSubdir = path.join(aioboxHome, 'guide');
+fs.mkdirSync(guideSubdir, { recursive: true });
+const notionGuide = path.join(guideSubdir, 'notion.md');
+const gptGuide = path.join(guideSubdir, 'gpt.md');
+const claudeGuide = path.join(guideSubdir, 'claude.md');
+fs.writeFileSync(notionGuide, '# Notion provider guide\n');
+fs.writeFileSync(gptGuide, '# GPT provider guide\n');
+fs.writeFileSync(claudeGuide, '# Claude provider guide\n');
+const outsideSecret = path.join(home, 'outside-secret.md');
+fs.writeFileSync(outsideSecret, 'OUTSIDE_SECRET\n');
+fs.symlinkSync(outsideSecret, path.join(guideSubdir, 'escaped.md'));
+const settingInAki = path.join(home, '.aki', 'mcpsv', 'setting.json');
+fs.mkdirSync(path.dirname(settingInAki), { recursive: true });
+fs.writeFileSync(settingInAki, JSON.stringify({ folders: [home] }));
+fs.symlinkSync(settingInAki, path.join(guideSubdir, 'setting_escape.md'));
+
+assert.deepEqual(extraRuleFiles({ window: 'P1·W1' }), [fs.realpathSync(notionGuide)], 'resolves provider from window handle');
+assert.deepEqual(extraRuleFiles({ window: 'P7·W9' }), [fs.realpathSync(gptGuide)], 'resolves provider across retired handle chain');
+assert.deepEqual(extraRuleFiles({ args: { window: 'P7·W2·T2' } }), [fs.realpathSync(claudeGuide)], 'resolves provider from args.window');
+assert.deepEqual(extraRuleFiles({ args: { provider: 'claude', like: 'P1·W1' } }), [fs.realpathSync(claudeGuide)], 'args.like is skipped when args.provider already names the target provider (N1)');
+assert.deepEqual(extraRuleFiles({ window: 'P7·W2', args: { like: 'P1·W1' } }), [fs.realpathSync(gptGuide)], 'args.like is skipped when window already names the target provider (N1)');
+assert.deepEqual(extraRuleFiles({ args: { like: 'P1·W1' } }), [fs.realpathSync(notionGuide)], 'args.like is used as fallback when neither args.provider nor window is present');
+assert.deepEqual(extraRuleFiles({ args: { provider: 'escaped' } }), [], 'symlink pointing outside ~/.aki is rejected (B2)');
+assert.deepEqual(extraRuleFiles({ args: { provider: 'setting_escape' } }), [], 'symlink pointing to ~/.aki/mcpsv/setting.json outside guideDir is rejected (B2)');
+assert.deepEqual(extraRuleFiles({ args: { provider: '../guide' } }), [], 'path traversal failing FILE_ID is rejected');
+assert.deepEqual(extraRuleFiles({ window: 'P99·W99' }), [], 'unknown window fails open so serve("write") returns its own no_window refusal');
+
+// End-to-end through createToolsServer: aki__aiobox_write triggers RULE_PUSH on first call to a provider, accumulates across providers, and runs once covered.
+const dataDir = path.join(home, '.aki', 'mcpsv');
+fs.mkdirSync(dataDir, { recursive: true });
+fs.writeFileSync(path.join(dataDir, 'setting.json'), JSON.stringify({ folders: [home] }));
+process.env.AKI_MCP_DATA_DIR = dataDir;
+const claudeSkills = path.join(home, '.claude', 'skills', 'akirule');
+const akidevruleDir = path.join(home, '.aki', 'akidevrule');
+fs.mkdirSync(claudeSkills, { recursive: true });
+fs.mkdirSync(akidevruleDir, { recursive: true });
+fs.writeFileSync(path.join(home, '.claude', 'CLAUDE.md'), '# global rule\n');
+fs.writeFileSync(path.join(claudeSkills, 'SKILL.md'), '# skill router\n');
+fs.writeFileSync(path.join(akidevruleDir, '.version'), '1.0.0\n');
+const { createToolsServer } = await import('../scripts/tools-server.js');
+const gatedServer = createToolsServer();
+const [gClientSide, gServerSide] = InMemoryTransport.createLinkedPair();
+await gatedServer.connect(gServerSide);
+const gClient = new Client({ name: 'aiobox-gated-test', version: '1' });
+await gClient.connect(gClientSide);
+const ctxRes = await gClient.callTool({ name: 'aki__akidevrule_context', arguments: { workingPath: home } });
+const baseRec = ctxRes.structuredContent.receipt;
+const sendBeforeCount = calls.length;
+const pushNotion = await gClient.callTool({ name: 'aki__aiobox_write', arguments: { op: 'send', window: 'P1·W1', args: { text: 'hi' }, receipt: baseRec } });
+assert.equal(pushNotion.isError, undefined, 'RULE_PUSH is not an error');
+assert.equal(calls.length, sendBeforeCount, 'aiobox_write did not execute before provider guide was pushed');
+assert.match(pushNotion.content[0].text, /^RULE_PUSH: Not run yet: rules for this path are below./);
+assert.match(pushNotion.content[1].text, /# Notion provider guide/);
+const recNotion = pushNotion.content[0].text.match(/Call again with receipt=(sha256:[a-f0-9]{64}).$/)?.[1];
+assert.ok(recNotion);
+const ranNotion = await gClient.callTool({ name: 'aki__aiobox_write', arguments: { op: 'send', window: 'P1·W1', args: { text: 'hi' }, receipt: recNotion } });
+assert.equal(ranNotion.isError, undefined);
+assert.equal(calls.length, sendBeforeCount + 1, 'retry with covering receipt executes aiobox_write');
+const pushGpt = await gClient.callTool({ name: 'aki__aiobox_write', arguments: { op: 'send', window: 'P7·W2', args: { text: 'hi gpt' }, receipt: recNotion } });
+assert.match(pushGpt.content[0].text, /^RULE_PUSH:/);
+assert.match(pushGpt.content[1].text, /# GPT provider guide/);
+assert.doesNotMatch(pushGpt.content[1].text, /# Notion provider guide/, 'already covered Notion guide is not pushed again');
+const recBoth = pushGpt.content[0].text.match(/Call again with receipt=(sha256:[a-f0-9]{64}).$/)?.[1];
+assert.ok(recBoth);
+const ranGpt = await gClient.callTool({ name: 'aki__aiobox_write', arguments: { op: 'send', window: 'P7·W2', args: { text: 'hi gpt' }, receipt: recBoth } });
+assert.equal(ranGpt.isError, undefined);
+assert.equal(calls.length, sendBeforeCount + 2, 'recBoth covers GPT');
+const ranNotionAgain = await gClient.callTool({ name: 'aki__aiobox_write', arguments: { op: 'send', window: 'P1·W1', args: { text: 'hi again' }, receipt: recBoth } });
+assert.equal(ranNotionAgain.isError, undefined);
+assert.equal(calls.length, sendBeforeCount + 3, 'recBoth still covers Notion');
+await gClient.close();
 
 clearInterval(responder);
 clearInterval(taker);

@@ -79,20 +79,22 @@ export async function checkReceipt(receipt) {
 }
 
 // Rule files this call touches not yet covered by the receipt: a new covering receipt plus the text to show, or null to just run. A same-bytes file as one covered counts as covered (S6).
-async function uncovered(own, entry, current) {
+async function uncovered(own, entry, current, extraRuleFiles) {
   const known = new Set((current.sources || []).map((s) => s.path));
   const knownSha = new Set((current.sources || []).map((s) => s.sha256).filter(Boolean));
   const missing = [];
   const shaOf = new Map();
-  for (const f of [...await rulesFor(pathsOf(own)), ...await routeRulesFor(filePathsOf(own))]) {
-    if (known.has(f)) continue;
+  let extra = [];
+  try { if (typeof extraRuleFiles === 'function') extra = await extraRuleFiles(own); } catch {}
+  for (const f of [...await rulesFor(pathsOf(own)), ...await routeRulesFor(filePathsOf(own)), ...(Array.isArray(extra) ? extra : [])]) {
+    if (typeof f !== 'string' || !f || known.has(f) || missing.includes(f)) continue;
     const sha = await contentSha(f);
     if (knownSha.has(sha)) continue;
     missing.push(f);
     if (sha) shaOf.set(f, sha);
   }
   if (!missing.length) return null;
-  const extraFiles = [...new Set([...entry.extraFiles, ...missing])].sort();
+  const extraFiles = [...new Set([...(entry.extraFiles || []), ...missing])].sort();
   let next;
   try { next = await assemble({ mode: entry.mode, workingPath: entry.workingPath, extraFiles }); } catch { return null; }
   const paths = (next?.sources || []).map((s) => s.path);
@@ -136,12 +138,12 @@ function withSsLine(result, ss) {
 }
 
 // Wraps a gated tool's handler: checks and strips receipt and ss, then calls the tool as it was registered (a tool registered without an input schema gets only `extra`).
-export function gate(handler, hadSchema) {
+export function gate(handler, hadSchema, extraRuleFiles) {
   return async (input, ...rest) => {
     const { [RECEIPT_ARG]: receipt, [SS_ARG]: ss, ...own } = input || {};
     const { refused, entry, current } = await verify(receipt);
     if (refused) return { content: [{ type: 'text', text: `${refused.code}: ${refused.message}` }], isError: true };
-    const pending = hadSchema ? await uncovered(own, entry, current) : null;
+    const pending = hadSchema ? await uncovered(own, entry, current, extraRuleFiles) : null;
     if (pending) {
       const { fresh, recent } = claimShown(receipt, pending.files, pending.shaOf);
       const again = `Call again with receipt=${pending.receipt}.`;
