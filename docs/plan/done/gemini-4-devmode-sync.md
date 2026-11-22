@@ -1,6 +1,6 @@
 # Plan: Gemini 4 Developer Mode (/devmode) MCP Sync (aki-mcp-sv + akimcp.top)
 
-> Created 2026-11-22 · Updated 2026-11-22 (Pre-impl audit `PASS WITH FIXES` B1–B2, N1–N2 from Challenger `P59·W7`) · Task `task-1795207778267` (`.akidevsync/notes.json`) · Status: **Implemented (awaiting Round-2 post-impl audit)** · Sync Point 2 from AIObox Lead `P5·W261` (commits `7b8b0203`, `94126c82`, `f1539c55`, Challenger `P58·W21` PASS L8 100%).
+> Created 2026-11-22 · Updated 2026-11-22 (Pre-impl audit `PASS WITH FIXES` B1–B2, N1–N2 from Challenger `P59·W7`) · Task `task-1795207778267` (`.akidevsync/notes.json`) · Status: **Done (2026-11-22 — commits `bdfb201` [aki-mcp-sv] + `5f1f520` [akimcp.top]; Challenger `P59·W7` audit vòng 2 PASS, 0 Blocking, 0 Nit)** · Sync Point 2 from AIObox Lead `P5·W261` (commits `7b8b0203`, `94126c82`, `f1539c55`, Challenger `P58·W21` PASS L8 100%).
 > Tool names here use `aki__` by default (`scripts/mcp-name.js`).
 
 ## 1. Goal & Boundary (S-1)
