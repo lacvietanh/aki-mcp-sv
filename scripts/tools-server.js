@@ -5,10 +5,10 @@ import { mountProviders } from './provider-registry.js';
 import { VERSION } from './version.js';
 import { IDENTITY } from './mcp-name.js';
 
-export function createToolsServer() {
+export function createToolsServer(options = {}) {
   const server = new McpServer(
     { name: IDENTITY.key, version: VERSION, title: IDENTITY.name },
     { instructions: RULE_CONTEXT_INSTRUCTIONS },
   );
-  return mountProviders(server, IDENTITY.prefix);
+  return mountProviders(server, IDENTITY.prefix, options);
 }

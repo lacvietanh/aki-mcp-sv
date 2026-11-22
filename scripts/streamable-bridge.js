@@ -26,6 +26,11 @@ async function invalidArgsHint(session, params) {
 let shared = null;
 let sharedBoot = null; // in-flight boot promise — collapses concurrent first-initializes onto one session
 let nextUpstreamId = 1; // globally-unique id per forwarded request; the remap that lets clients share one session
+let liveOriginGetter = null;
+
+export function setBridgeOrigin(getOrigin) {
+  liveOriginGetter = typeof getOrigin === 'function' ? getOrigin : () => getOrigin;
+}
 // Minted external session ids, for a protocol-correct 404-on-stale. claude.ai mints a new one every ~10s, never reused; keep only the most recent, so a dropped id just re-initializes.
 const externalIds = new Set();
 const MAX_EXTERNAL_IDS = 2000;
@@ -62,7 +67,11 @@ function closeSession(session, reason = 'unspecified') {
 }
 
 async function openInternalSession() {
-  const server = createToolsServer();
+  const server = createToolsServer({
+    requireCaller: true,
+    tempTokenMode: 'in-process',
+    getOrigin: () => liveOriginGetter?.() ?? null,
+  });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const session = { transport: clientTransport, pending: new Map() };
   clientTransport.onmessage = (message) => routeResponse(session, message);
@@ -72,12 +81,12 @@ async function openInternalSession() {
   return session;
 }
 
-function postMessage(session, message) {
-  return session.transport.send(message);
+function postMessage(session, message, authInfo) {
+  return session.transport.send(message, authInfo ? { authInfo } : undefined);
 }
 
 // Forward one request over `session` and await its matching response by id. `message.id` must already be a unique upstream id. Resolves with the full JSON-RPC response object.
-function requestUpstream(session, message) {
+function requestUpstream(session, message, authInfo) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       session.pending.delete(message.id);
@@ -85,7 +94,7 @@ function requestUpstream(session, message) {
       reject(new Error('tools server response timeout'));
     }, Number(process.env.MCP_REQUEST_TIMEOUT_MS || 10 * 60 * 1000));
     session.pending.set(message.id, { resolve, reject, timer });
-    postMessage(session, message).catch((e) => {
+    postMessage(session, message, authInfo).catch((e) => {
       clearTimeout(timer);
       session.pending.delete(message.id);
       reject(e);
@@ -115,7 +124,7 @@ export function warmToolsServer() {
   createToolsServer();
 }
 
-export async function handleStreamableMcp(req, res) {
+export async function handleStreamableMcp(req, res, principal) {
   let message;
   try {
     message = JSON.parse(await readBody(req));
@@ -193,8 +202,11 @@ export async function handleStreamableMcp(req, res) {
   const flightKey = inFlightKey(externalSessionId, origId);
   inFlight.set(flightKey, upstreamId);
   const started = Date.now();
+  const authInfo = principal?.kind
+    ? { token: '', clientId: principal.kind, scopes: [], extra: { caller: principal } }
+    : undefined;
   try {
-    const response = await requestUpstream(shared.session, { ...message, id: upstreamId });
+    const response = await requestUpstream(shared.session, { ...message, id: upstreamId }, authInfo);
     response.id = origId;
     if (method === 'tools/call') {
       // The SDK reports invalid arguments either as a JSON-RPC error or as an isError result whose text starts with the code, depending on its version.

@@ -35,6 +35,10 @@ const ACCESS_TTL_S = 365 * 24 * 3600;
 // A temp token serves one chat's job and dies on its own; one constant, no picker (docs/plan/done/web-chat-client.md).
 export const TEMP_TTL_MS = 4 * 3600_000;
 export const TEMP_EXTEND_MS = 30 * 60_000;
+export const MAX_TEMP_EXTEND_HORIZON_MS = 7 * 24 * 3600_000;
+export const MAX_TEMP_NAME_CHARS = 48;
+export const MAX_TEMP_NAME_BYTES = 128;
+export const MAX_LIVE_TEMP_TOKENS = 64;
 // no 0/o/1/l/i — avoid visual ambiguity when typing; 31 symbols, drawn with randomInt so none is favoured
 const PASSPHRASE_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
 const PASSPHRASE_LENGTH = 10; // 31^10 ≈ 2^49.5 — brute-force still infeasible over network
@@ -49,7 +53,7 @@ const RETIRED_TOKEN_LIMIT = 16;
 const tokenHash = (token) => createHash('sha256').update(token).digest('hex');
 const retiredTokens = loadRetiredTokens();
 // Memory only, by decision: a restart ends every temp token, and tokens.json (its shape is pinned by the AIObox contract) never holds one.
-const tempTokens = new Map(); // sha256 -> { created, expires, revoked, lastAddress, lastAgent, lastSeen }
+const tempTokens = new Map(); // sha256 -> { name, created, expires, revoked, lastAddress, lastAgent, lastSeen }
 
 function loadRetiredTokens() {
   try {
@@ -605,23 +609,56 @@ export function rotateAccessToken({ revokeRefresh = false } = {}) {
   return getOrIssueAccessToken(revokeRefresh ? 'hard roll' : 'roll');
 }
 
+export function normalizeTempTokenName(raw) {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== 'string') throw new Error('temp token name must be a string');
+  const clean = raw
+    .normalize('NFC')
+    .replace(/[\x00-\x1f\x7f-\x9f\u2028\u2029]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!clean) return null;
+  if (Array.from(clean).length > MAX_TEMP_NAME_CHARS || Buffer.byteLength(clean, 'utf8') > MAX_TEMP_NAME_BYTES) {
+    throw new Error(`temp token name must be at most ${MAX_TEMP_NAME_CHARS} characters (${MAX_TEMP_NAME_BYTES} UTF-8 bytes)`);
+  }
+  return clean;
+}
+
+const tempLabel = (hash, entry) => `${hash.slice(0, 8)}${entry?.name ? ` name=${JSON.stringify(entry.name)}` : ''}`;
+const isLiveTempEntry = (entry, now) => Boolean(entry && !entry.revoked && entry.expires >= now);
+
 /** The plain token is returned once and never stored; a temp token has no refresh grant and no client. */
-export function mintTempToken() {
+export function mintTempToken({ name } = {}) {
+  const normalizedName = normalizeTempTokenName(name);
   const now = Date.now();
   for (const [hash, entry] of tempTokens) if (entry.expires + TEMP_TTL_MS < now) tempTokens.delete(hash);
+  if (tempTokens.size > 256) {
+    for (const [hash, entry] of tempTokens) if (entry.revoked) tempTokens.delete(hash);
+  }
+  const live = [...tempTokens].filter(([, entry]) => isLiveTempEntry(entry, now));
+  if (live.length >= MAX_LIVE_TEMP_TOKENS) {
+    throw new Error(`too many active temporary tokens (max ${MAX_LIVE_TEMP_TOKENS}); revoke unused ones first`);
+  }
+  if (normalizedName !== null) {
+    const lower = normalizedName.toLowerCase();
+    if (live.some(([, entry]) => entry.name && entry.name.toLowerCase() === lower)) {
+      throw new Error(`a live temporary token named "${normalizedName}" already exists; pick another name or revoke it first`);
+    }
+  }
   const token = randomBytes(32).toString('hex');
   const hash = tokenHash(token);
   const expires = now + TEMP_TTL_MS;
-  tempTokens.set(hash, { created: now, expires, revoked: false, lastAddress: null, lastAgent: null, lastSeen: null });
-  logSecurity(`temp token ${hash.slice(0, 8)} minted, lives until ${new Date(expires).toISOString()}`);
-  return { token, expires };
+  const record = { name: normalizedName, created: now, expires, revoked: false, lastAddress: null, lastAgent: null, lastSeen: null };
+  tempTokens.set(hash, record);
+  logSecurity(`temp token ${tempLabel(hash, record)} minted, lives until ${new Date(expires).toISOString()}`);
+  return { id: hash, name: normalizedName, token, expires };
 }
 
 function endTempToken(hash, by) {
   const entry = tempTokens.get(hash);
   if (!entry || entry.revoked) return false;
   entry.revoked = true;
-  logSecurity(`temp token ${hash.slice(0, 8)} revoked ${by}`);
+  logSecurity(`temp token ${tempLabel(hash, entry)} revoked ${by}`);
   return true;
 }
 
@@ -633,21 +670,112 @@ export function revokeTempToken(authHeader) {
 /** Panel view: the id is the stored hash, which cannot authorize anything. */
 export function listTempTokens() {
   const now = Date.now();
-  return [...tempTokens].filter(([, entry]) => !entry.revoked && entry.expires >= now).map(([id, { created, expires, lastAddress, lastAgent, lastSeen }]) => ({ id, created, expires, lastAddress, lastAgent, lastSeen }));
+  return [...tempTokens]
+    .filter(([, entry]) => isLiveTempEntry(entry, now))
+    .map(([id, { name, created, expires, lastAddress, lastAgent, lastSeen }]) => ({
+      id,
+      name: name ?? null,
+      created,
+      expires,
+      lastAddress,
+      lastAgent,
+      lastSeen,
+    }));
 }
 
-/** Only a live token is extended: an expired or revoked one stays dead. */
-export function extendTempTokenById(id) {
-  const entry = tempTokens.get(id);
-  if (!entry || entry.revoked || entry.expires < Date.now()) return false;
+export function resolveTempTokenId({ id, name, target } = {}) {
+  const hasId = id !== undefined && id !== null && id !== '';
+  const hasName = name !== undefined && name !== null && name !== '';
+  const hasTarget = target !== undefined && target !== null && target !== '';
+  if ((hasId && hasName) || (hasTarget && (hasId || hasName))) {
+    throw new Error('specify either id or name, not both');
+  }
+  const now = Date.now();
+  if (hasName) {
+    const norm = normalizeTempTokenName(name);
+    if (!norm) return null;
+    const lower = norm.toLowerCase();
+    const hit = [...tempTokens].find(([, entry]) => isLiveTempEntry(entry, now) && entry.name && entry.name.toLowerCase() === lower);
+    return hit ? hit[0] : null;
+  }
+  if (hasId) {
+    if (typeof id !== 'string') return null;
+    const cleanId = id.trim().toLowerCase();
+    if (!cleanId) return null;
+    if (cleanId.length === 64 && tempTokens.has(cleanId)) {
+      return isLiveTempEntry(tempTokens.get(cleanId), now) ? cleanId : null;
+    }
+    if (/^[0-9a-f]{8,63}$/.test(cleanId)) {
+      const hits = [...tempTokens].filter(([hash, entry]) => isLiveTempEntry(entry, now) && hash.startsWith(cleanId));
+      if (hits.length > 1) throw new Error('ambiguous temporary token id prefix; provide more characters');
+      return hits.length === 1 ? hits[0][0] : null;
+    }
+    return null;
+  }
+  if (hasTarget) {
+    if (typeof target !== 'string') return null;
+    const norm = normalizeTempTokenName(target);
+    const lower = norm ? norm.toLowerCase() : null;
+    const nameHit = lower ? [...tempTokens].find(([, entry]) => isLiveTempEntry(entry, now) && entry.name && entry.name.toLowerCase() === lower) : null;
+    const cleanHex = target.trim().toLowerCase();
+    let idHits = [];
+    if (/^[0-9a-f]{64}$/.test(cleanHex)) {
+      if (isLiveTempEntry(tempTokens.get(cleanHex), now)) idHits = [[cleanHex, tempTokens.get(cleanHex)]];
+    } else if (/^[0-9a-f]{8,63}$/.test(cleanHex)) {
+      idHits = [...tempTokens].filter(([hash, entry]) => isLiveTempEntry(entry, now) && hash.startsWith(cleanHex));
+    }
+    if (idHits.length > 1) throw new Error('ambiguous temporary token id prefix; provide more characters');
+    if (nameHit && idHits.length === 1 && nameHit[0] !== idHits[0][0]) {
+      throw new Error(`ambiguous target "${target}": matches both a token name and an id prefix; use --name or --id`);
+    }
+    return nameHit?.[0] ?? idHits[0]?.[0] ?? null;
+  }
+  return null;
+}
+
+/** Only a live token is extended: an expired or revoked one stays dead. Throws if extending would exceed 7 days from now. */
+export function extendTempToken({ id, name, target, by = 'from the panel' } = {}) {
+  const resolvedId = resolveTempTokenId({ id, name, target });
+  if (!resolvedId) return null;
+  const entry = tempTokens.get(resolvedId);
+  const now = Date.now();
+  if (!isLiveTempEntry(entry, now)) return null;
+  if (entry.expires + TEMP_EXTEND_MS > now + MAX_TEMP_EXTEND_HORIZON_MS) {
+    throw new Error('cannot extend temporary token beyond 7 days from now');
+  }
   entry.expires += TEMP_EXTEND_MS;
-  logSecurity(`temp token ${id.slice(0, 8)} extended from the panel, lives until ${new Date(entry.expires).toISOString()}`);
-  return true;
+  logSecurity(`temp token ${tempLabel(resolvedId, entry)} extended ${by}, lives until ${new Date(entry.expires).toISOString()}`);
+  return { id: resolvedId, name: entry.name ?? null, expires: entry.expires };
+}
+
+export const extendTempTokenById = (id) => Boolean(extendTempToken({ id }));
+
+export function revokeTempTokenTarget({ id, name, target, all = false, by = 'from the panel' } = {}) {
+  const hasId = id !== undefined && id !== null && id !== '';
+  const hasName = name !== undefined && name !== null && name !== '';
+  const hasTarget = target !== undefined && target !== null && target !== '';
+  if (all) {
+    if (hasId || hasName || hasTarget) {
+      throw new Error('specify either all or a single token (id/name), not both');
+    }
+    const liveIds = listTempTokens().map((entry) => entry.id);
+    const revoked = liveIds.filter((hash) => endTempToken(hash, by)).length;
+    return { revoked, id: null, name: null };
+  }
+  if (!hasId && !hasName && !hasTarget) {
+    throw new Error('id or name is required to revoke a temporary token (or pass all: true)');
+  }
+  const resolvedId = resolveTempTokenId({ id, name, target });
+  if (!resolvedId) return { revoked: 0, id: null, name: null };
+  const entry = tempTokens.get(resolvedId);
+  const ok = endTempToken(resolvedId, by);
+  return { revoked: ok ? 1 : 0, id: ok ? resolvedId : null, name: ok ? (entry?.name ?? null) : null };
 }
 
 /** Called with the same address and user-agent the callers list records, after the Bearer check passed; the shared token matches no entry. */
-export function noteTempTokenUse(authHeader, address, agent) {
-  const entry = authHeader?.startsWith('Bearer ') ? tempTokens.get(tokenHash(authHeader.slice(7))) : null;
+export function noteTempTokenUse(idOrAuthHeader, address, agent) {
+  const hash = idOrAuthHeader?.startsWith('Bearer ') ? tokenHash(idOrAuthHeader.slice(7)) : idOrAuthHeader;
+  const entry = hash ? tempTokens.get(hash) : null;
   if (entry) Object.assign(entry, { lastAddress: cut(address), lastAgent: cut(agent), lastSeen: Date.now() });
 }
 
@@ -667,14 +795,25 @@ function issueTokens(req, res, client, existingRefresh, via, scope = '') {
   json(res, 200, { access_token: accessToken, token_type: 'Bearer', expires_in: expiresIn, refresh_token: refreshToken, ...(scope ? { scope } : {}) });
 }
 
-// 'retired': a token this server issued before a roll or its expiry. A 256-bit token cannot be guessed, so presenting one proves the caller once held access and only missed the change.
-export function bearerStatus(authHeader) {
-  if (!authHeader?.startsWith('Bearer ')) return 'unknown';
+export function bearerPrincipal(authHeader) {
+  if (!authHeader?.startsWith('Bearer ')) return { status: 'unknown', kind: null, id: null, name: null };
   const token = authHeader.slice(7);
   const entry = accessTokens.get(token);
-  if (entry) return entry.expires >= Date.now() ? 'valid' : 'retired';
+  if (entry) return { status: entry.expires >= Date.now() ? 'valid' : 'retired', kind: 'access', id: null, name: null };
   const hash = tokenHash(token);
   const temp = tempTokens.get(hash);
-  if (temp) return !temp.revoked && temp.expires >= Date.now() ? 'valid' : 'retired';
-  return retiredTokens.includes(hash) ? 'retired' : 'unknown';
+  if (temp) {
+    return {
+      status: !temp.revoked && temp.expires >= Date.now() ? 'valid' : 'retired',
+      kind: 'temp',
+      id: hash,
+      name: temp.name ?? null,
+    };
+  }
+  return { status: retiredTokens.includes(hash) ? 'retired' : 'unknown', kind: null, id: null, name: null };
+}
+
+// 'retired': a token this server issued before a roll or its expiry. A 256-bit token cannot be guessed, so presenting one proves the caller once held access and only missed the change.
+export function bearerStatus(authHeader) {
+  return bearerPrincipal(authHeader).status;
 }

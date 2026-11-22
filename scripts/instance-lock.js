@@ -8,6 +8,12 @@ import { USER_DIR } from './userdata.js';
 
 const LOCK_PATH = path.join(USER_DIR, 'instance.json');
 
+let activePanelPort = null;
+export const getActivePanelPort = () => activePanelPort;
+export const setActivePanelPort = (port) => {
+  activePanelPort = port;
+};
+
 export function readLock() {
   if (!existsSync(LOCK_PATH)) return null;
   try {

@@ -4,6 +4,17 @@
 import { z } from 'zod';
 import cp from 'node:child_process';
 import { ok, fail } from './mcp-tool.js';
+import { runTempTokenOp } from './temp-token-proxy.js';
+
+const compactTempTokenRow = (t) => ({
+  id: t.id.slice(0, 12),
+  ...(t.name ? { name: t.name } : {}),
+  created: t.created,
+  expires: t.expires,
+  ...(t.lastAddress ? { lastAddress: t.lastAddress } : {}),
+  ...(t.lastAgent ? { lastAgent: t.lastAgent } : {}),
+  ...(t.lastSeen ? { lastSeen: t.lastSeen } : {}),
+});
 
 // Not `promisify(cp.execFile)`: its `util.promisify.custom` symbol would route straight past a test's mock of `cp.execFile`.
 // `execFile`, never `exec`: the notification text comes from the model, and no shell may parse it.
@@ -125,14 +136,13 @@ export async function clipboardWrite(text = '') {
 
 export const provider = { id: 'system', title: 'Notifications & clipboard', register };
 
-export function register(server) {
+export function register(server, options = {}) {
   server.registerTool(
     'notify_user',
     {
       title: 'OS Notification & Sound Alert',
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
-      description:
-        'Display a native OS desktop notification and sound alert (macOS notification banner with Glass chime, Windows Toast, Linux notify-send) to alert the user when a long task completes.',
+      description: 'Display a native OS desktop notification and sound alert when a task completes.',
       inputSchema: {
         message: z.string().describe('notification message to show the user'),
         title: z.string().optional().describe('notification title (default: "Aki MCP")'),
@@ -154,7 +164,7 @@ export function register(server) {
     {
       title: 'Read System Clipboard',
       annotations: { readOnlyHint: true, openWorldHint: false },
-      description: 'Read the current text content from the operating system clipboard (pbpaste / Get-Clipboard / xclip).',
+      description: 'Read current text from the OS clipboard.',
       inputSchema: {},
     },
     async () => {
@@ -172,7 +182,7 @@ export function register(server) {
     {
       title: 'Write to System Clipboard',
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false },
-      description: 'Copy text into the operating system clipboard (pbcopy / Set-Clipboard / xclip).',
+      description: 'Copy text into the OS clipboard.',
       inputSchema: {
         text: z.string().describe('text to copy into the clipboard'),
       },
@@ -181,6 +191,82 @@ export function register(server) {
       try {
         const res = await clipboardWrite(text);
         return ok(JSON.stringify(res, null, 2));
+      } catch (e) {
+        return fail(e);
+      }
+    },
+  );
+
+  server.registerTool(
+    'temp_token',
+    {
+      title: 'Temporary HTTP Token Lifecycle',
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+      description:
+        'Manage 4h temporary HTTP tokens (op="list"|"mint"|"extend"|"revoke"|"revoke_self"). Named tokens help identify web chats. A temp-token caller can only list or revoke_self its own token.',
+      inputSchema: {
+        op: z.enum(['list', 'mint', 'extend', 'revoke', 'revoke_self']).describe('operation to run'),
+        name: z.string().optional().describe('token name (optional on mint, or target selector on extend/revoke)'),
+        id: z.string().optional().describe('token id or >=8-char hex prefix for extend/revoke'),
+        all: z.boolean().optional().describe('revoke all live temp tokens (op="revoke" only)'),
+      },
+    },
+    async ({ op, name, id, all }, extra) => {
+      try {
+        const passedCaller = extra?.authInfo?.extra?.caller;
+        if (options.requireCaller === true && !passedCaller?.kind) {
+          throw new Error('caller principal is required for temp_token on HTTP transport');
+        }
+        const caller = passedCaller?.kind ? passedCaller : { kind: 'local', id: null, name: null };
+        const mode = options.tempTokenMode || 'in-process';
+        const getOrigin = options.getOrigin;
+
+        if (caller.kind === 'temp') {
+          if (op === 'list') {
+            const { tokens, extendMinutes } = await runTempTokenOp({ op: 'list', mode, getOrigin });
+            const own = tokens.filter((t) => t.id === caller.id).map(compactTempTokenRow);
+            return ok(JSON.stringify({ callerKind: 'temp', extendMinutes, tokens: own }));
+          }
+          if (op === 'revoke_self') {
+            if (!caller.id) throw new Error('missing caller temp token id');
+            const res = await runTempTokenOp({ op: 'revoke', id: caller.id, mode, getOrigin, by: 'by its holder via MCP tool' });
+            return ok(JSON.stringify({ revoked: res.revoked, ...(caller.name ? { name: caller.name } : {}) }));
+          }
+          throw new Error(`TEMP_TOKEN_FORBIDDEN: temporary token callers cannot run op="${op}"; only op="list" (self) and op="revoke_self" are permitted.`);
+        }
+
+        if (op === 'revoke_self') {
+          throw new Error('op="revoke_self" is only for temporary token callers; use op="revoke" with name, id, or all=true');
+        }
+        if (op === 'list') {
+          const { tokens, extendMinutes } = await runTempTokenOp({ op: 'list', mode, getOrigin });
+          return ok(JSON.stringify({ callerKind: caller.kind, extendMinutes, tokens: tokens.map(compactTempTokenRow) }));
+        }
+        if (op === 'mint') {
+          const res = await runTempTokenOp({ op: 'mint', name, mode, getOrigin });
+          return ok(JSON.stringify({
+            id: res.id.slice(0, 12),
+            ...(res.name ? { name: res.name } : {}),
+            expires: res.expires,
+            kickoff: res.kickoff,
+          }));
+        }
+        if (op === 'extend') {
+          const res = await runTempTokenOp({ op: 'extend', id, name, mode, getOrigin, by: 'via MCP tool' });
+          return ok(JSON.stringify({
+            id: res.id.slice(0, 12),
+            ...(res.name ? { name: res.name } : {}),
+            expires: res.expires,
+          }));
+        }
+        if (op === 'revoke') {
+          const res = await runTempTokenOp({ op: 'revoke', id, name, all: all === true, mode, getOrigin, by: 'via MCP tool' });
+          return ok(JSON.stringify({
+            revoked: res.revoked,
+            ...(res.name ? { name: res.name } : {}),
+          }));
+        }
+        throw new Error(`unknown op "${op}"`);
       } catch (e) {
         return fail(e);
       }

@@ -11,6 +11,7 @@ if (process.argv.includes('-h') || process.argv.includes('--help')) {
 
 Usage:
   akimcp [options]
+  akimcp temp-token <list|mint|extend|revoke> [options]
 
 Options:
   -v, --version            Show version number

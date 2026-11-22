@@ -6,6 +6,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { register, executeFetch, isBlockedHost } from '../scripts/fetch-mcp.js';
+import { setActivePanelPort } from '../scripts/instance-lock.js';
 
 async function runTests() {
   // 1. SSRF block patterns
@@ -49,6 +50,10 @@ async function runTests() {
     }
     if (req.url === '/to-metadata') {
       res.writeHead(302, { Location: 'http://169.254.169.254/latest/meta-data/' });
+      return res.end();
+    }
+    if (req.url === '/to-panel') {
+      res.writeHead(302, { Location: 'http://127.0.0.1:9998/api/temp-tokens' });
       return res.end();
     }
     if (req.url === '/hop') {
@@ -100,6 +105,32 @@ async function runTests() {
     assert.equal(hopRes.data, 'hello from local');
     assert.equal(hopRes.url, `http://127.0.0.1:${port}/`);
     await assert.rejects(() => executeFetch({ url: `http://127.0.0.1:${port}/to-metadata` }), /Access to link-local\/cloud-metadata host/i, 'a redirect to a blocked host is refused');
+    await assert.rejects(() => executeFetch({ url: `http://127.0.0.1:${port}/to-panel` }), /control panel port \(9998\) is blocked/i, 'a 3xx redirect to the panel port is refused');
+
+    // B2: Control panel port loopback + DNS + x-panel-token header blocks
+    for (const blockedUrl of [
+      'http://127.0.0.1:9998/api/temp-tokens',
+      'http://127.0.0.2:9998/api/temp-tokens',
+      'http://localhost:9998/api/temp-tokens',
+      'http://foo.localhost:9998/api/temp-tokens',
+      'http://0.0.0.0:9998/api/temp-tokens',
+      'http://[::1]:9998/api/temp-tokens',
+      'http://[::]:9998/api/temp-tokens',
+      'http://[::ffff:127.0.0.1]:9998/api/temp-tokens',
+      'http://[::ffff:0:0]:9998/api/temp-tokens',
+    ]) {
+      await assert.rejects(() => executeFetch({ url: blockedUrl }), /control panel port \(9998\) is blocked/i, `${blockedUrl} must be blocked`);
+    }
+    await assert.rejects(
+      () => executeFetch({ url: `http://127.0.0.1:${port}/`, headers: { 'X-Panel-Token': 'secret' } }),
+      /Header "x-panel-token" is blocked/i,
+    );
+    setActivePanelPort(port);
+    try {
+      await assert.rejects(() => executeFetch({ url: `http://127.0.0.1:${port}/` }), new RegExp(`control panel port \\(${port}\\) is blocked`, 'i'));
+    } finally {
+      setActivePanelPort(null);
+    }
     await assert.rejects(() => executeFetch({ url: `http://127.0.0.1:${port}/loop` }), /Too many redirects/);
     const seeOther = await executeFetch({ url: `http://127.0.0.1:${port}/see-other`, method: 'POST', body: { a: 1 } });
     assert.equal(seeOther.data, 'GET', 'a 303 turns the follow-up into a GET');

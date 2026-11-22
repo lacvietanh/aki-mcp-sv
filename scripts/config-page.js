@@ -163,7 +163,7 @@ const aioboxConnectStrip = () => (aioboxInstalled()
 
 const legacyNameHint = (hasApply = true) => (otherAppliedKeys() ? `<p class="helptext legacy-hint">Your config may still have entries named ${otherAppliedKeys()}; delete them.${hasApply ? ' Apply does this for you.' : ''}</p>` : '');
 // The guide's public address lives here once; the four labels are the ones its section 0 reads (docs/plan/done/web-chat-client.md).
-const GUIDE_URL = 'https://akimcp.top/guide/mcp-http/v1.md';
+export const GUIDE_URL = 'https://akimcp.top/guide/mcp-http/v1.md';
 export const tempTokenKickoff = ({ mcpUrl, token, expires }) => [
   'I own this AkiMCP server. Connect to MCP_URL using TOKEN by following the protocol spec at GUIDE, then wait for my task. When I say the work is done, revoke the token as section 4 of the spec describes: send DELETE to MCP_URL with the same Bearer.',
   `GUIDE: ${GUIDE_URL}`,
@@ -430,7 +430,7 @@ ${listRefused().some((row) => row.callbacks.some((c) => !c.reason)) ? `<p class=
 
 <div class="tabpane" id="tab-httpchat">
   <p class="helptext">For web chats with no custom MCP connector that can still send HTTPS requests (WorkBuddy, CodeBuddy, Postman Agent, a chat with a code sandbox). Mint a temporary token that lasts ${TEMP_TTL_MS / 3600_000} hours and paste the kickoff block into the chat. The list below shows when and from what each token was last used; <strong>+${TEMP_EXTEND_MS / 60_000} min</strong> extends a live one. When the task is done, tell the AI to revoke its token, or click Revoke below. Your shared token and every connected AI are untouched. Restarting AkiMCP also revokes every temporary token.</p>
-  <div class="acts"><button class="primary" data-act="mintTemp"${origin ? '' : ' disabled'}>Mint temp token &amp; copy kickoff</button><span class="msg" id="msgTemp"></span></div>
+  <div class="acts"><input type="text" id="tempName" placeholder="Optional name (e.g. aistudio-p60, postman)" maxlength="48" aria-label="Temporary token name"${origin ? '' : ' disabled'} style="max-width:280px"><button class="primary" data-act="mintTemp"${origin ? '' : ' disabled'}>Mint temp token &amp; copy kickoff</button><span class="msg" id="msgTemp"></span></div>
   ${origin ? '' : noOriginNotice('so the web chat can reach this computer')}
   <textarea id="tempKickoff" class="mono" rows="6" readonly hidden style="width:100%"></textarea>
   <p class="helptext" id="tempKickoffNote" hidden>Shown once: copy it now. After a reload only the row below remains, not the token.</p>

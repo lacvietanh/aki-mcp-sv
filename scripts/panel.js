@@ -5,10 +5,10 @@ import { execFile } from 'node:child_process';
 import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, unlinkSync, realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { renderPanel, localMcpUrl, httpBearerEntry, stdioEntry, claudeCodeLines, CODEX_TABLE, codexBlock, tempTokenKickoff } from './config-page.js';
+import { renderPanel, localMcpUrl, httpBearerEntry, stdioEntry, claudeCodeLines, CODEX_TABLE, codexBlock, tempTokenKickoff, GUIDE_URL } from './config-page.js';
 import { IDENTITY, IDENTITY_PROBLEM, quoteValue, appliedKeys } from './mcp-name.js';
 import { previewReply, saveIdentity, resetIdentity } from './identity-panel.js';
-import { getOrIssueAccessToken, rotateAccessToken, mintTempToken, listTempTokens, revokeTempTokenById, extendTempTokenById, TEMP_EXTEND_MS, rotatePassphrase, loadOrCreatePassphrase, listClients, removeClient } from './oauth.js';
+import { getOrIssueAccessToken, rotateAccessToken, mintTempToken, listTempTokens, extendTempToken, revokeTempTokenTarget, TEMP_EXTEND_MS, rotatePassphrase, loadOrCreatePassphrase, listClients, removeClient } from './oauth.js';
 import { readUserCallbacks, addUserCallback, removeUserCallback, listRefused } from './oauth-callbacks.js';
 import { logSecurity, readSecurityLog } from './security-log.js';
 import { LOG_DEFAULTS, loadLogSettings, normalizeLogSettings } from './tool-call-log.js';
@@ -17,6 +17,9 @@ import { loadAllowlist, loadAllowlistDirs, readSettings, writeSettings, DEFAULT_
 import { getRoots, containedIn } from './roots.js';
 import { funnelStatus } from './tailscale.js';
 import { SETTINGS_PATH, USER_DIR, INGRESS_CONFIG_PATH, CLOUDFLARED_CRED_PATH, readIngressConfig, gatePort } from './userdata.js';
+import { getActivePanelPort, setActivePanelPort } from './instance-lock.js';
+
+export { getActivePanelPort };
 import { readBody, json, serveStatic, serveFontAwesome } from './http.js';
 import { failures, readLimits, validateLimits, LIMIT_DEFAULTS } from './rate-limit.js';
 import { getLocalVersions, cmpSemver, writeStatusFile, getRuleStatus, RULE_DIR, RULE_SOURCE_FILE, RULE_CLONE_DIR, RULE_REPO_URL } from './update-check.js';
@@ -483,18 +486,46 @@ export const ROUTES = {
   // The plain token leaves only in this reply (docs/plan/done/web-chat-client.md); a web chat reaches the public origin, so loopback-only runs have nothing to hand out.
   'POST /api/temp-token': async (body, ctx) => {
     if (!ctx.origin) throw new Error('a web chat needs a public address: set one up in section 0 first');
-    const { token, expires } = mintTempToken();
-    return { ok: true, expires, kickoff: tempTokenKickoff({ mcpUrl: `${ctx.origin}/mcp`, token, expires }) };
+    const { id, name, token, expires } = mintTempToken({ name: body?.name });
+    const mcpUrl = `${ctx.origin}/mcp`;
+    return {
+      ok: true,
+      id,
+      name,
+      token,
+      mcpUrl,
+      guideUrl: GUIDE_URL,
+      expires,
+      kickoff: tempTokenKickoff({ mcpUrl, token, expires }),
+    };
   },
   'GET /api/temp-tokens': async () => ({ tokens: listTempTokens(), extendMinutes: TEMP_EXTEND_MS / 60_000 }),
   'POST /api/temp-token/extend': async (body) => {
-    if (!extendTempTokenById(body.id)) throw new Error('no live temporary token to extend: refresh the list');
-    return { ok: true, message: `extended by ${TEMP_EXTEND_MS / 60_000} min` };
+    const extended = extendTempToken({ id: body?.id, name: body?.name, target: body?.target, by: 'from the panel' });
+    if (!extended) throw new Error('no live temporary token to extend: refresh the list');
+    return {
+      ok: true,
+      id: extended.id,
+      name: extended.name,
+      expires: extended.expires,
+      message: `extended by ${TEMP_EXTEND_MS / 60_000} min`,
+    };
   },
   'POST /api/temp-token/revoke': async (body) => {
-    const ids = body.all === true ? listTempTokens().map((t) => t.id) : [body.id];
-    const ended = ids.filter(revokeTempTokenById).length;
-    return { ok: true, message: `revoked ${ended} temporary token${ended === 1 ? '' : 's'}` };
+    const { revoked, id, name } = revokeTempTokenTarget({
+      id: body?.id,
+      name: body?.name,
+      target: body?.target,
+      all: body?.all === true,
+      by: 'from the panel',
+    });
+    return {
+      ok: true,
+      revoked,
+      ...(id ? { id } : {}),
+      ...(name ? { name } : {}),
+      message: `revoked ${revoked} temporary token${revoked === 1 ? '' : 's'}`,
+    };
   },
   // Only roll === true rolls: a removed client still holds the shared token, so cutting it rolls it for every Bearer holder. AIObox calls this (docs/plan/done/IMPORTANT-akimcp-aiobox-contract.md).
   'POST /api/clients/remove': async (body) => {
@@ -594,7 +625,11 @@ export function startPanel({ port, token, origin, ingress, client, passphrase, u
   });
   server.on('listening', () => {
     server.actualPort = server.address().port;
+    setActivePanelPort(server.actualPort);
     console.log(`[panel] http://127.0.0.1:${server.actualPort}/?t=${token}`);
+  });
+  server.on('close', () => {
+    if (getActivePanelPort() === server.actualPort) setActivePanelPort(null);
   });
   server.listen(port, '127.0.0.1');
   return server;

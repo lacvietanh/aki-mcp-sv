@@ -316,14 +316,33 @@ const untilText = (ms) => {
   const minutes = Math.max(0, Math.round((ms - Date.now()) / 60000));
   return `${Math.floor(minutes / 60)} h ${minutes % 60} min`;
 };
-function revokeTempButton({ id }) {
+function tempNameCell({ id, name }) {
+  const box = document.createElement('div');
+  const shortId = id.slice(0, 8);
+  if (name) {
+    const strong = document.createElement('strong');
+    strong.textContent = name;
+    box.append(strong, mutedNote(shortId));
+  } else {
+    const span = document.createElement('span');
+    span.className = 'mono';
+    span.textContent = shortId;
+    box.append(span);
+  }
+  return box;
+}
+function revokeTempButton({ id, name }) {
   const btn = document.createElement('button');
   btn.textContent = 'Revoke';
-  btn.onclick = () => act(btn, 'msgTemp', async () => {
-    const { message } = await api('POST', '/api/temp-token/revoke', { id });
-    await loadTempTokens();
-    return message;
-  });
+  btn.onclick = () => {
+    const label = name ? `"${name}" (${id.slice(0, 8)})` : id.slice(0, 8);
+    if (!confirm(`Revoke temporary token ${label}?`)) return;
+    return act(btn, 'msgTemp', async () => {
+      const { message } = await api('POST', '/api/temp-token/revoke', { id });
+      await loadTempTokens();
+      return message;
+    });
+  };
   return btn;
 }
 function extendTempButton({ id }, minutes) {
@@ -350,6 +369,7 @@ function tempActions(token, minutes) {
 async function loadTempTokens() {
   const { tokens, extendMinutes } = await api('GET', '/api/temp-tokens');
   renderTable('tempList', [
+    ['Name', tempNameCell, { sortValue: (t) => t.name || t.id }],
     ['Created', (t) => timeCell(t.created), { sortValue: (t) => t.created }],
     ['Expires in', (t) => untilText(t.expires), { sortValue: (t) => t.expires }],
     ['Last used', tempUsedCell, { sortValue: (t) => t.lastSeen }],
@@ -804,7 +824,10 @@ const ACTIONS = {
   rollToken: (btn) => rollToken(btn, false),
   rollTokenHard: (btn) => rollToken(btn, true),
   mintTemp: (btn) => act(btn, 'msgTemp', async () => {
-    const { kickoff, expires } = await api('POST', '/api/temp-token');
+    const nameInput = document.getElementById('tempName');
+    const rawName = nameInput ? nameInput.value.trim() : '';
+    const { kickoff, expires } = await api('POST', '/api/temp-token', rawName ? { name: rawName } : {});
+    if (nameInput) nameInput.value = '';
     const box = document.getElementById('tempKickoff');
     box.value = kickoff;
     box.hidden = false;

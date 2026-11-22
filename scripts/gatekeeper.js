@@ -1,8 +1,8 @@
 // Public entry: OAuth AS (pre-issued client + DCR connectors) + Streamable HTTP /mcp via streamable-bridge.
 // Runs in-process inside start.js (docs/plan/done/consolidate-mcp-tool-processes.md, Part B): startGatekeeper() returns the http.Server so the orchestrator can close it on shutdown.
 import http from 'node:http';
-import { loadOrCreatePassphrase, metadataHandlers, handleAuthorize, handleToken, handleRegister, handleRevoke, bearerStatus, revokeTempToken, noteTempTokenUse } from './oauth.js';
-import { handleStreamableMcp, terminateSession } from './streamable-bridge.js';
+import { loadOrCreatePassphrase, metadataHandlers, handleAuthorize, handleToken, handleRegister, handleRevoke, bearerPrincipal, revokeTempToken, noteTempTokenUse } from './oauth.js';
+import { handleStreamableMcp, terminateSession, setBridgeOrigin } from './streamable-bridge.js';
 import { log, logErr } from './log.js';
 import { serveStatic } from './http.js';
 import { recordCaller, createCallers } from './callers.js';
@@ -23,6 +23,7 @@ function refuse(res, retryAfterSeconds) {
 // origin: the public https origin, or null on loopback only. onFatal: a listen-socket error tears the whole stack down, so no orphaned hub is left.
 export function startGatekeeper(origin = null, onFatal) {
   const port = gatePort();
+  setBridgeOrigin(() => origin);
   loadOrCreatePassphrase();
   // No ingress, no OAuth metadata: the OAuth routes answer 503, and a newly saved ingress applies on restart (resolved at boot in start.js, by decision).
   const meta = origin ? metadataHandlers(origin) : null;
@@ -93,9 +94,9 @@ export function startGatekeeper(origin = null, onFatal) {
     }
 
     if (path === '/mcp') {
-      const bearer = bearerStatus(req.headers.authorization);
-      if (bearer !== 'valid') {
-        if (bearer === 'retired') {
+      const principal = bearerPrincipal(req.headers.authorization);
+      if (principal.status !== 'valid') {
+        if (principal.status === 'retired') {
           noteRetiredBearer(key);
         } else {
           const wait = failures.retryAfterSeconds(key);
@@ -112,8 +113,8 @@ export function startGatekeeper(origin = null, onFatal) {
       }
       const agent = req.headers['user-agent'] || 'no user-agent';
       if (recordCaller(key, agent)) logSecurity(`token used by new caller ${key} (${agent.slice(0, 64)})`);
-      noteTempTokenUse(req.headers.authorization, key, agent);
-      if (req.method === 'POST') return handleStreamableMcp(req, res);
+      if (principal.kind === 'temp') noteTempTokenUse(principal.id, key, agent);
+      if (req.method === 'POST') return handleStreamableMcp(req, res, principal);
       if (req.method === 'DELETE') {
         revokeTempToken(req.headers.authorization);
         const sid = req.headers['mcp-session-id'];

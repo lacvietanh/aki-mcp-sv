@@ -2,8 +2,12 @@
 // Enables AI to test local backend APIs and LAN services safely from remote interfaces (Claude Web, ChatGPT).
 // Strict Defense-in-Depth against SSRF: blocks cloud metadata (169.254.*), link-local IPs, dangerous schemes,
 // re-checks every redirect hop, stops reading a response at 512KB, and enforces strict timeout bounds. A DNS name that resolves to a blocked address is not caught.
+import dns from 'node:dns';
+import net from 'node:net';
 import { z } from 'zod';
 import { ok, fail } from './mcp-tool.js';
+import { readLock, getActivePanelPort } from './instance-lock.js';
+import { IS_DEV } from './userdata.js';
 
 const BLOCKED_HOST_PATTERNS = [
   /^169\.254\./, // AWS / GCP / Azure IMDS Link-Local
@@ -16,13 +20,22 @@ const BLOCKED_HOST_PATTERNS = [
 const MAX_RESPONSE_BYTES = 512 * 1024; // 512 KB cap
 const MAX_REDIRECTS = 5;
 
+const normHost = (hostname) => String(hostname).toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
+const LOOPBACK_HOST_RE = /^(localhost|.*\.localhost|127\.\d{1,3}\.\d{1,3}\.\d{1,3}|0\.0\.0\.0|::1|::|::ffff:7f[0-9a-f]{2}:[0-9a-f]{1,4}|::ffff:127\.\d{1,3}\.\d{1,3}\.\d{1,3}|::ffff:0\.0\.0\.0|::ffff:0:0)$/;
+
+const blockedPanelPorts = () => new Set(
+  [getActivePanelPort(), readLock()?.panelPort, Number(process.env.PANEL_PORT || (IS_DEV ? 9996 : 9998))]
+    .filter((p) => Number.isFinite(p) && p > 0),
+);
+const effectivePort = (u) => (u.port ? Number(u.port) : u.protocol === 'https:' ? 443 : 80);
+
 // URL.hostname keeps the brackets of an IPv6 literal and may carry a trailing dot; both would slip past the patterns.
 export function isBlockedHost(hostname) {
-  const host = String(hostname).toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
+  const host = normHost(hostname);
   return BLOCKED_HOST_PATTERNS.some((re) => re.test(host));
 }
 
-function checkedUrl(url) {
+async function checkedUrl(url) {
   let parsed;
   try {
     parsed = new URL(url);
@@ -34,6 +47,19 @@ function checkedUrl(url) {
   }
   if (isBlockedHost(parsed.hostname)) {
     throw new Error(`Access to link-local/cloud-metadata host "${parsed.hostname}" is blocked for security.`);
+  }
+  const port = effectivePort(parsed);
+  if (blockedPanelPorts().has(port)) {
+    const host = normHost(parsed.hostname);
+    if (LOOPBACK_HOST_RE.test(host)) {
+      throw new Error(`Access to the AkiMCP control panel port (${port}) is blocked for security.`);
+    }
+    if (net.isIP(host) === 0) {
+      const addrs = await dns.promises.lookup(host, { all: true }).catch(() => []);
+      if (addrs.some((a) => LOOPBACK_HOST_RE.test(normHost(a.address)))) {
+        throw new Error(`Access to the AkiMCP control panel port (${port}) is blocked for security.`);
+      }
+    }
   }
   return parsed;
 }
@@ -63,7 +89,10 @@ export async function executeFetch({
   body,
   timeoutMs = 5000,
 }) {
-  let target = checkedUrl(url);
+  if (headers && typeof headers === 'object' && Object.keys(headers).some((k) => k.toLowerCase() === 'x-panel-token')) {
+    throw new Error('Header "x-panel-token" is blocked for security.');
+  }
+  let target = await checkedUrl(url);
 
   const safeTimeout = Math.min(Math.max(timeoutMs || 5000, 500), 15000);
   const controller = new AbortController();
@@ -94,7 +123,7 @@ export async function executeFetch({
       if (!location) break;
       await res.body?.cancel();
       if (hop === MAX_REDIRECTS) throw new Error(`Too many redirects (more than ${MAX_REDIRECTS}).`);
-      const next = checkedUrl(new URL(location, target).toString());
+      const next = await checkedUrl(new URL(location, target).toString());
       if (next.origin !== target.origin) fetchOptions.headers = { 'User-Agent': fetchOptions.headers['User-Agent'] };
       if (res.status === 303 || ((res.status === 301 || res.status === 302) && fetchOptions.method === 'POST')) {
         fetchOptions.method = 'GET';

@@ -957,7 +957,7 @@
       {
         "name": "aki__notify_user",
         "title": "OS Notification & Sound Alert",
-        "description": "Display a native OS desktop notification and sound alert (macOS notification banner with Glass chime, Windows Toast, Linux notify-send) to alert the user when a long task completes.",
+        "description": "Display a native OS desktop notification and sound alert when a task completes.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -999,7 +999,7 @@
       {
         "name": "aki__clipboard_read",
         "title": "Read System Clipboard",
-        "description": "Read the current text content from the operating system clipboard (pbpaste / Get-Clipboard / xclip).",
+        "description": "Read current text from the OS clipboard.",
         "inputSchema": {
           "$schema": "http://json-schema.org/draft-07/schema#",
           "type": "object",
@@ -1017,7 +1017,7 @@
       {
         "name": "aki__clipboard_write",
         "title": "Write to System Clipboard",
-        "description": "Copy text into the operating system clipboard (pbcopy / Set-Clipboard / xclip).",
+        "description": "Copy text into the OS clipboard.",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -1042,6 +1042,59 @@
         "annotations": {
           "readOnlyHint": false,
           "destructiveHint": false,
+          "openWorldHint": false
+        },
+        "execution": {
+          "taskSupport": "forbidden"
+        }
+      },
+      {
+        "name": "aki__temp_token",
+        "title": "Temporary HTTP Token Lifecycle",
+        "description": "Manage 4h temporary HTTP tokens (op=\"list\"|\"mint\"|\"extend\"|\"revoke\"|\"revoke_self\"). Named tokens help identify web chats. A temp-token caller can only list or revoke_self its own token.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "op": {
+              "type": "string",
+              "enum": [
+                "list",
+                "mint",
+                "extend",
+                "revoke",
+                "revoke_self"
+              ],
+              "description": "operation to run"
+            },
+            "name": {
+              "type": "string",
+              "description": "token name (optional on mint, or target selector on extend/revoke)"
+            },
+            "id": {
+              "type": "string",
+              "description": "token id or >=8-char hex prefix for extend/revoke"
+            },
+            "all": {
+              "type": "boolean",
+              "description": "revoke all live temp tokens (op=\"revoke\" only)"
+            },
+            "receipt": {
+              "type": "string",
+              "description": "required: sha256:… receipt from aki__akidevrule_context"
+            },
+            "ss": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "additionalProperties": false,
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "annotations": {
+          "readOnlyHint": false,
+          "destructiveHint": true,
           "openWorldHint": false
         },
         "execution": {

@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { resolveUnderRoot, resolveRealWritable, resolveRealWritableDir, getRoots, containedIn } from '../scripts/roots.js';
+import { resolveUnderRoot, resolveRealUnderRoot, resolveRealWritable, resolveRealWritableDir, refuseCredentialArgs, getRoots, containedIn } from '../scripts/roots.js';
+import { USER_DIR } from '../scripts/userdata.js';
 
 async function run() {
   const home = os.homedir();
@@ -53,6 +54,24 @@ async function run() {
     /outside the allowed roots/,
     'resolveRealWritableDir must reject a path that escapes every root',
   );
+
+  // M2: refuseCredentialArgs blocks instance.json directly, through a symlink, and inside --flag=path, while resolveRealUnderRoot leaves instance.json open for redacted reads.
+  fs.mkdirSync(USER_DIR, { recursive: true });
+  const lockFile = path.join(USER_DIR, 'instance.json');
+  fs.writeFileSync(lockFile, JSON.stringify({ pid: process.pid, panelPort: 9998, token: '0123456789abcdef0123456789abcdef' }));
+  const symDir = fs.mkdtempSync(path.join(home, '.aki-lock-sym-'));
+  const symLock = path.join(symDir, 'alias-lock.json');
+  try {
+    fs.symlinkSync(lockFile, symLock);
+    assert.throws(() => refuseCredentialArgs([lockFile], home), /instance\.json holds akimcp's credentials/);
+    assert.throws(() => refuseCredentialArgs([symLock], home), /instance\.json holds akimcp's credentials/);
+    assert.throws(() => refuseCredentialArgs([`--config=${lockFile}`], home), /instance\.json holds akimcp's credentials/);
+    assert.throws(() => refuseCredentialArgs([`--config=${symLock}`], home), /instance\.json holds akimcp's credentials/);
+    const readableLock = await resolveRealUnderRoot(lockFile);
+    assert.equal(readableLock, fs.realpathSync(lockFile));
+  } finally {
+    fs.rmSync(symDir, { recursive: true, force: true });
+  }
 
   console.log('roots.test.js: ok');
 }

@@ -88,19 +88,38 @@ async function refuseTrustedZone(real) {
 
 // Closed to every tool that takes a path, so a token never lands in a chat by accident. setting.json stays open on purpose (owner decision).
 const CREDENTIAL_FILES = [TOKENS_PATH, PASSPHRASE_PATH, CLIENT_PATH, DCR_CLIENTS_PATH, CLOUDFLARED_CRED_PATH];
+const INSTANCE_LOCK_PATH = path.join(USER_DIR, 'instance.json');
+const bothSpellings = (files) => files.flatMap((file) => {
+  let dir = path.dirname(file);
+  try { dir = fs.realpathSync(dir); } catch {}
+  return [file, path.join(dir, path.basename(file))];
+});
 // Both spellings of each file, because a root can reach the data dir through a symlink.
 export function credentialFiles() {
-  return CREDENTIAL_FILES.flatMap((file) => {
-    let dir = path.dirname(file);
-    try { dir = fs.realpathSync(dir); } catch {}
-    return [file, path.join(dir, path.basename(file))];
-  });
+  return bothSpellings(CREDENTIAL_FILES);
 }
-function refuseCredentialFile(abs) {
-  if (credentialFiles().some((file) => containedIn(abs, file))) throw new Error(`${path.basename(abs)} holds akimcp's credentials and is closed to the tools; view or roll it in the control panel (section 1)`);
+function refuseCredentialFile(abs, closed = credentialFiles()) {
+  if (closed.some((file) => containedIn(abs, file))) throw new Error(`${path.basename(abs)} holds akimcp's credentials and is closed to the tools; view or roll it in the control panel (section 1)`);
 }
 export function refuseCredentialArgs(args, cwd) {
-  for (const arg of args) refuseCredentialFile(path.resolve(cwd, arg));
+  const closed = [...credentialFiles(), ...bothSpellings([INSTANCE_LOCK_PATH])];
+  for (const rawArg of args) {
+    const str = String(rawArg);
+    const candidates = [str];
+    if (str.startsWith('-') && str.includes('=')) {
+      const value = str.slice(str.indexOf('=') + 1);
+      if (value) candidates.push(value);
+    }
+    for (const candidate of candidates) {
+      const resolved = path.resolve(cwd, candidate);
+      refuseCredentialFile(resolved, closed);
+      try {
+        refuseCredentialFile(fs.realpathSync(resolved), closed);
+      } catch (e) {
+        if (!e.code) throw e;
+      }
+    }
+  }
 }
 
 // A path check alone misses a grep -r, a spilled file or a task log reaching the same bytes; every result passes through provider-registry.js into this filter first, so no route leaks a credential.

@@ -66,7 +66,7 @@ function applyAll() {
 
 // Registers every provider under `prefix` and keeps each tool's handle so setEnabled/redetect can reach it later.
 // Every non-read-only tool takes `receipt` and refuses without the current rule receipt (scripts/rule-gate.js): one gate, so a new provider is covered without knowing it.
-export function mountProviders(server, prefix) {
+export function mountProviders(server, prefix, options = {}) {
   if (!detected) detectAll();
   const handles = new Map();
   for (const p of PROVIDERS) {
@@ -95,7 +95,7 @@ export function mountProviders(server, prefix) {
           return handle;
         };
       },
-    }));
+    }), options);
     handles.set(p.id, own.map(([, handle]) => handle));
     toolNames.set(p.id, own.map(([name]) => name));
   }

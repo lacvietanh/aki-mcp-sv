@@ -75,7 +75,7 @@ async function runTests() {
   const client = new Client({ name: 'test', version: '0' });
   await client.connect(clientSide);
   const served = (await client.listTools()).tools.map((t) => t.name);
-  for (const name of ['notify_user', 'clipboard_read', 'clipboard_write']) assert.ok(served.includes(name), `${name} must be registered`);
+  for (const name of ['notify_user', 'clipboard_read', 'clipboard_write', 'temp_token']) assert.ok(served.includes(name), `${name} must be registered`);
   await client.close();
 
   console.log('system-mcp.test.js: ok');

@@ -39,7 +39,7 @@ const RAISES = [
   { date: '2026-11-02', why: 'ss: SS_STEP points at the session-file doc by URL and names the successor exception (docs/feat/session-file.md § One writer, chained handoffs); 37304 before, 37428 after', chars: 124 },
 ];
 const BUDGET_CHARS = Math.round(BASELINE_CHARS * 1.1) + RAISES.reduce((sum, r) => sum + r.chars, 0);
-// Measured 2026-11-03 on the full surface (38 tools): 36751 chars, 1171 under the budget.
+// Measured 2026-11-23 on the full surface (39 tools): 37883 chars, 39 under the budget.
 
 const server = createToolsServer();
 const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
@@ -84,7 +84,7 @@ for (const t of registered) {
   assert.ok((t.description || '').length <= 700, `${t.name} description is ${t.description.length} chars, over 700`);
 }
 
-// D7(a): no description or parameter text names a model id. The agy drift (docs/plan/done/audit-tool-drift-oct25.md F1-F2) was a hardcoded model list going stale; the interface now reads ids from the CLI (list="models") and names none. The one allowed exception is kiro_read's single pinned id (D8, hard-locked and re-verified each release) — a pinned id is not a rotting list.
+// D7(a): no description or parameter text names a model id (except kiro_read's single pinned D8 id; docs/plan/done/audit-tool-drift-oct25.md F1-F2).
 const MODEL_ID_SHAPE = /gemini-\d|claude-(sonnet|opus|haiku)-\d|gpt-oss/i;
 for (const t of registered) {
   const text = `${t.description || ''} ${Object.values(t.inputSchema?.properties || {}).map((p) => p.description || '').join(' ')}`;
@@ -96,7 +96,7 @@ for (const t of registered) {
   assert.equal(hit, null, `${t.name} names a model id (${hit?.[0]}); read ids from the CLI (list="models"), never hardcode them`);
 }
 
-// D7(b): the README tool count must equal the number of tools all providers register (the machine-independent total, not what this machine serves). A drift here means the README was hand-edited and the count was not.
+// D7(b): the README tool count must equal the machine-independent total of tools all providers register.
 const registeredCount = providers.flatMap((p) => p.tools).length;
 const readme = fs.readFileSync(new URL('../README.md', import.meta.url), 'utf8');
 const readmeCounts = [...readme.matchAll(/(\d+)\s+tools/g)].map((m) => Number(m[1]));
