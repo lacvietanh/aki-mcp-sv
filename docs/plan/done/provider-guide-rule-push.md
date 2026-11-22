@@ -2,7 +2,7 @@
 
 > Tool names here use `aki__` by default (`scripts/mcp-name.js`).
 
-- **Status:** Implemented (Phase 2 complete — ready for post-implementation audit by Challenger `P59·W7`)
+- **Status:** Done (2026-11-22 — commit `84741c7`, Post-Implementation Audit Round 2 `PASS` / 0 Blocking, 0 Nit via `/akithink` deep 4 rounds by Challenger `P59·W7`)
 - **Date:** 2026-11-21
 - **Owner / Order:** Owner 15:55 (via AGY Coordinator AIObox & Challenger `P58·W21` `/akithink` deep 4 rounds; pre-impl audit Round 1 `PASS WITH FIXES` `/akithink` deep 5 rounds [B1–B3 + N1–N3] by Challenger `P59·W7`, approved by Lead `P59·W2`)
 - **Target Repo:** `aki-mcp-sv/`
@@ -135,3 +135,11 @@ In `scripts/aiobox-mcp.js`:
 - [x] **Step 4:** Update `scripts/aiobox-mcp.js` (export `extraRuleFiles(own)` with lazy `readMap()`, `FILE_ID` validation, fallback `args.like` only when `providers.size === 0`, strict `insideDir(realFile, realGuideDir)` symlink containment, post-realpath `[...new Set(out)].sort()`, and wire `extraRuleFiles` onto `aiobox_write`).
 - [x] **Step 5:** Add tests in `test/rule-context.test.js`, `test/rule-gate.test.js`, and `test/aiobox-mcp.test.js`.
 - [x] **Step 6:** Update `CHANGELOG.md` and `docs/index.md`, then run `npm test` once via `aki__task_start` (`coding.B3`) + `node test/lint/check-docs-note.js` + `node test/lint/check-residue.js`.
+
+---
+
+## 6. Post-Implementation Audit & Closure
+
+- **Commit:** `84741c7` (`feat(aiobox): push target provider guide via rule-gate before aiobox_write`, 10 files `+341/-15`, `package.json` unchanged at `4.2.0`).
+- **Verification (`coding.B3`):** `npm test` exit `0` (`195/195 pass, 0 fail`, `tool surface: 38 tools, 37023 chars (budget 37922), sha256 4e409e4d3a67a060`, log `task_1795341885114_xcj99.log`), `node test/lint/check-docs-note.js` exit `0` (`task_1795341930163_9ojnt.log`), `node test/lint/check-residue.js` exit `0` (`task_1795341931859_yj7r4.log`).
+- **Audit Verdict:** Challenger `P59·W7` (Neon) Post-Implementation Audit Round 2 (`/akithink` deep 4 rounds, read-only static diff + 3 logs) = **`PASS`** (0 Blocking, 0 Nit). Closed to `docs/plan/done/provider-guide-rule-push.md` by Lead `P59·W2`.
