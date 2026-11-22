@@ -4,7 +4,7 @@
 
 - **Task ID:** `task-1795365466307`
 - **Target Repo:** `aki-mcp-sv/`
-- **Status:** In Progress (Phase 2 — Pre-Impl Audit PASS WITH FIXES applied: B1–B2, M1–M4, N1–N3)
+- **Status:** Done (2026-11-23 — commits `6f46265`, `49b4823`; Challenger `P10·W182` Post-Impl Re-Audit PASS `0B · 0M · 0Nit`)
 - **Author:** Worker `P60·W4` (Lead: `P60·W3`, Challenger: `P10·W182`)
 - **Date:** 2026-11-23
 
