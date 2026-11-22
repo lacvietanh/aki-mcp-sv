@@ -19,7 +19,8 @@ const GEMINI_SETTINGS_URL = 'https://gemini.google.com/saved-info';
 const POSTMAN_SETTINGS_URL = 'https://go.postman.co/settings/me/connected-accounts';
 const CONNECTOR_URL = 'https://claude.ai/new?modal=add-custom-connector#settings/customize-connectors';
 const CHATGPT_CONNECTOR_URL = 'https://chatgpt.com/plugins#settings/Connectors?create-connector=true&redirectAfter=%2Fplugins';
-const GEMINI_CONNECTOR_URL = 'https://support.google.com/g/answer/17106276';
+// Strictly no trailing slash: https://gemini.google.com/devmode/ returns HTTP 404.
+const GEMINI_CONNECTOR_URL = 'https://gemini.google.com/devmode';
 const GROK_CONNECTOR_URL = 'https://grok.com/connectors';
 const NOTION_CONNECTIONS_URL = 'https://www.notion.so/my-connections';
 const RULES_REPO_URL = 'https://github.com/lacvietanh/akidevrule';
@@ -377,15 +378,17 @@ ${listRefused().some((row) => row.callbacks.some((c) => !c.reason)) ? `<p class=
 </div>
 
 <div class="tabpane" id="tab-gemini">
-  <p class="helptext">Paid tiers only. Tested 2026-08-09: the connection is healthy, but Gemini web doesn't reliably discover or invoke the MCP tools, use Claude or Grok instead. Not recommended.</p>
+  <p class="lnk"><a href="${esc(GEMINI_CONNECTOR_URL)}" target="_blank" rel="noopener">↗ Open Gemini Developer Mode</a> · <span class="mono">gemini.google.com/devmode</span> (no trailing <span class="mono">/</span>; <span class="mono">/u/&lt;n&gt;/devmode</span> works too)</p>
+  <p class="helptext">Requires Google AI Pro or AI Ultra. Free Google accounts redirect from <span class="mono">/devmode</span> to <span class="mono">/app</span>, where custom MCP apps are not available.</p>
   <ol class="steps">
-    <li>Open <a href="${esc(GEMINI_CONNECTOR_URL)}" target="_blank" rel="noopener">custom connected apps</a> (Gemini → paid subscriptions → Custom apps) and add a custom connected app.</li>
-    <li>Paste the <strong>MCP Server URL</strong> = MCP URL above.</li>
-    <li>Click <strong>Next</strong>. Gemini links the account by itself.</li>
-    <li>Enter the <strong>Passphrase</strong> when AkiMCP opens the authorization page.</li>
-    <li>Click <strong>Approve</strong>.</li>
+    <li>In Developer Mode, click <strong>Choose an app</strong> (or the active app button) → <strong>+ Create new</strong>.</li>
+    <li>Paste the <strong>MCP URL</strong> above and click <strong>Next</strong>.</li>
+    <li>Tick the risk acknowledgment checkbox, then click <strong>Connect</strong>.</li>
+    <li>On the Google Account Linking notice (<span class="mono">myaccount.google.com</span>), click <strong>Agree and continue</strong>.</li>
+    <li>Enter the <strong>Passphrase</strong> when AkiMCP opens its confirmation page, then click <strong>Approve</strong>.</li>
+    <li>In <strong>Save your custom app</strong>, set the name to <strong>Display name</strong> above (<span class="mono">AkiMCP</span> by default) and click <strong>Connect</strong> (or <strong>Save</strong>).</li>
   </ol>
-  <p class="helptext">Gemini registers itself, nothing to paste. The static Client ID / Secret that <span class="mono">akimcp</span> prints at start is an optional fallback for clients that want a fixed pair.</p>
+  <p class="helptext">Gemini self-registers via DCR (PKCE, no Client ID or Secret to paste) and refreshes on its own after <strong>Roll token</strong>; after <strong>Roll &amp; sign out all clients</strong>, open the <strong>Authentication</strong> tab in <span class="mono">/devmode</span> and click <strong>Reconnect</strong>. On the first call to each tool, Gemini shows an inline confirmation card: choose <strong>Allow once</strong> or <strong>Always allow</strong> (saved server-side per custom app).</p>
 </div>
 
 <div class="tabpane" id="tab-notion">

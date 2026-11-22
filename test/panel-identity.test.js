@@ -162,3 +162,19 @@ test('Save refuses an invalid draft and writes nothing', () => inWorld({}, (worl
   assert.equal(refused.error, 'Server ID can use only letters a to z and digits. Remove ".".');
   assert.equal(world.saved().identity, undefined);
 }));
+
+test('the Gemini tab documents the live /devmode flow (no trailing slash), paid plan requirement, Roll token refresh, and per-tool confirmation cards', () => inWorld({}, (world) => {
+  const [html] = world.run([page]);
+  const start = html.indexOf('<div class="tabpane" id="tab-gemini">');
+  assert.ok(start !== -1, '#tab-gemini exists');
+  const end = html.indexOf('<div class="tabpane" id="tab-notion">', start);
+  const geminiTab = html.slice(start, end);
+  assert.ok(geminiTab.includes('href="https://gemini.google.com/devmode"'), 'links to /devmode without trailing slash');
+  assert.ok(!geminiTab.includes('gemini.google.com/devmode/"'), 'never links to /devmode/ with trailing slash');
+  assert.ok(!geminiTab.includes('support.google.com/g/answer/17106276'), 'drops stale support URL');
+  assert.ok(!geminiTab.includes('Not recommended'), 'drops stale Not recommended warning');
+  assert.ok(!geminiTab.includes('2026-08-09'), 'drops stale 2026-08-09 caveat');
+  assert.ok(geminiTab.includes('Google AI Pro or AI Ultra'), 'states paid plan requirement');
+  assert.ok(geminiTab.includes('Roll token') && geminiTab.includes('Reconnect'), 'documents Roll token auto-refresh and Roll & sign out Reconnect');
+  assert.ok(geminiTab.includes('Allow once') && geminiTab.includes('Always allow'), 'documents first-call tool confirmation card');
+}));

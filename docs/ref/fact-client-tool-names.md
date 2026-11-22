@@ -1,6 +1,6 @@
 # Fact: how clients name and limit MCP tool names
 
-> updated 2026-10-31 · v4.0.0
+> updated 2026-11-22 · v4.2.0
 
 Claims about the outside world that `scripts/mcp-name.js` (`CEILING`, `NAME_BUDGET`, `TOOL_BUDGET`, `KEY_RULE`, `PREFIX_RULE`) relies on. Current state only; every change lands through a research event ([`research/client-tool-name-limits.md`](../research/client-tool-name-limits.md)). agy's own facts live in [`fact-agy-mcp-config.md`](fact-agy-mcp-config.md).
 
@@ -24,6 +24,6 @@ What the code takes from them: the binding cap is N3 through N4, `mcp__` + Serve
 | Codex | what happens to a qualified name over 64 | ASSUMPTION |
 | claude.ai web connector | shown name and its cap | ASSUMPTION |
 | ChatGPT connector | shown name composition | ASSUMPTION |
-| Gemini web connector, Gemini API | name form and cap (Google pages disagree: 64 vs 128) | ASSUMPTION |
+| Gemini Developer Mode (`/devmode`), Gemini API | live `/devmode` loads all 38 AkiMCP tools (`FACT`, verified 2026-11-21); exact name cap (Google pages disagree: 64 vs 128) | FACT / ASSUMPTION |
 | Grok, Notion, Buda, Postman | shown name and cap | ASSUMPTION |
 | ClickUp Super Agent | cap on `<connector name>__<tool>` | ASSUMPTION |
