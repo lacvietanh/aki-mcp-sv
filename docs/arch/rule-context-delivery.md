@@ -1,6 +1,6 @@
 # Rule context delivery architecture
 
-> updated 2026-11-06 · v4.1.0
+> updated 2026-11-22 · v4.2.0
 
 ## Decision
 
@@ -47,7 +47,7 @@ Prompt refinement cannot fully solve this ownership error because the prompt sti
 
 ## Architecture overview
 
-The architecture has four layers; two are live (1, 2), one was replaced by the receipt gate (3) and one is not built (4):
+The architecture has four layers; two are live (1, 2), one was replaced by the receipt gate (3) and one is not built (4). Server-side gated tools may also supply top-level `extraFiles` via `rule-gate.js` (`allowDirect = true` only at `depth === 0` in `scripts/rule-context.js`, so `globalZones` stays strictly `[~/.claude, ~/.aki/akidevrule]` and every `@import` at `depth >= 1` still enforces `authorized(real)`):
 
 1. **Static handshake instruction:** the MCP initialize response says to call `aki__akidevrule_context` once before the first substantive action and pass an absolute working path when known.
 2. **Dedicated context tool:** the server resolves sources, imports, ordering, project applicability, hashes, warnings, and assembled Markdown.

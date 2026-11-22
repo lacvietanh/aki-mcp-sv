@@ -27,7 +27,7 @@ The Claude Desktop app already does local file access, but ties usage to a devic
 ### When to use & Core Use-Cases
 
 - **At your desk:** a native Terminal/CLI (Claude Code, Antigravity CLI, Cursor) is still the fastest, most fluid option — use that.
-- **Away from your desk (mobile / web / a machine that isn't yours):** use `aki-mcp-sv` via Claude Web, ChatGPT Mobile, or Grok to check on a running job, read logs, clean up temp files, or pull the latest code on your home/office machine.
+- **Away from your desk (mobile / web / a machine that isn't yours):** use `aki-mcp-sv` via Claude Web, ChatGPT Mobile, Gemini (`/devmode`), or Grok to check on a running job, read logs, clean up temp files, or pull the latest code on your home/office machine.
 - **On a schedule, with nobody watching:** pair Grok's scheduled prompts with `aki-mcp-sv` for cloud-triggered local execution — see [Autonomous Cloud Automation](#autonomous-cloud-automation-grok--local-mcp).
 
 ## Install & Run

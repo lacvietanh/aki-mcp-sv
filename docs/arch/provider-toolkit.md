@@ -1,6 +1,6 @@
 # Provider toolkit — how tools are hosted, hidden and added
 
-> updated 2026-10-31 · v4.0.0 (plan: [`plan/done/provider-toolkit-architecture.md`](../plan/done/provider-toolkit-architecture.md), measurements: [`research/tool-surface-provider-toolkit.md`](../research/tool-surface-provider-toolkit.md))
+> updated 2026-11-22 · v4.2.0 (plan: [`plan/done/provider-toolkit-architecture.md`](../plan/done/provider-toolkit-architecture.md), measurements: [`research/tool-surface-provider-toolkit.md`](../research/tool-surface-provider-toolkit.md))
 
 The tools server is one `McpServer` that hosts every tool module (a provider). This doc is the contract for what each provider declares, how the registry decides what a client sees, the shape a new provider takes, and the test that holds the whole surface in place. Tool names and schemas of the existing 36 tools were not changed by it.
 
@@ -8,7 +8,7 @@ Tool names here use the default prefix `aki__`. A server with another Tool prefi
 
 ## Contract 1 — Annotations
 
-Every tool passes `annotations` in its own `registerTool` call.
+Every tool passes `annotations` in its own `registerTool` call. A gated tool may also pass an optional internal `extraRuleFiles(own)` callback in `config`; `scripts/provider-registry.js` strips `extraRuleFiles` before handing the descriptor to the MCP SDK (so `tools/list` names, descriptions, and schemas never change) and forwards it to `scripts/rule-gate.js`.
 
 - `readOnlyHint: true` only when the tool cannot write by mechanism. "Usually used to read" is not enough. `agy_run` is read-only only while `plan` is its single allowed mode, computed from `setting.json` at registration.
 - Every tool states `readOnlyHint`; a tool that is not read-only also states `destructiveHint`. `openWorldHint: true` when the tool can reach a page or a service off the machine (`git` because `op=tags remote=` runs `ls-remote`), `false` when it only touches the local machine. `idempotentHint` only when certain.

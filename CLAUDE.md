@@ -1,6 +1,6 @@
 # aki-mcp-sv — project guidance
 
-Local MCP server (filesystem, search, shell, agy) for claude.ai & ChatGPT over Tailscale Funnel + OAuth 2.1. Entry: `npm start` → `scripts/start.js` (foreground, manual stop/start). Rule loader: `akirule` skill.
+Local MCP server (filesystem, search, shell, agy, aiobox) for web AIs (claude.ai, ChatGPT, Grok, Gemini /devmode, Notion, ClickUp, Buda) over Tailscale Funnel / Cloudflare Tunnel + OAuth 2.1. Entry: `npm start` → `scripts/start.js` (foreground, manual stop/start). Rule loader: `akirule` skill.
 
 ## RECURRING #1 — "Couldn't connect" / no `POST /token`: Tailscale Funnel desync, NOT the code
 
