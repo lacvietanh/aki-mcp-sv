@@ -23,6 +23,7 @@ const {
   mintTempToken,
   revokeTempToken,
   listTempTokens,
+  resolveTempTokenId,
   extendTempToken,
   extendTempTokenById,
   revokeTempTokenTarget,
@@ -349,7 +350,25 @@ try {
     assert.equal(cliExt.status, 0, cliExt.stderr);
     assert.equal(JSON.parse(cliExt.stdout.trim()).name, 'cli-runner');
 
-    const cliRev = await cli('revoke', 'cli-runner', '--json');
+    // Regression (a): CLI extend and revoke with full 64-hex id target (>48 chars).
+    const cliExtFullHex = await cli('extend', cliMinted.id, '--json');
+    assert.equal(cliExtFullHex.status, 0, cliExtFullHex.stderr);
+    assert.equal(JSON.parse(cliExtFullHex.stdout.trim()).id, cliMinted.id);
+
+    // Regression (b): Ambiguous target when token A name equals 8-hex prefix of token B id.
+    const prefixCollisionName = cliMinted.id.slice(0, 8);
+    const cliMintCollision = await cli('mint', '--name', prefixCollisionName, '--json');
+    assert.equal(cliMintCollision.status, 0, cliMintCollision.stderr);
+    assert.throws(() => resolveTempTokenId({ target: prefixCollisionName }), /ambiguous/i);
+    const cliAmbiguous = await cli('extend', prefixCollisionName, '--json');
+    assert.notEqual(cliAmbiguous.status, 0, 'CLI must reject ambiguous target matching both a name and an 8-hex id prefix');
+    assert.match(cliAmbiguous.stderr, /ambiguous/i);
+
+    const cliRevCollision = await cli('revoke', '--name', prefixCollisionName, '--json');
+    assert.equal(cliRevCollision.status, 0, cliRevCollision.stderr);
+    assert.equal(JSON.parse(cliRevCollision.stdout.trim()).revoked, 1);
+
+    const cliRev = await cli('revoke', cliMinted.id, '--json');
     assert.equal(cliRev.status, 0, cliRev.stderr);
     assert.equal(JSON.parse(cliRev.stdout.trim()).revoked, 1);
   } finally {

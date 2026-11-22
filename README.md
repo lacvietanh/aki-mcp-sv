@@ -314,7 +314,7 @@ tools-server.js — one shared McpServer, in-process (InMemoryTransport, no chil
                                   task-mcp.js         (detached background task start/manage)
                                   port-mcp.js         (TCP port status/kill)
                                   git-mcp.js          (scope-checked git status/diff/log)
-                                  system-mcp.js       (notify_user, clipboard read/write)
+                                  system-mcp.js       (notify_user, clipboard read/write, temp_token)
                                   sqlite-mcp.js       (read-only node:sqlite schema/query)
 
 panel.js       — 127.0.0.1:9998, never exposed via Funnel
@@ -367,7 +367,7 @@ aki-mcp-sv/
 │   ├── task-mcp.js               # aki__task_start/task_manage: detached background task runner
 │   ├── port-mcp.js               # aki__port_status/kill_port: TCP port inspection + kill
 │   ├── git-mcp.js                # aki__git (op: status/diff/log/tags): read-only, compact
-│   ├── system-mcp.js             # aki__notify_user, clipboard_read/write
+│   ├── system-mcp.js             # aki__notify_user, clipboard_read/write, temp_token
 │   ├── sqlite-mcp.js             # aki__sqlite_schema/query: read-only node:sqlite inspector
 │   ├── postman/                  # everything Postman-only: postman-mcp.js tools + daemon launch, postman-daemon.cjs (CDP control), page/, debug/, prompts/, test/
 │   ├── mcp-tool.js               # shared MCP tool-result envelope: ok / err / fail

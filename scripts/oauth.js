@@ -714,10 +714,15 @@ export function resolveTempTokenId({ id, name, target } = {}) {
   }
   if (hasTarget) {
     if (typeof target !== 'string') return null;
-    const norm = normalizeTempTokenName(target);
+    const cleanHex = String(target).trim().toLowerCase();
+    let norm = null;
+    try {
+      norm = normalizeTempTokenName(target);
+    } catch (err) {
+      if (!/at most (48 characters|128 UTF-8 bytes)/.test(err.message)) throw err;
+    }
     const lower = norm ? norm.toLowerCase() : null;
     const nameHit = lower ? [...tempTokens].find(([, entry]) => isLiveTempEntry(entry, now) && entry.name && entry.name.toLowerCase() === lower) : null;
-    const cleanHex = target.trim().toLowerCase();
     let idHits = [];
     if (/^[0-9a-f]{64}$/.test(cleanHex)) {
       if (isLiveTempEntry(tempTokens.get(cleanHex), now)) idHits = [[cleanHex, tempTokens.get(cleanHex)]];

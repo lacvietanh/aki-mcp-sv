@@ -61,10 +61,10 @@ All 9 points from Challenger `P10·W182`'s 5-round `/akithink` Pre-Impl Audit (`
 ### 1.2 Panel UI, Kickoff & Security Log
 - **Panel UI (`scripts/config-page.js` & `public/panel-client.js`):**
   - Add `#tempName` input (`maxlength="48"`, placeholder `Optional name (e.g. aistudio-p60, postman)`) before **Mint temp token & copy kickoff**.
-  - Render `Name` as the first column in `#tempTokenList` using pure DOM APIs (`document.createElement`, `textContent`, `document.createTextNode`, 0 `innerHTML` — N3).
+  - Render `Name` as the first column in `#tempList` using pure DOM APIs (`document.createElement`, `textContent`, `document.createTextNode`, 0 `innerHTML` — N3).
   - Include `token.name` in the **Revoke** confirmation prompt.
 - **Kickoff Block:** Keep `tempTokenKickoff({ origin, token, expires })` at **0 extra characters** (do not inject `NAME:` into kickoff).
-- **Security Log (`scripts/oauth.js`):** Log `name=<JSON.stringify(name)>` when present alongside `id=<8hex>` on `temp_token_issued`, `temp_token_extended`, and `temp_token_revoked`.
+- **Security Log (`scripts/oauth.js`):** Log `temp token <8hex> name="..." minted|extended|revoked ...` when a name is present alongside the 8-hex id prefix.
 
 ---
 
