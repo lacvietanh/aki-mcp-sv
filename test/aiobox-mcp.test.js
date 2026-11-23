@@ -122,6 +122,7 @@ const ops = {
   windows: { tool: 'read', channel: 'file', file: 'cdp/windows.json', help: 'every window as AIObox lists it' },
   profiles: { tool: 'read', channel: 'file', file: 'profiles.json' },
   archive: { tool: 'read', channel: 'file', file: 'archive/{chatId}.json', args: { chatId: 'a chat id' } },
+  guide: { tool: 'read', channel: 'file', file: 'guide/{provider}.md', args: { provider: 'a provider id' } },
   escape: { tool: 'read', channel: 'file', file: '../outside.json' },
   absolute: { tool: 'read', channel: 'file', file: '/etc/passwd' },
   nofile: { tool: 'read', channel: 'file' },
@@ -448,7 +449,23 @@ const archived = '{ "chatId":"abc-1",  "messages": [] }\n';
 fs.writeFileSync(path.join(aioboxHome, 'archive', 'abc-1.json'), archived);
 assert.equal((await call('aiobox', { op: 'archive', args: { chatId: 'abc-1' } })).text, archived, '{chatId} is args.chatId');
 assert.match(refused(await call('aiobox', { op: 'archive', args: { chatId: 'zzz' } }), 'no_file').why, /archive.*zzz\.json does not exist/, 'with the app up, a missing file is no_file');
-for (const chatId of ['../profiles', 'a/b', 'a\\b', '', 'x'.repeat(129), 'a b', 'a.b']) refused(await call('aiobox', { op: 'archive', args: { chatId } }), 'no_file');
+const badFileIds = ['.', '..', '.hidden', 'trailing.', 'a..b', 'con', 'CON', 'nul.md', 'com1', 'COM9.x', 'lpt1', 'prn', 'aux', '../profiles', 'a/b', 'a\\b', '', 'x'.repeat(129), 'a b'];
+for (const chatId of badFileIds) refused(await call('aiobox', { op: 'archive', args: { chatId } }), 'no_file');
+const goodDottedIds = ['aistudio.google.com', 'a.b', 'site.con', 'console', 'con-1'];
+fs.mkdirSync(path.join(aioboxHome, 'guide'), { recursive: true });
+for (const id of goodDottedIds) {
+  const guideDoc = `# Guide for ${id}\n`;
+  fs.writeFileSync(path.join(aioboxHome, 'guide', `${id}.md`), guideDoc);
+  assert.equal((await call('aiobox', { op: 'guide', args: { provider: id } })).text, guideDoc, `op=guide accepts ${id}`);
+  const archDoc = `{"id":"${id}"}\n`;
+  fs.writeFileSync(path.join(aioboxHome, 'archive', `${id}.json`), archDoc);
+  assert.equal((await call('aiobox', { op: 'archive', args: { chatId: id } })).text, archDoc, `op=archive accepts ${id}`);
+}
+for (const provider of badFileIds) refused(await call('aiobox', { op: 'guide', args: { provider } }), 'no_file');
+const outsideViaFile = path.join(home, 'outside-archive.json');
+fs.writeFileSync(outsideViaFile, '{"secret":true}\n');
+fs.symlinkSync(outsideViaFile, path.join(aioboxHome, 'archive', 'escaped-link.json'));
+assert.match(refused(await call('aiobox', { op: 'archive', args: { chatId: 'escaped-link' } }), 'no_file').why, /outside ~\/\.aki\/aiobox/, 'viaFile refuses symlink escaping ~/.aki/aiobox/');
 refused(await call('aiobox', { op: 'archive', args: { chatId: 7 } }), 'no_file');
 refused(await call('aiobox', { op: 'archive' }), 'no_file');
 assert.match(refused(await call('aiobox', { op: 'escape' }), 'no_file').why, /outside ~\/\.aki\/aiobox/);
@@ -524,6 +541,15 @@ assert.deepEqual(extraRuleFiles({ args: { like: 'P1·W1' } }), [fs.realpathSync(
 assert.deepEqual(extraRuleFiles({ args: { provider: 'escaped' } }), [], 'symlink pointing outside ~/.aki is rejected (B2)');
 assert.deepEqual(extraRuleFiles({ args: { provider: 'setting_escape' } }), [], 'symlink pointing to ~/.aki/mcpsv/setting.json outside guideDir is rejected (B2)');
 assert.deepEqual(extraRuleFiles({ args: { provider: '../guide' } }), [], 'path traversal failing FILE_ID is rejected');
+for (const bad of badFileIds) assert.deepEqual(extraRuleFiles({ args: { provider: bad } }), [], `extraRuleFiles rejects invalid FILE_ID ${JSON.stringify(bad)}`);
+for (const id of goodDottedIds) assert.deepEqual(extraRuleFiles({ args: { provider: id } }), [fs.realpathSync(path.join(guideSubdir, `${id}.md`))], `extraRuleFiles accepts valid dotted/edge FILE_ID ${id}`);
+const aistudioGuide = path.join(guideSubdir, 'aistudio.google.com.md');
+const mapWithAistudio = JSON.parse(mapText);
+mapWithAistudio.profiles[1].windows[0].tabs.push({ handle: 'P7·W2·T3', targetId: 'T-AISTUDIO', url: 'https://aistudio.google.com/prompts/new_chat', title: 'P7·W2·T3 · AI Studio', chatId: null, provider: 'aistudio.google.com' });
+fs.writeFileSync(mapFile, JSON.stringify(mapWithAistudio));
+live[7777].push({ id: 'T-AISTUDIO', type: 'page', title: 'P7·W2·T3 · AI Studio', url: 'https://aistudio.google.com/prompts/new_chat' });
+pages['T-AISTUDIO'] = { akipanel: panelWith(echo) };
+assert.deepEqual(extraRuleFiles({ window: 'P7·W2·T3' }), [fs.realpathSync(aistudioGuide)], 'resolves dotted provider aistudio.google.com from windows.json tab');
 assert.deepEqual(extraRuleFiles({ window: 'P99·W99' }), [], 'unknown window fails open so serve("write") returns its own no_window refusal');
 
 // End-to-end through createToolsServer: aki__aiobox_write triggers RULE_PUSH on first call to a provider, accumulates across providers, and runs once covered.
@@ -569,6 +595,18 @@ assert.equal(calls.length, sendBeforeCount + 2, 'recBoth covers GPT');
 const ranNotionAgain = await gClient.callTool({ name: 'aki__aiobox_write', arguments: { op: 'send', window: 'P1·W1', args: { text: 'hi again' }, receipt: recBoth } });
 assert.equal(ranNotionAgain.isError, undefined);
 assert.equal(calls.length, sendBeforeCount + 3, 'recBoth still covers Notion');
+// Dotted provider ID (aistudio.google.com): RULE_PUSH fires via windows.json tab provider and via explicit args.provider.
+const pushAiStudioTab = await gClient.callTool({ name: 'aki__aiobox_write', arguments: { op: 'send', window: 'P7·W2·T3', args: { text: 'hi aistudio' }, receipt: recBoth } });
+assert.match(pushAiStudioTab.content[0].text, /^RULE_PUSH:/);
+assert.match(pushAiStudioTab.content[1].text, /# Guide for aistudio\.google\.com/);
+const recAiStudio = pushAiStudioTab.content[0].text.match(/Call again with receipt=(sha256:[a-f0-9]{64})\.$/)?.[1];
+assert.ok(recAiStudio);
+const ranAiStudioTab = await gClient.callTool({ name: 'aki__aiobox_write', arguments: { op: 'send', window: 'P7·W2·T3', args: { text: 'hi aistudio' }, receipt: recAiStudio } });
+assert.equal(ranAiStudioTab.isError, undefined);
+assert.equal(calls.length, sendBeforeCount + 4, 'recAiStudio covers dotted provider tab');
+const pushAiStudioArg = await gClient.callTool({ name: 'aki__aiobox_write', arguments: { op: 'new_window', args: { provider: 'aistudio.google.com' }, receipt: baseRec } });
+assert.match(pushAiStudioArg.content[0].text, /^RULE_PUSH:/);
+assert.match(pushAiStudioArg.content[1].text, /# Guide for aistudio\.google\.com/);
 await gClient.close();
 
 clearInterval(responder);

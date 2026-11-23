@@ -99,7 +99,7 @@ FORWARD FROZEN, AkiMCP đọc từ AIObox:
 - `akimcp-state.json` `version: 1`: `{ version, ops: { <op>: { tool: read|write, channel: window|each|request|file, file?, renamed?, args?, help?, timeoutNext? } } }`; AIObox ghi bằng tmp + rename và không bao giờ xoá khi thoát.
 - Ngữ pháp handle `P<n>·W<n>[·T<n>]` (T3) và tiền tố tiêu đề trang `P#·W# · ` mà dòng L0 của AkiMCP nhắc.
 - `akipanel.call(op, args, ctx)` với `ctx = { deadlineAt, mode: read|write, expect?, from? }` và kết quả `{ ok: true, data } | { ok: false, code, why, next? }`; dạng kết quả kênh `each` `[{ window, ok, data | code, why, next }]`.
-- Ba giới hạn của chính AkiMCP mà tên op và tên file của AIObox phải vừa: op khớp `^[a-z][a-z0-9_]{0,63}$`; id file khớp `^[A-Za-z0-9_-]{1,128}$` (không có `..`); trần đọc file 4 MiB.
+- Ba giới hạn của chính AkiMCP mà tên op và tên file của AIObox phải vừa: op khớp `^[a-z][a-z0-9_]{0,63}$`; id file khớp `/^(?!\.)(?!.*\.$)(?!.*\.\.)(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$))[A-Za-z0-9._-]{1,128}$/i` (cho phép dấu `.` đơn cho provider dạng tên miền như `aistudio.google.com`, cấm bắt đầu/kết thúc bằng `.`, cấm `..`, cấm tên thiết bị Windows trước dấu `.` đầu tiên hoặc nguyên chuỗi, kèm containment sau `realpathSync` trong `~/.aki/aiobox/`); trần đọc file 4 MiB.
 
 REVERSE FROZEN, AIObox đọc từ AkiMCP:
 - `~/.aki/mcpsv/instance.json` `{ pid, panelPort, gatePort, token, origin, ingress, startedAt }` (`startedAt` chuỗi ISO); `~/.aki/mcpsv/passphrase.txt`.

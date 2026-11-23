@@ -24,7 +24,7 @@ const STATE_VERSION = 1;
 const REQUEST_VERSION = 2;
 
 const OP_NAME = /^[a-z][a-z0-9_]{0,63}$/;
-const FILE_ID = /^[A-Za-z0-9_-]{1,128}$/;
+const FILE_ID = /^(?!\.)(?!.*\.$)(?!.*\.\.)(?!(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$))[A-Za-z0-9._-]{1,128}$/i;
 const FILE_READ_CAP = 4 * 1024 * 1024;
 
 // One call ends within CALL_WAIT_MAX_S end to end: a client gives up after about a minute with nothing back.
@@ -339,7 +339,14 @@ async function viaRequest({ op, mode, call }) {
   }
 }
 
-// A file under ~/.aki/aiobox, read verbatim. `{x}` in the name is args.x, an id of [A-Za-z0-9_-] only; the name cannot leave the folder.
+const insideDir = (file, dir) => {
+  const prefix = dir.endsWith(path.sep) ? dir : dir + path.sep;
+  return process.platform === 'win32'
+    ? file.toLowerCase().startsWith(prefix.toLowerCase())
+    : file.startsWith(prefix);
+};
+
+// A file under ~/.aki/aiobox, read verbatim. `{x}` in the name is args.x, an id matching FILE_ID (allows single dots for domain provider IDs, forbids leading/trailing dots, `..`, and Windows reserved device stems); the name cannot leave the folder.
 function fileUnder(template, args) {
   const rel = template.replace(/\{([^{}]+)\}/g, (_, key) => {
     const value = args?.[key];
@@ -347,20 +354,26 @@ function fileUnder(template, args) {
     return value;
   });
   const full = path.resolve(aioboxDir(), rel);
-  if (rel.split(/[\\/]/).includes('..') || !full.startsWith(`${aioboxDir()}${path.sep}`)) throw new Refusal('no_file', `${rel} is outside ~/.aki/aiobox`, 'AIObox names a file inside its folder only');
+  if (rel.split(/[\\/]/).includes('..') || !insideDir(full, aioboxDir())) throw new Refusal('no_file', `${rel} is outside ~/.aki/aiobox`, 'AIObox names a file inside its folder only');
   return full;
 }
-// null: no such file.
+// null: no such file. Enforces realpath containment inside ~/.aki/aiobox/ so symlinks cannot escape.
 function readVerbatim(full) {
-  let size;
+  let stat;
+  let realRoot;
+  let realFile;
   try {
-    size = fs.statSync(full).size;
+    stat = fs.statSync(full);
+    realRoot = fs.realpathSync(aioboxDir());
+    realFile = fs.realpathSync(full);
   } catch (e) {
     if (e.code === 'ENOENT') return null;
     throw e;
   }
-  if (size > FILE_READ_CAP) throw new Refusal('no_file', `${path.basename(full)} is ${size} bytes, over the ${FILE_READ_CAP} AkiMCP reads`, 'ask AIObox for a smaller file');
-  return fs.readFileSync(full, 'utf8');
+  if (!insideDir(realFile, realRoot)) throw new Refusal('no_file', `${path.relative(aioboxDir(), full)} is outside ~/.aki/aiobox`, 'AIObox names a file inside its folder only');
+  if (!stat.isFile() && !stat.isDirectory()) throw new Refusal('no_file', `${path.basename(full)} is not a regular file`, 'AIObox names a file inside its folder only');
+  if (stat.size > FILE_READ_CAP) throw new Refusal('no_file', `${path.basename(full)} is ${stat.size} bytes, over the ${FILE_READ_CAP} AkiMCP reads`, 'ask AIObox for a smaller file');
+  return fs.readFileSync(realFile, 'utf8');
 }
 async function viaFile({ op, entry, call }) {
   if (typeof entry.file !== 'string') throw new Refusal('no_file', `op=${op} names no file`, 'update AIObox');
@@ -436,10 +449,6 @@ const envelope = {
   args: z.record(z.string(), z.any()).optional().describe('op arguments, as the guide says'),
 };
 
-const insideGuideDir = (file, dir) => (process.platform === 'win32'
-  ? file.toLowerCase().startsWith((dir + path.sep).toLowerCase())
-  : file.startsWith(dir + path.sep));
-
 // Provider guides (~/.aki/aiobox/guide/<provider>.md) a write call touches: resolved from args.provider and the target window (falling back to args.like only when neither names a provider), fail-open when AIObox is off or a window is missing so serve('write') answers with its own refusal.
 export function extraRuleFiles(own) {
   if (!own || typeof own !== 'object') return [];
@@ -468,7 +477,7 @@ export function extraRuleFiles(own) {
   for (const id of providers) {
     try {
       const realFile = fs.realpathSync(path.join(realGuideDir, `${id}.md`));
-      if (insideGuideDir(realFile, realGuideDir) && fs.statSync(realFile).isFile()) {
+      if (insideDir(realFile, realGuideDir) && fs.statSync(realFile).isFile()) {
         out.push(realFile);
       }
     } catch {}
