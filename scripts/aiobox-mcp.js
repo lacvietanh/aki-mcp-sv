@@ -346,7 +346,7 @@ const insideDir = (file, dir) => {
     : file.startsWith(prefix);
 };
 
-// A file under ~/.aki/aiobox, read verbatim. `{x}` in the name is args.x, an id matching FILE_ID (allows single dots for domain provider IDs, forbids leading/trailing dots, `..`, and Windows reserved device stems); the name cannot leave the folder.
+// File under ~/.aki/aiobox read verbatim; `{x}` must match FILE_ID and stay inside the folder.
 function fileUnder(template, args) {
   const rel = template.replace(/\{([^{}]+)\}/g, (_, key) => {
     const value = args?.[key];
@@ -449,7 +449,7 @@ const envelope = {
   args: z.record(z.string(), z.any()).optional().describe('op arguments, as the guide says'),
 };
 
-// Provider guides (~/.aki/aiobox/guide/<provider>.md) a write call touches: resolved from args.provider and the target window (falling back to args.like only when neither names a provider), fail-open when AIObox is off or a window is missing so serve('write') answers with its own refusal.
+// Provider guides touched by a write call (args.provider/window, else args.like); fails open so serve('write') refuses.
 export function extraRuleFiles(own) {
   if (!own || typeof own !== 'object') return [];
   const providers = new Set();

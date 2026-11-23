@@ -515,7 +515,7 @@ fs.writeFileSync(mapFile, mapText);
 assert.equal(body(await call('aiobox', { op: 'state' })).running, true);
 assert.equal('next' in body(await call('aiobox', { op: 'state' })), false);
 
-// extraRuleFiles & D23 RULE_PUSH gate on aki__aiobox_write: resolves provider guides from args.provider, window, args.window, and fallback args.like (only when primary sources are empty), enforces symlink containment inside ~/.aki/aiobox/guide/, and fails open on errors.
+// extraRuleFiles & D23 RULE_PUSH gate: resolves provider guides, enforces guide/ symlink containment, fails open.
 const guideSubdir = path.join(aioboxHome, 'guide');
 fs.mkdirSync(guideSubdir, { recursive: true });
 const notionGuide = path.join(guideSubdir, 'notion.md');
