@@ -102,7 +102,7 @@ const SECRET_MASK = '•'.repeat(12);
 function copyEl(value, hl = false, id, secrets = []) {
   const shown = secrets.filter(Boolean).reduce((text, secret) => text.split(secret).join(SECRET_MASK), value);
   const swap = shown === value ? '' : ` data-v="${esc(value)}" data-mask="${esc(shown)}"`;
-  return `<code class="copy${hl ? ' hl' : ''}"${id ? ` id="${esc(id)}"` : ''} title="click to copy"><span class="txt"${swap}>${esc(shown)}</span></code>`;
+  return `<code class="copy${hl ? ' hl' : ''}"${id ? ` id="${esc(id)}"` : ''} tabindex="0" role="button" title="click to copy"><span class="txt"${swap}>${esc(shown)}</span></code>`;
 }
 
 const eyeButton = (label) => `<button type="button" class="eye" data-eye data-label="${esc(label)}" aria-label="Show ${esc(label)}" title="Show ${esc(label)}"><i class="fa-solid fa-eye"></i></button>`;
@@ -214,8 +214,8 @@ export function renderPanel({ origin, ingress = 'funnel', client, passphrase, to
   const ruleBtnLabel = ruleState === 'missing' ? 'Install' : ruleState === 'update' ? 'Update' : 'Install / update';
   // "Own update on top, rule update below" per the request; the rule row carries the re-paste warning because updating the corpus makes every pasted instruction stale.
   const updateBanner = (mcpUpd.updateAvailable || ruleUpd.updateAvailable) ? `<div class="updbar">
-  ${mcpUpd.updateAvailable ? `<div class="updrow"><strong>@akinet/akimcp</strong> <span class="mono">${esc(String(mcpUpd.current))} → ${esc(String(mcpUpd.latest))}</span> <button class="primary" data-act="pullUpdate">Pull &amp; restart</button><span class="msg" id="msgUpd"></span></div>` : ''}
-  ${ruleUpd.updateAvailable ? `<div class="updrow updrule"><strong>akidevrule</strong> <span class="mono">${esc(String(ruleUpd.current))} → ${esc(String(ruleUpd.latest))}</span> <button class="primary" data-act="updateRules">Install / update</button><span class="msg" id="msgUpdRule"></span></div>` : ''}
+  ${mcpUpd.updateAvailable ? `<div class="updrow"><strong>@akinet/akimcp</strong> <span class="mono">${esc(String(mcpUpd.current))} → ${esc(String(mcpUpd.latest))}</span> <button type="button" class="primary" data-act="pullUpdate">Pull &amp; restart</button><span class="msg" id="msgUpd"></span></div>` : ''}
+  ${ruleUpd.updateAvailable ? `<div class="updrow updrule"><strong>akidevrule</strong> <span class="mono">${esc(String(ruleUpd.current))} → ${esc(String(ruleUpd.latest))}</span> <button type="button" class="primary" data-act="updateRules">Install / update</button><span class="msg" id="msgUpdRule"></span></div>` : ''}
 </div>` : '';
   const refusedHosts = addableRefusedHosts();
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -256,9 +256,9 @@ ${updateBanner}
 ${ingress === 'cloudflared' ? '' : `<p class="helptext"><strong>Cloudflare Tunnel is the recommended ingress</strong> (the "Owned public origin" tab): it holds a steadier connection, carries more bandwidth and answers from a far larger global network than Tailscale Funnel. Funnel needs no domain and <span class="mono">npm start</span> sets it up by itself, so it is what runs until you choose otherwise.</p>`}
 
 <nav class="tabs" role="tablist">
-  <button class="tab${activeIngressTab === 'tailscale' ? ' active' : ''}" data-tab="tailscale">Tailscale + Funnel</button>
-  <button class="tab${activeIngressTab === 'owned' ? ' active' : ''}" data-tab="owned">Owned public origin · recommended</button>
-  <button class="tab${activeIngressTab === 'aiobox' ? ' active' : ''}" data-tab="aiobox">Hosted domain</button>
+  <button type="button" class="tab${activeIngressTab === 'tailscale' ? ' active' : ''}" data-tab="tailscale">Tailscale + Funnel</button>
+  <button type="button" class="tab${activeIngressTab === 'owned' ? ' active' : ''}" data-tab="owned">Owned public origin · recommended</button>
+  <button type="button" class="tab${activeIngressTab === 'aiobox' ? ' active' : ''}" data-tab="aiobox">Hosted domain</button>
 </nav>
 
 <div class="tabpane${activeIngressTab === 'tailscale' ? ' active' : ''}" id="tab-tailscale">
@@ -270,7 +270,7 @@ ${ingress === 'cloudflared' ? '' : `<p class="helptext"><strong>Cloudflare Tunne
   <li><span class="dot" id="tsInstalled">…</span> <a href="${TAILSCALE_DOWNLOAD_URL}" target="_blank" rel="noopener">Install Tailscale</a> and sign in.</li>
   <li><span class="dot" id="tsFunnel">…</span> Enable <a href="${TAILSCALE_FUNNEL_URL}" target="_blank" rel="noopener">Funnel</a> for your tailnet, free on every plan. ${copyEl('npm start')} enables it automatically; it only prints a link for you to approve once, when the tailnet hasn't allowed it yet.</li>
 </ol>
-<div class="acts"><button data-act="tailscale">Recheck</button><span class="msg" id="msgTs"></span></div>
+<div class="acts"><button type="button" data-act="tailscale">Recheck</button><span class="msg" id="msgTs"></span></div>
 <p class="helptext">Connector keeps dropping with <em>"hostname doesn't resolve / isn't reachable"</em>? The Funnel edge desynced, a Tailscale-side issue, not this server. Re-sync in a terminal (needs ${copyEl('sudo')}, so it can't be a button here), then reconnect. Why: <span class="mono">docs/research/claude-ai-oauth-connector.md</span> round 9.</p>
 ${field('Re-sync command', `tailscale funnel --https=443 off && tailscale serve reset && tailscale funnel --bg ${gatePort()}`)}
 <p class="helptext">Funnel works with no domain, but a Cloudflare tunnel is steadier and faster: when you have a domain (or someone gave you a tunnel file), switch in the "Owned public origin" tab.</p>
@@ -281,7 +281,7 @@ ${field('Re-sync command', `tailscale funnel --https=443 off && tailscale serve 
 <h3 class="subh">Have a Cloudflare tunnel credentials JSON?</h3>
 <div class="row"><label>cred.json</label><input type="file" id="tunnelCredFile" accept="application/json,.json"></div>
 <div class="row"><label>Origin</label><input type="text" id="tunnelOriginInput" placeholder="https://your-host"></div>
-<div class="acts"><button class="primary" data-act="saveTunnel">Save ingress</button><span class="msg" id="msgTunnel"></span></div>
+<div class="acts"><button type="button" class="primary" data-act="saveTunnel">Save ingress</button><span class="msg" id="msgTunnel"></span></div>
 <div id="savedIngressBox"></div>
 <p class="helptext">No tunnel yet? <a href="${MCP_REPO_URL}#exposing-to-the-internet" target="_blank" rel="noopener">README: Exposing to the internet</a>.</p>
 <h3 class="subh">Or: any HTTPS edge you already run</h3>
@@ -302,7 +302,7 @@ ${field('Re-sync command', `tailscale funnel --https=443 off && tailscale serve 
 </select>
 <span class="helptext" id="domainPrice" style="margin:0;flex:0 0 auto;white-space:nowrap"></span>
 </div></div>
-<div class="acts"><button class="primary" data-act="registerDomain">Request via Messenger ↗</button><span class="msg" id="msgDomain"></span></div>
+<div class="acts"><button type="button" class="primary" data-act="registerDomain">Request via Messenger ↗</button><span class="msg" id="msgDomain"></span></div>
 </div>
 </div>
 </details>
@@ -314,9 +314,9 @@ ${renderIdentityField()}
 ${field('MCP URL', url, true)}
 ${secretField('Passphrase', passphrase)}
 ${secretField('Access token', accessToken)}
-<div class="acts"><button data-act="rollToken">Roll token</button><button data-act="rollTokenHard">Roll &amp; sign out all clients</button><button data-act="rollPassphrase">Roll passphrase</button><span class="msg" id="msgRoll"></span></div>
+<div class="acts"><button type="button" data-act="rollToken">Roll token</button><button type="button" data-act="rollTokenHard">Roll &amp; sign out all clients</button><button type="button" data-act="rollPassphrase">Roll passphrase</button><span class="msg" id="msgRoll"></span></div>
 <p class="helptext">One access token serves every client. <strong>Roll token</strong> replaces it: AIs connected with the passphrase refresh on their own (ClickUp may need one reconnect), but a token pasted as a fixed bearer (a local snippet below) stops working until it is pasted again. Connect Notion with the passphrase like the other web AIs, never with a pasted token. <strong>Roll &amp; sign out all clients</strong> also revokes refresh, so every AI must reconnect with the passphrase; use it if the token may have leaked. <strong>Roll passphrase</strong> issues a new one: the old passphrase stops authorizing new connections, while already-connected AIs keep working; use it if the passphrase may have leaked. Temporary tokens (Web → Any HTTP chat) expire on their own or are revoked one by one; <strong>Roll &amp; sign out all clients</strong> revokes them too.</p>
-<p class="helptext" id="refusedCallbackBanner"${refusedHosts.length ? '' : ' hidden'}><span id="refusedCallbackText">${esc(formatRefusedBanner(refusedHosts))}</span> <button type="button" data-act="openOtherAi">Open Web → Other AI (sign-in)</button></p>
+<div class="updbar updrow" id="refusedCallbackBanner" role="status" aria-live="polite"${refusedHosts.length ? '' : ' hidden'}><span id="refusedCallbackText">${esc(formatRefusedBanner(refusedHosts))}</span> <button type="button" data-act="openOtherAi">Open Web → Other AI (sign-in)</button></div>
 
 <div class="tier-switch" role="group" aria-label="Connector tier">
   <button type="button" class="tier-btn active" data-tier="local" aria-pressed="true" aria-controls="tabs-local"><span class="tier-title">Local · direct</span><span class="tier-sub">On this computer · 127.0.0.1 or stdio · no tunnel</span></button>
@@ -324,24 +324,24 @@ ${secretField('Access token', accessToken)}
 </div>
 
 <nav class="tabs active" id="tabs-local" data-tier-tabs="local" aria-label="Local connectors">
-  <button class="tab active" data-tab="anymcp"><img src="/img/providers/mcp.svg" class="provider-icon" alt="">Any MCP app</button>
-  <button class="tab" data-tab="postman"><img src="/img/providers/postman.png" class="provider-icon" alt="">Postman</button>
-  <button class="tab" data-tab="cursor"><img src="/img/providers/cursor.svg" class="provider-icon" alt="">Cursor</button>
-  <button class="tab" data-tab="claudelocal"><img src="/img/providers/claude.png" class="provider-icon" alt="">Claude Code &amp; app</button>
-  <button class="tab" data-tab="agy"><img src="/img/providers/antigravity.svg" class="provider-icon" alt="">AGY</button>
-  <button class="tab" data-tab="codex"><img src="/img/providers/codex.svg" class="provider-icon" alt="">Codex</button>
+  <button type="button" class="tab active" data-tab="anymcp"><img src="/img/providers/mcp.svg" class="provider-icon" alt="">Any MCP app</button>
+  <button type="button" class="tab" data-tab="postman"><img src="/img/providers/postman.png" class="provider-icon" alt="">Postman</button>
+  <button type="button" class="tab" data-tab="cursor"><img src="/img/providers/cursor.svg" class="provider-icon" alt="">Cursor</button>
+  <button type="button" class="tab" data-tab="claudelocal"><img src="/img/providers/claude.png" class="provider-icon" alt="">Claude Code &amp; app</button>
+  <button type="button" class="tab" data-tab="agy"><img src="/img/providers/antigravity.svg" class="provider-icon" alt="">AGY</button>
+  <button type="button" class="tab" data-tab="codex"><img src="/img/providers/codex.svg" class="provider-icon" alt="">Codex</button>
 </nav>
 
 <nav class="tabs" id="tabs-web" data-tier-tabs="web" aria-label="Web connectors">
-  <button class="tab" data-tab="httpchat"><img src="/img/providers/http.svg" class="provider-icon" alt="">Any HTTP chat</button>
-  <button class="tab" data-tab="otherai"><i class="fa-solid fa-right-to-bracket" aria-hidden="true"></i>Other AI (sign-in)<span id="otherAiBadge" class="tab-badge"${refusedHosts.length ? '' : ' hidden'}>${refusedHosts.length ? refusedHosts.length : ''}</span></button>
-  <button class="tab" data-tab="claude"><img src="/img/providers/claude.png" class="provider-icon" alt="">Claude</button>
-  <button class="tab" data-tab="grok"><img src="/img/providers/grok.png" class="provider-icon" alt="">Grok</button>
-  <button class="tab" data-tab="chatgpt"><img src="/img/providers/gpt.png" class="provider-icon" alt="">ChatGPT</button>
-  <button class="tab" data-tab="gemini"><img src="/img/providers/gemini.png" class="provider-icon" alt="">Gemini</button>
-  <button class="tab" data-tab="notion"><img src="/img/providers/notion.png" class="provider-icon" alt="">Notion</button>
-  <button class="tab" data-tab="buda"><img src="/img/providers/buda.svg" class="provider-icon" alt="">Buda</button>
-  <button class="tab" data-tab="clickup"><img src="/img/providers/clickup.svg" class="provider-icon" alt="">ClickUp</button>
+  <button type="button" class="tab" data-tab="httpchat"><img src="/img/providers/http.svg" class="provider-icon" alt="">Any HTTP chat</button>
+  <button type="button" class="tab" data-tab="otherai"><i class="fa-solid fa-right-to-bracket" aria-hidden="true"></i>Other AI (sign-in)<span id="otherAiBadge" class="tab-badge"${refusedHosts.length ? '' : ' hidden'}>${refusedHosts.length ? refusedHosts.length : ''}</span></button>
+  <button type="button" class="tab" data-tab="claude"><img src="/img/providers/claude.png" class="provider-icon" alt="">Claude</button>
+  <button type="button" class="tab" data-tab="grok"><img src="/img/providers/grok.png" class="provider-icon" alt="">Grok</button>
+  <button type="button" class="tab" data-tab="chatgpt"><img src="/img/providers/gpt.png" class="provider-icon" alt="">ChatGPT</button>
+  <button type="button" class="tab" data-tab="gemini"><img src="/img/providers/gemini.png" class="provider-icon" alt="">Gemini</button>
+  <button type="button" class="tab" data-tab="notion"><img src="/img/providers/notion.png" class="provider-icon" alt="">Notion</button>
+  <button type="button" class="tab" data-tab="buda"><img src="/img/providers/buda.svg" class="provider-icon" alt="">Buda</button>
+  <button type="button" class="tab" data-tab="clickup"><img src="/img/providers/clickup.svg" class="provider-icon" alt="">ClickUp</button>
 </nav>
 
 <div class="tabpane" id="tab-claude">
@@ -431,12 +431,12 @@ ${secretField('Access token', accessToken)}
 
 <div class="tabpane" id="tab-httpchat">
   <p class="helptext">For web chats with no custom MCP connector that can still send HTTPS requests (WorkBuddy, CodeBuddy, Postman Agent, a chat with a code sandbox). Mint a temporary token that lasts ${TEMP_TTL_MS / 3600_000} hours and paste the kickoff block into the chat. The list below shows when and from what each token was last used; <strong>+${TEMP_EXTEND_MS / 60_000} min</strong> extends a live one. When the task is done, tell the AI to revoke its token, or click Revoke below. Your shared token and every connected AI are untouched. Restarting AkiMCP also revokes every temporary token.</p>
-  <div class="acts"><input type="text" id="tempName" placeholder="Optional name (e.g. aistudio-p60, postman)" maxlength="48" aria-label="Temporary token name"${origin ? '' : ' disabled'} style="max-width:280px"><button class="primary" data-act="mintTemp"${origin ? '' : ' disabled'}>Mint temp token &amp; copy kickoff</button><span class="msg" id="msgTemp"></span></div>
+  <div class="acts"><input type="text" id="tempName" placeholder="Optional name (e.g. aistudio-p60, postman)" maxlength="48" aria-label="Temporary token name"${origin ? '' : ' disabled'} style="max-width:280px"><button type="button" class="primary" data-act="mintTemp"${origin ? '' : ' disabled'}>Mint temp token &amp; copy kickoff</button><span class="msg" id="msgTemp"></span></div>
   ${origin ? '' : noOriginNotice('so the web chat can reach this computer')}
   <textarea id="tempKickoff" class="mono" rows="6" readonly hidden style="width:100%"></textarea>
   <p class="helptext" id="tempKickoffNote" hidden>Shown once: copy it now. After a reload only the row below remains, not the token.</p>
   <div id="tempList"></div>
-  <div class="acts"><button data-act="revokeAllTemp" id="revokeAllTemp" hidden>Revoke all temporary tokens</button></div>
+  <div class="acts"><button type="button" data-act="revokeAllTemp" id="revokeAllTemp" hidden>Revoke all temporary tokens</button></div>
 </div>
 
 <div class="tabpane" id="tab-otherai">
@@ -446,7 +446,7 @@ ${secretField('Access token', accessToken)}
     <li>Connect again and enter the <strong>Passphrase</strong>.</li>
   </ol>
   <p class="helptext">Adding a new AI needs this computer once.</p>
-  <div class="acts"><button data-act="refreshCallbacks">Refresh</button><span class="msg" id="msgCallbacks"></span></div>
+  <div class="acts"><button type="button" data-act="refreshCallbacks">Refresh</button><span class="msg" id="msgCallbacks"></span></div>
   <h3 class="subh">Refused since AkiMCP started</h3>
   <div id="refusedCallbacks"></div>
   <h3 class="subh">Your sign-in addresses</h3>
@@ -457,7 +457,7 @@ ${secretField('Access token', accessToken)}
   <div class="acts">
     <select id="callbackMatch" aria-label="Match"><option value="exact">Exact address</option><option value="prefix">Starts with (prefix)</option></select>
     <input type="text" id="callbackValue" placeholder="https://example.com/oauth/callback" aria-label="Sign-in address">
-    <button data-act="addCallback">Add</button>
+    <button type="button" data-act="addCallback">Add</button>
     <span class="msg" id="msgCallbackForm"></span>
   </div>
 </div>
@@ -474,9 +474,9 @@ ${secretField('Access token', accessToken)}
   <h3 class="subh">Control the Postman app</h3>
   <p class="helptext">This launch attaches control that opening Postman from the Dock/Spotlight does not: it auto-clicks Approve / Continue / Run / Try again and toggles Thinking / Auto-run inside the Postman window. If Postman is already open, this attaches to it — it does not open a second instance.</p>
   <div class="acts">
-    <button class="primary" data-act="launchPostman" id="pmBtnLaunch">Launch</button>
-    <button data-act="quitPostman" id="pmBtnQuit" hidden>Quit</button>
-    <button data-act="newWindowPostman" id="pmBtnNewWindow" hidden>New window</button>
+    <button type="button" class="primary" data-act="launchPostman" id="pmBtnLaunch">Launch</button>
+    <button type="button" data-act="quitPostman" id="pmBtnQuit" hidden>Quit</button>
+    <button type="button" data-act="newWindowPostman" id="pmBtnNewWindow" hidden>New window</button>
     <span class="dot" id="pmDaemonDot">…</span><span class="msg" id="msgPmDaemon"></span>
   </div>
 
@@ -492,7 +492,7 @@ ${secretField('Access token', accessToken)}
 <div class="tabpane" id="tab-cursor">
   <h3 class="subh">Connect Cursor — local</h3>
   <p class="helptext"><strong>Apply</strong> merges ${IDENTITY.key} into <span class="mono">~/.cursor/mcp.json</span> with the current token (other servers untouched), then reload Cursor. After <strong>Roll token</strong>, click Apply again. Or paste the JSON by hand (Cursor → Settings → MCP Servers). Connects over <span class="mono">127.0.0.1</span>, with no tunnel.</p>
-  <div class="acts"><button class="primary" data-act="cursorApply">Apply to Cursor (mcp.json)</button><span class="msg" id="msgCursor"></span></div>
+  <div class="acts"><button type="button" class="primary" data-act="cursorApply">Apply to Cursor (mcp.json)</button><span class="msg" id="msgCursor"></span></div>
   ${secretSnippet('Cursor JSON', localBearerJson, [accessToken], 'cursorJson')}
   ${legacyNameHint()}
   ${fromAnotherComputer({ origin, accessToken, label: 'Cursor JSON', id: 'cursorJsonRemote', snippetFor: httpBearerJson })}
@@ -501,9 +501,9 @@ ${secretField('Access token', accessToken)}
 <div class="tabpane" id="tab-claudelocal">
   <p class="helptext">Claude Code and the Claude app are set up separately: connecting one does not connect the other. Both run on the computer running AkiMCP, with no ingress: Claude Code connects over <span class="mono">127.0.0.1</span>, and the Claude app starts the tools itself over <span class="mono">stdio</span>. For claude.ai, the mobile app or the Claude app on another computer, use the <strong>Claude</strong> tab under <strong>Web</strong>; for the <span class="mono">claude</span> command on another computer, use <em>From another computer</em> below.</p>
   <h3 class="subh">Claude Code (terminal) — local</h3>
-  <p class="helptext"><strong>Apply</strong> registers ${IDENTITY.key} in <span class="mono">user</span> scope with the current token, replacing any old entry so it works from every project. It also removes the entry an older setup left under its old name, including inside a single project, which would otherwise keep the old token there. After <strong>Roll token</strong>, click Apply again. Or run the two lines below by hand (the <span class="mono">remove</span> first lets a re-paste replace the old token — a bare <span class="mono">add</span> refuses when the entry already exists); </p>
+  <p class="helptext"><strong>Apply</strong> registers ${IDENTITY.key} in <span class="mono">user</span> scope with the current token, replacing any old entry so it works from every project. It also removes the entry an older setup left under its old name, including inside a single project, which would otherwise keep the old token there. After <strong>Roll token</strong>, click Apply again. Or run the two lines below by hand (the <span class="mono">remove</span> first lets a re-paste replace the old token — a bare <span class="mono">add</span> refuses when the entry already exists).</p>
   ${otherAppliedKeys() ? `<p class="helptext legacy-hint">If one project still gets 401 from an entry an older setup left there, run <span class="mono">claude mcp remove &lt;name&gt; -s local</span> inside that project, for each of ${otherAppliedKeys()}.</p>` : ''}
-  <div class="acts"><button class="primary" data-act="claudeCodeApply">Apply to Claude Code (user scope)</button><span class="msg" id="msgClaudeCode"></span></div>
+  <div class="acts"><button type="button" class="primary" data-act="claudeCodeApply">Apply to Claude Code (user scope)</button><span class="msg" id="msgClaudeCode"></span></div>
   ${secretSnippet('Claude Code commands', claudeCodeCmd, [accessToken], 'claudeCodeCmd')}
   ${legacyNameHint()}
   ${fromAnotherComputer({ origin, accessToken, label: 'Claude Code commands', id: 'claudeCodeCmdRemote', snippetFor: claudeCodeLines })}
@@ -523,7 +523,7 @@ ${secretField('Access token', accessToken)}
   <p class="helptext"><strong>CLI (<span class="mono">agy</span>) and IDE:</strong> both read this file: merge the entry below under the existing <span class="mono">mcpServers</span> key in <span class="mono">~/.gemini/config/mcp_config.json</span>, but don't overwrite the file. It registers a <span class="mono">stdio</span> command that spawns <span class="mono">scripts/stdio.js</span> (the local <span class="mono">/mcp</span> is Bearer-gated, so stdio is the transport that works without a token). The pre-allow below writes <span class="mono">antigravity-cli/settings.json</span> and covers the CLI only; the IDE asks for its own approval on the first tool call.</p>
   ${copyEl(agyJson, true, 'agyJson')}
   <div class="acts">
-    <button class="primary" data-act="agyApply">Apply to AGY CLI (mcp_config.json)</button>
+    <button type="button" class="primary" data-act="agyApply">Apply to AGY CLI (mcp_config.json)</button>
     <span class="msg" id="msgAgy"></span>
   </div>
 </div>
@@ -531,7 +531,7 @@ ${secretField('Access token', accessToken)}
 <div class="tabpane" id="tab-codex">
   <h3 class="subh">Connect Codex CLI — local</h3>
   <p class="helptext"><strong>Apply</strong> writes the <span class="mono">${CODEX_TABLE}</span> table into <span class="mono">~/.codex/config.toml</span> with the current token, replacing it in place and dropping the table an older setup left under its old name (other tables untouched), then restart Codex. After <strong>Roll token</strong>, click Apply again. Codex reaches the local engine over <span class="mono">127.0.0.1</span> via streamable HTTP; the bearer token is inlined, no env var to export. No tunnel needed. To paste by hand, replace any existing <span class="mono">${CODEX_TABLE}</span> table — do not add a second one.</p>
-  <div class="acts"><button class="primary" data-act="codexApply">Apply to Codex (config.toml)</button><span class="msg" id="msgCodex"></span></div>
+  <div class="acts"><button type="button" class="primary" data-act="codexApply">Apply to Codex (config.toml)</button><span class="msg" id="msgCodex"></span></div>
   ${secretSnippet('Codex config', codexToml, [accessToken], 'codexToml')}
   ${legacyNameHint()}
   ${fromAnotherComputer({ origin, accessToken, label: 'Codex config', id: 'codexTomlRemote', snippetFor: codexBlock })}
@@ -544,7 +544,7 @@ ${aioboxConnectStrip()}
 ${field('Install command', RULES_INSTALL_CMD)}
 <p class="helptext">Runs on Mac/Linux/Windows — only needs <span class="mono">Node.js 18+</span>. Re-run the command above to update, or add <span class="mono">--check</span> to print installed-vs-latest without changing anything. From a local clone: <span class="mono">node install.mjs</span> (or launchers <span class="mono">install.sh</span> / <span class="mono">install.ps1</span>). No sudo; installs into every detected <span class="mono">~/.claude*</span> profile plus <span class="mono">~/.aki</span>, removable with rm -rf.</p>
 <div class="acts">
-  <button class="primary" data-act="installRules">${ruleBtnLabel}</button>
+  <button type="button" class="primary" data-act="installRules">${ruleBtnLabel}</button>
   <a class="btnlink" href="${RULES_REPO_URL}" target="_blank" rel="noopener">View repo ↗</a>
   ${ruleBadge}
   <span class="msg" id="msgRules"></span>
@@ -560,7 +560,7 @@ ${field('Install command', RULES_INSTALL_CMD)}
   <a class="btnlink" href="${esc(GEMINI_SETTINGS_URL)}" target="_blank" rel="noopener"><img src="/img/providers/gemini.png" class="provider-icon" alt="">Gemini ↗</a>
 </div>
 <textarea id="prompt" readonly style="min-height:110px;margin-top:12px">${esc(WEB_PROMPT)}</textarea>
-<div class="acts"><button class="primary" onclick="copyText(document.getElementById('prompt').value, this)">copy prompt</button></div>
+<div class="acts"><button type="button" class="primary" onclick="copyText(document.getElementById('prompt').value, this)">copy prompt</button></div>
 </section>
 
 <section id="s4"><h2>4 · Tool providers</h2>
@@ -568,7 +568,7 @@ ${field('Install command', RULES_INSTALL_CMD)}
 <p class="helptext">A switch applies on this server at once. An AI client sees it the next time it lists tools, which for most clients means a new chat or reconnecting the connector. After installing or removing an app, press Detect again.</p>
 <div id="providersList"></div>
 <div class="acts">
-  <button data-act="redetectProviders">Detect again</button>
+  <button type="button" data-act="redetectProviders">Detect again</button>
   <span class="msg" id="msgProviders"></span>
 </div>
 </section>
@@ -579,8 +579,8 @@ ${field('Install command', RULES_INSTALL_CMD)}
 <p class="helptext">Save takes effect immediately for every tool (shell, search, and file read/write/edit alike) — no restart needed.</p>
 <div class="flist" id="paths"></div>
 <div class="acts">
-  <button class="primary" data-act="addFolder">+ Add folder…</button>
-  <button data-act="savePaths">Save</button>
+  <button type="button" class="primary" data-act="addFolder">+ Add folder…</button>
+  <button type="button" data-act="savePaths">Save</button>
   <span class="msg" id="msgPaths"></span>
 </div>
 </section>
@@ -593,8 +593,8 @@ ${field('Install command', RULES_INSTALL_CMD)}
 <div class="flist" id="cmdRows"></div>
 <div class="acts">
   <input type="text" id="newCmd" placeholder="add a command, e.g. docker">
-  <button data-act="addCmd">+ Add</button>
-  <button class="primary" data-act="saveAllowlist">Save allowlist</button>
+  <button type="button" data-act="addCmd">+ Add</button>
+  <button type="button" class="primary" data-act="saveAllowlist">Save allowlist</button>
   <span class="msg" id="msgAllow"></span>
 </div>
 
@@ -602,8 +602,8 @@ ${field('Install command', RULES_INSTALL_CMD)}
 <p class="helptext">Scripts under these folders run without a command row above, so installed Aki skills work out of the box. The file tools cannot write into them, so the AI can't plant a script and run it; keep them to folders only an installer writes.</p>
 <div class="flist" id="trustedDirs"></div>
 <div class="acts">
-  <button class="primary" data-act="addTrusted">+ Add directory…</button>
-  <button data-act="saveTrusted">Save</button>
+  <button type="button" class="primary" data-act="addTrusted">+ Add directory…</button>
+  <button type="button" data-act="saveTrusted">Save</button>
   <span class="msg" id="msgTrusted"></span>
 </div>
 </section>
@@ -621,15 +621,15 @@ ${field('Install command', RULES_INSTALL_CMD)}
   <label>Registered clients stored (max)<input type="number" min="1" data-limit="maxClients"></label>
 </div>
 <div class="acts">
-  <button class="primary" data-act="saveLimits">Save limits</button>
-  <button data-act="resetLimits">Reset to defaults</button>
+  <button type="button" class="primary" data-act="saveLimits">Save limits</button>
+  <button type="button" data-act="resetLimits">Reset to defaults</button>
   <span class="msg" id="msgLimits"></span>
 </div>
 <h3 class="subh">Blocked right now</h3>
 <div class="flist" id="blockedList"></div>
 <div class="acts">
-  <button data-act="refreshBlocked">Refresh</button>
-  <button data-act="releaseAll">Release everyone</button>
+  <button type="button" data-act="refreshBlocked">Refresh</button>
+  <button type="button" data-act="releaseAll">Release everyone</button>
   <span class="msg" id="msgBlocked"></span>
 </div>
 <h3 class="subh">Clients</h3>
@@ -674,15 +674,15 @@ ${aioboxInstalled() ? `<p class="helptext">${esc(AIOBOX_PANEL.installed)}</p>` :
   <label>Current file cap (MB)<input type="number" min="1" data-log="maxMB"></label>
 </div>
 <div class="acts">
-  <button class="primary" data-act="saveLog">Save log settings</button>
-  <button data-act="resetLog">Reset to defaults</button>
+  <button type="button" class="primary" data-act="saveLog">Save log settings</button>
+  <button type="button" data-act="resetLog">Reset to defaults</button>
   <span class="msg" id="msgLogSettings"></span>
 </div>
 <h3 class="subh">Security log</h3>
 <p class="helptext">Wrong passphrases, rejected tokens, blocks, approvals and new callers — newest first, the last 200 lines. Saved to <span class="mono" id="securityLogPath"></span>; at 1 MB it moves to <span class="mono">security.log.1</span>, so it never grows past about 2 MB.</p>
 <pre class="logbox" id="securityLog"></pre>
 <div class="acts">
-  <button data-act="refreshLog">Refresh</button>
+  <button type="button" data-act="refreshLog">Refresh</button>
   <span class="msg" id="msgLog"></span>
 </div>
 </section>
@@ -714,7 +714,7 @@ ${aioboxInstalled() ? `<p class="helptext">${esc(AIOBOX_PANEL.installed)}</p>` :
 </footer>
 </main>
 <nav class="spy" id="spy" aria-label="Sections"></nav>
-<button class="to-top" id="toTop" aria-label="Scroll to top" title="Scroll to top"><i class="fa-solid fa-arrow-up"></i></button>
+<button type="button" class="to-top" id="toTop" aria-label="Scroll to top" title="Scroll to top"><i class="fa-solid fa-arrow-up"></i></button>
 <script>
 const TOKEN = ${JSON.stringify(token)};
 const RULES_DIR = ${JSON.stringify(rulesDir)};

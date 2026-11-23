@@ -5,10 +5,11 @@ import { execFile } from 'node:child_process';
 import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, unlinkSync, realpathSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { renderPanel, localMcpUrl, httpBearerEntry, stdioEntry, claudeCodeLines, CODEX_TABLE, codexBlock, tempTokenKickoff, GUIDE_URL } from './config-page.js';
+import { renderPanel, localMcpUrl, httpBearerEntry, stdioEntry, claudeCodeLines, CODEX_TABLE, codexBlock } from './config-page.js';
+import { runTempTokenOp } from './temp-token-proxy.js';
 import { IDENTITY, IDENTITY_PROBLEM, quoteValue, appliedKeys } from './mcp-name.js';
 import { previewReply, saveIdentity, resetIdentity } from './identity-panel.js';
-import { getOrIssueAccessToken, rotateAccessToken, mintTempToken, listTempTokens, extendTempToken, revokeTempTokenTarget, TEMP_EXTEND_MS, rotatePassphrase, loadOrCreatePassphrase, listClients, removeClient } from './oauth.js';
+import { getOrIssueAccessToken, rotateAccessToken, rotatePassphrase, loadOrCreatePassphrase, listClients, removeClient } from './oauth.js';
 import { readUserCallbacks, addUserCallback, removeUserCallback, listRefused } from './oauth-callbacks.js';
 import { logSecurity, readSecurityLog } from './security-log.js';
 import { LOG_DEFAULTS, loadLogSettings, normalizeLogSettings } from './tool-call-log.js';
@@ -484,49 +485,10 @@ export const ROUTES = {
   // AIObox's connect and readiness read the bearer token here with x-panel-token instead of tokens.json, so that file's format stays free (docs/plan/done/akimcp-aiobox-boundary-plan.md § 4 I4).
   'GET /api/access-token': async () => ({ accessToken: getOrIssueAccessToken() }),
   // The plain token leaves only in this reply (docs/plan/done/web-chat-client.md); a web chat reaches the public origin, so loopback-only runs have nothing to hand out.
-  'POST /api/temp-token': async (body, ctx) => {
-    if (!ctx.origin) throw new Error('a web chat needs a public address: set one up in section 0 first');
-    const { id, name, token, expires } = mintTempToken({ name: body?.name });
-    const mcpUrl = `${ctx.origin}/mcp`;
-    return {
-      ok: true,
-      id,
-      name,
-      token,
-      mcpUrl,
-      guideUrl: GUIDE_URL,
-      expires,
-      kickoff: tempTokenKickoff({ mcpUrl, token, expires }),
-    };
-  },
-  'GET /api/temp-tokens': async () => ({ tokens: listTempTokens(), extendMinutes: TEMP_EXTEND_MS / 60_000 }),
-  'POST /api/temp-token/extend': async (body) => {
-    const extended = extendTempToken({ id: body?.id, name: body?.name, target: body?.target, by: 'from the panel' });
-    if (!extended) throw new Error('no live temporary token to extend: refresh the list');
-    return {
-      ok: true,
-      id: extended.id,
-      name: extended.name,
-      expires: extended.expires,
-      message: `extended by ${TEMP_EXTEND_MS / 60_000} min`,
-    };
-  },
-  'POST /api/temp-token/revoke': async (body) => {
-    const { revoked, id, name } = revokeTempTokenTarget({
-      id: body?.id,
-      name: body?.name,
-      target: body?.target,
-      all: body?.all === true,
-      by: 'from the panel',
-    });
-    return {
-      ok: true,
-      revoked,
-      ...(id ? { id } : {}),
-      ...(name ? { name } : {}),
-      message: `revoked ${revoked} temporary token${revoked === 1 ? '' : 's'}`,
-    };
-  },
+  'POST /api/temp-token': async (body, ctx) => runTempTokenOp({ op: 'mint', name: body?.name, mode: 'in-process', getOrigin: () => ctx.origin ?? null }),
+  'GET /api/temp-tokens': async () => runTempTokenOp({ op: 'list', mode: 'in-process' }),
+  'POST /api/temp-token/extend': async (body) => runTempTokenOp({ op: 'extend', id: body?.id, name: body?.name, target: body?.target, by: 'from the panel', mode: 'in-process' }),
+  'POST /api/temp-token/revoke': async (body) => runTempTokenOp({ op: 'revoke', id: body?.id, name: body?.name, target: body?.target, all: body?.all === true, by: 'from the panel', mode: 'in-process' }),
   // Only roll === true rolls: a removed client still holds the shared token, so cutting it rolls it for every Bearer holder. AIObox calls this (docs/plan/done/IMPORTANT-akimcp-aiobox-contract.md).
   'POST /api/clients/remove': async (body) => {
     const outcome = removeClient(typeof body.clientId === 'string' ? body.clientId : '');

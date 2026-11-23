@@ -37,8 +37,9 @@ async function api(method, path, body) {
     // A dead panel process is the single most likely failure here, and the browser's own wording for it says nothing a user can act on.
     throw new Error('could not reach the panel; check whether "npm start" is still running');
   }
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'unknown error');
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+  if (!data || typeof data !== 'object') throw new Error('invalid response from panel');
   return data;
 }
 
@@ -58,7 +59,7 @@ async function act(btn, id, fn) {
 function copyText(text, btn) {
   navigator.clipboard.writeText(text).then(() => {
     const old = btn.textContent; btn.textContent = 'copied'; setTimeout(() => (btn.textContent = old), 1200);
-  });
+  }).catch(() => {});
 }
 function icon(name) {
   const i = document.createElement('i');
@@ -84,12 +85,23 @@ document.addEventListener('click', (e) => {
     return;
   }
   const el = e.target.closest('.copy');
-  if (!el) return;
+  if (el) copyFromEl(el);
+});
+
+function copyFromEl(el) {
   const txt = el.querySelector('.txt') || el;
   navigator.clipboard.writeText(txt.dataset.v ?? txt.textContent).then(() => {
     el.classList.add('copied');
     setTimeout(() => el.classList.remove('copied'), 1000);
-  });
+  }).catch(() => {});
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const el = e.target.closest?.('.copy');
+  if (!el) return;
+  e.preventDefault();
+  copyFromEl(el);
 });
 
 // Nothing about a folder row says whether it is live or merely typed, so the Save button carries the mark instead.
@@ -114,6 +126,7 @@ function addPath(value, dirty) {
   } else {
     input.oninput = markDirty;
     const del = document.createElement('button');
+    del.type = 'button'; del.title = 'Remove folder'; del.setAttribute('aria-label', 'Remove folder');
     del.append(icon('xmark'));
     del.onclick = () => { wrap.remove(); markDirty(); };
     wrap.append(input, del);
@@ -148,6 +161,7 @@ function addChip(bin) {
   label.textContent = bin; label.title = 'click to restrict to specific subcommands';
   label.onclick = () => { chip.remove(); addRow(bin, []); markAllowDirty(); document.querySelector('#cmdRows .cmdrow:last-child .cmd-subs')?.focus(); };
   const x = document.createElement('button');
+  x.type = 'button'; x.className = 'x'; x.title = `Remove ${bin}`; x.setAttribute('aria-label', `Remove ${bin}`);
   x.append(icon('xmark')); x.onclick = () => { chip.remove(); markAllowDirty(); };
   chip.append(label, x);
   document.getElementById('cmdChips').append(chip);
@@ -165,10 +179,11 @@ function addRow(bin, subs) {
   subI.type = 'text'; subI.className = 'cmd-subs'; subI.value = subs.join(' '); subI.placeholder = 'subcommands (empty = any)';
   subI.oninput = markAllowDirty;
   const any = document.createElement('button');
-  any.textContent = 'any'; any.title = 'collapse to a chip (allow any subcommand)';
+  any.type = 'button'; any.textContent = 'any'; any.title = 'collapse to a chip (allow any subcommand)';
   any.onclick = () => { row.remove(); addChip(bin); markAllowDirty(); };
   const x = document.createElement('button');
-  x.append(icon('xmark')); x.title = 'remove'; x.onclick = () => { row.remove(); markAllowDirty(); };
+  x.type = 'button'; x.title = `Remove ${bin}`; x.setAttribute('aria-label', `Remove ${bin}`);
+  x.append(icon('xmark')); x.onclick = () => { row.remove(); markAllowDirty(); };
   row.append(name, subI, any, x);
   document.getElementById('cmdRows').append(row);
 }
@@ -210,6 +225,7 @@ function addTrustedDir(value, dirty) {
   const input = document.createElement('input');
   input.type = 'text'; input.value = value; input.oninput = markTrustedDirty;
   const del = document.createElement('button');
+  del.type = 'button'; del.title = 'Remove directory'; del.setAttribute('aria-label', 'Remove directory');
   del.append(icon('xmark')); del.onclick = () => { wrap.remove(); markTrustedDirty(); };
   wrap.append(input, del);
   document.getElementById('trustedDirs').append(wrap);
@@ -252,6 +268,10 @@ async function loadState() {
   renderTrustedDirs(s.trustedDirs || []);
   s.paths.forEach((p) => addPath(p));
   document.getElementById('newCmd').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); ACTIONS.addCmd(); } };
+  const tempName = document.getElementById('tempName');
+  if (tempName) tempName.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); document.querySelector('[data-act="mintTemp"]')?.click(); } };
+  const cbVal = document.getElementById('callbackValue');
+  if (cbVal) cbVal.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); document.querySelector('[data-act="addCallback"]')?.click(); } };
   document.getElementById('cmdFilter').oninput = (e) => filterCommands(e.target.value);
 }
 

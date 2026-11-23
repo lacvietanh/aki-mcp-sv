@@ -273,7 +273,7 @@ assert.match(capped, /over the 32 KiB cap; readable with aki__read_text_file\)/)
 assert.doesNotMatch(capped, /follow/i);
 assert.ok(capped.length < 2048, 'a file over the cap is named, not inlined');
 
-// Generic extraRuleFiles(own) seam: pushes files outside narrowed folders (e.g. under ~/.aki/...), blocks @import exfiltration at depth >= 1, accumulates across providers, deduplicates concurrent calls via claimShown, and fails open on callback errors.
+// Generic extraRuleFiles(own) seam: pushes external guides, blocks depth >= 1 @import exfiltration, deduplicates via claimShown, and fails open.
 const extraDir = path.join(os.homedir(), '.aki', 'custom-guides');
 const secretInAki = path.join(os.homedir(), '.aki', 'mcpsv', 'auth.json');
 fs.mkdirSync(extraDir, { recursive: true });

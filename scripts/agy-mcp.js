@@ -120,8 +120,7 @@ export const provider = {
   register,
 };
 
-// Built at registration from the allowlist; widening agy.allowedModes takes a restart to redraw description and readOnlyHint (N5).
-// readOnlyHint stays true while 'plan' is the sole allowed mode: background=true writes only bookkeeping/log files under USER_DIR, never repository files (B4b).
+// Built at registration from the allowlist (N5); readOnlyHint stays true while 'plan' is sole mode since background=true writes only under USER_DIR (B4b).
 function describe(modes) {
   const readOnly = modes.length === 1 && modes[0] === 'plan';
   const modeClause = readOnly

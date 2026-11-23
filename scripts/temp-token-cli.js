@@ -70,7 +70,7 @@ async function main() {
   }
 
   if (action === 'list') {
-    if (posTarget !== undefined || name !== undefined || id !== undefined || all) {
+    if (posTarget !== undefined || name !== undefined || id !== undefined || all || tokenOnly) {
       throw new Error('`akimcp temp-token list` takes only [--json]');
     }
     const data = await runTempTokenOp({ op: 'list', mode: 'proxy' });
@@ -105,7 +105,7 @@ async function main() {
   }
 
   if (action === 'extend') {
-    if (all) throw new Error('`akimcp temp-token extend` does not take --all');
+    if (all || tokenOnly) throw new Error('`akimcp temp-token extend` does not take --all or --token-only');
     if (posTarget !== undefined && (name !== undefined || id !== undefined)) {
       throw new Error('specify either a positional target or --name/--id, not both');
     }
@@ -119,6 +119,7 @@ async function main() {
   }
 
   if (action === 'revoke') {
+    if (tokenOnly) throw new Error('`akimcp temp-token revoke` does not take --token-only');
     if (posTarget !== undefined && (name !== undefined || id !== undefined)) {
       throw new Error('specify either a positional target or --name/--id, not both');
     }

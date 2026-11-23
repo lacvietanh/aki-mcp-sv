@@ -371,6 +371,13 @@ try {
     const cliRev = await cli('revoke', cliMinted.id, '--json');
     assert.equal(cliRev.status, 0, cliRev.stderr);
     assert.equal(JSON.parse(cliRev.stdout.trim()).revoked, 1);
+
+    // A-N3: --token-only is strictly rejected on list, extend and revoke.
+    for (const badArgs of [['list', '--token-only'], ['extend', 'cli-runner', '--token-only'], ['revoke', 'cli-runner', '--token-only'], ['revoke', '--all', '--token-only']]) {
+      const badRun = await cli(...badArgs);
+      assert.notEqual(badRun.status, 0, `expected --token-only to fail for ${badArgs.join(' ')}`);
+      assert.match(badRun.stderr, /--token-only|takes only/);
+    }
   } finally {
     clearLock();
     stubPanel.closeAllConnections();

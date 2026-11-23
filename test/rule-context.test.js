@@ -74,7 +74,7 @@ try {
   await assert.rejects(() => assembleRuleContext({ workingPath: home }, deps), (error) => error instanceof RuleContextError && error.code === 'OUTSIDE_ALLOWED_ROOTS');
   await assert.rejects(() => assembleRuleContext({ workingPath: path.join(home, 'new', 'deeper') }, deps), (error) => error instanceof RuleContextError && error.code === 'OUTSIDE_ALLOWED_ROOTS');
 
-  // Server-supplied extraFiles outside narrowed roots load at depth 0, while @import directives inside CLAUDE.md or inside the extraFile itself stay restricted by authorized(real) (globalZones stays ~/.claude + ~/.aki/akidevrule).
+  // Server extraFiles load at depth 0 outside narrowed roots; depth >= 1 @import stays restricted to globalZones.
   await fs.mkdir(path.join(home, '.aki', 'mcpsv'), { recursive: true });
   await fs.mkdir(path.join(home, '.aki', 'external-guides'), { recursive: true });
   const secretFile = path.join(home, '.aki', 'mcpsv', 'auth.json');

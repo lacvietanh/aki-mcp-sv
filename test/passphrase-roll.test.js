@@ -23,7 +23,7 @@ assert.ok(html.includes('data-eye') && html.includes('data-act="rollPassphrase"'
 
 const live = renderPanel({ origin: 'https://example.test', client: {}, passphrase: after, token: 't', accessToken: 'SECRETTOK', repoRoot: '/', rulesDir: '/', userDir: '/' });
 assert.ok(live.includes('data-tab="buda"') && live.includes('id="tab-buda"'), 'Buda tab and pane are rendered');
-const firstTab = (tier) => live.split(`id="tabs-${tier}"`)[1].match(/<button class="tab( active)?" data-tab="([^"]+)"/);
+const firstTab = (tier) => live.split(`id="tabs-${tier}"`)[1].match(/<button type="button" class="tab( active)?" data-tab="([^"]+)"/);
 assert.deepEqual([firstTab('local')[2], firstTab('local')[1]], ['anymcp', ' active'], 'the generic MCP JSON tab opens first in the local tier');
 assert.equal(firstTab('web')[2], 'httpchat', 'Any HTTP chat is the first web tab');
 const budaPane = live.split('id="tab-buda"')[1].split('class="tabpane"')[0];

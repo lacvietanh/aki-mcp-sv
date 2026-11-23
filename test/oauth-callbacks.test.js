@@ -303,7 +303,7 @@ test('SSR panel renders #refusedCallbackBanner and #otherAiBadge accurately and 
   const mixedAddable = 'https://ssr-signal.example/oauth/cb';
   noteRefused([mixedAddable, 'http://127.0.0.1:9999/bad'], 'EVIL_CLIENT_NAME_<img src=x>');
   const htmlBefore = render();
-  assert.match(htmlBefore, /<p class="helptext" id="refusedCallbackBanner"><span id="refusedCallbackText">An AI tried to sign in through ssr-signal\.example/, 'visible SSR banner leads with newest addable parsed host');
+  assert.match(htmlBefore, /<div class="updbar updrow" id="refusedCallbackBanner" role="status" aria-live="polite"><span id="refusedCallbackText">An AI tried to sign in through ssr-signal\.example/, 'visible SSR banner leads with newest addable parsed host and status role');
   assert.doesNotMatch(htmlBefore, /EVIL_CLIENT_NAME_/, 'D8: SSR banner never renders self-declared clientName');
   const expectedCount = addableRefusedHosts().length;
   assert.ok(expectedCount >= 1);
@@ -315,7 +315,11 @@ test('SSR panel renders #refusedCallbackBanner and #otherAiBadge accurately and 
   assert.ok(listRefused().some((r) => r.callbacks.some((c) => c.href === mixedAddable)), 'mixed row still lives in listRefused() due to unaddable sibling');
   assert.deepEqual(addableRefusedHosts(), [], 'addableRefusedHosts drops to [] once every addable callback is allowed');
   const htmlAfter = render();
-  assert.match(htmlAfter, /<p class="helptext" id="refusedCallbackBanner" hidden><span id="refusedCallbackText"><\/span>/, 'SSR banner is hidden when no addable refused hosts remain');
+  assert.match(htmlAfter, /<div class="updbar updrow" id="refusedCallbackBanner" role="status" aria-live="polite" hidden><span id="refusedCallbackText"><\/span>/, 'SSR banner is hidden when no addable refused hosts remain');
+  const configPageSrc = readFileSync(new URL('../scripts/config-page.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(configPageSrc, /<button(?![^>]*\btype="button")/, 'every config-page.js button explicitly declares type="button"');
+  assert.match(htmlAfter, /<code class="copy[^"]*"[^>]*\btabindex="0"\s+role="button"/, 'copyEl renders keyboard-focusable role="button" with tabindex="0"');
+  assert.match(panelCss, /\.copy:focus-visible,\s*th\[data-sort\]:focus-visible\s*\{\s*outline:\s*2px\s+solid\s+var\(--accent\)/, 'panel.css defines unified :focus-visible outline');
   assert.match(htmlAfter, /<span id="otherAiBadge" class="tab-badge" hidden><\/span>/, 'SSR badge is hidden when addable count is 0');
 });
 
@@ -417,4 +421,12 @@ test('panel-client.js callback sync, passive throttle/lock, monotonic seq race g
 
   // 5. openOtherAi guards against double-clicking otherai when already active.
   assert.match(clientSrc, /openOtherAi:\s*\(\)\s*=>\s*\{[\s\S]*if\s*\(!tab\.classList\.contains\('active'\)\)\s*tab\.click\(\);/);
+
+  // 6. A-M1 & A-N1: copyEl keyboard Enter/Space, clipboard .catch(), addChip/addPath/addTrustedDir remove button aria-label, Enter submit on #tempName/#callbackValue, and non-JSON api() guard.
+  assert.match(clientSrc, /document\.addEventListener\('keydown',[\s\S]*e\.key !== 'Enter' && e\.key !== ' '[\s\S]*e\.preventDefault\(\);\s*copyFromEl\(el\);/, 'panel-client handles Enter/Space on .copy');
+  assert.match(clientSrc, /x\.type = 'button'; x\.className = 'x'; x\.title = `Remove \$\{bin\}`; x\.setAttribute\('aria-label', `Remove \$\{bin\}`\);/, 'addChip creates a <button type="button" class="x"> with aria-label');
+  assert.match(clientSrc, /del\.type = 'button'; del\.title = 'Remove folder'; del\.setAttribute\('aria-label', 'Remove folder'\);/, 'addPath delete button has aria-label');
+  assert.match(clientSrc, /del\.type = 'button'; del\.title = 'Remove directory'; del\.setAttribute\('aria-label', 'Remove directory'\);/, 'addTrustedDir delete button has aria-label');
+  assert.match(clientSrc, /getElementById\('tempName'\)[\s\S]*mintTemp[\s\S]*getElementById\('callbackValue'\)[\s\S]*addCallback/, '#tempName and #callbackValue submit on Enter');
+  assert.match(clientSrc, /res\.json\(\)\.catch\(\(\) => null\)/, 'api() guards against non-JSON error responses');
 });
