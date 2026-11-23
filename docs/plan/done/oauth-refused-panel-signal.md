@@ -1,7 +1,7 @@
 # Plan: Live Refused-Callback Signal in Control Panel & Contract Freeze
 
-- **Status:** draft (2026-11-23)
-- **Related:** [plan/done/custom-oauth-callbacks.md](done/custom-oauth-callbacks.md) (shipped in 4.2.0), [plan/done/IMPORTANT-akimcp-aiobox-contract.md](done/IMPORTANT-akimcp-aiobox-contract.md), [feat/security.md](../feat/security.md), twin plan `aiobox/docs/plan/akimcp-oauth-callback-signal.md`.
+- **Status:** done (2026-11-23 · commit `28de970` · Challenger `P10·W182` Post-Impl Audit PASS `0B · 0M · 0Nit`)
+- **Related:** [plan/done/custom-oauth-callbacks.md](custom-oauth-callbacks.md) (shipped in 4.2.0), [plan/done/IMPORTANT-akimcp-aiobox-contract.md](IMPORTANT-akimcp-aiobox-contract.md), [feat/security.md](../../feat/security.md), twin plan `aiobox/docs/plan/akimcp-oauth-callback-signal.md`.
 
 ## 1. Goal / Outcome
 
