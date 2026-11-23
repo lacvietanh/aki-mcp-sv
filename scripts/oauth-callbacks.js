@@ -177,3 +177,28 @@ export function listRefused() {
   const { entries } = readUserCallbacks();
   return refused.filter((row) => !row.callbacks.every((c) => matchCallback(c.href, entries))).map(({ key, ...row }) => row);
 }
+
+/** Unique parsed hosts across refused rows that have at least one addable callback not yet allowed, newest-first (D8: hosts only, never clientName). */
+export function addableRefusedHosts(rows = listRefused(), entries) {
+  const ownEntries = entries ?? readUserCallbacks().entries;
+  const seen = new Set();
+  const hostsList = [];
+  for (const row of rows ?? []) {
+    for (const cb of row?.callbacks ?? []) {
+      if (!cb || cb.reason || !cb.host) continue;
+      if (matchCallback(cb.href, ownEntries)) continue;
+      if (!seen.has(cb.host)) {
+        seen.add(cb.host);
+        hostsList.push(cb.host);
+      }
+    }
+  }
+  return hostsList;
+}
+
+/** Banner sentence naming parsed host(s) only (never clientName); empty string when there are no addable refused hosts. */
+export function formatRefusedBanner(hosts) {
+  if (!hosts?.length) return '';
+  const summary = hosts.length === 1 ? hosts[0] : `${hosts[0]} (+${hosts.length - 1} more)`;
+  return `An AI tried to sign in through ${summary}, which AkiMCP does not allow yet.`;
+}

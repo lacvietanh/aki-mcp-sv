@@ -7,12 +7,14 @@ import { once } from 'node:events';
 import os from 'node:os';
 import path from 'node:path';
 import test, { after } from 'node:test';
+import vm from 'node:vm';
 
 // userdata.js reads AKI_MCP_DATA_DIR at import, so the env is set before oauth.js loads; the real ~/.aki/mcpsv is never touched.
 const dir = mkdtempSync(path.join(os.tmpdir(), 'aki-callbacks-test-'));
 process.env.AKI_MCP_DATA_DIR = dir;
 const settingsFile = path.join(dir, 'setting.json');
-const { matchCallback, readUserCallbacks, noteRefused, listRefused } = await import('../scripts/oauth-callbacks.js');
+const { matchCallback, readUserCallbacks, noteRefused, listRefused, addableRefusedHosts, formatRefusedBanner } = await import('../scripts/oauth-callbacks.js');
+const { renderPanel } = await import('../scripts/config-page.js');
 const { handleRegister, handleAuthorize, loadOrCreateClient } = await import('../scripts/oauth.js');
 const { startPanel } = await import('../scripts/panel.js');
 
@@ -256,4 +258,163 @@ test('add and remove refuse to overwrite a setting.json they cannot keep intact'
       assert.equal(readFileSync(settingsFile, 'utf8'), raw, 'the file is left exactly as it was');
     }
   }
+});
+
+test('addableRefusedHosts deduplicates by parsed host, ignores unaddable and already-allowed callbacks (mixed-row safe), and formats D8 banner', () => {
+  const rows = [
+    {
+      clientName: 'SPOOFED <script>alert(1)</script>',
+      callbacks: [
+        { href: 'https://newest.example/cb1', host: 'newest.example', reason: null },
+        { href: 'http://localhost:3000/bad', host: 'localhost:3000', reason: 'the address must start with https://' },
+      ],
+    },
+    {
+      clientName: 'Second Path Same Host',
+      callbacks: [{ href: 'https://newest.example/cb2', host: 'newest.example', reason: null }],
+    },
+    {
+      clientName: 'Older Host',
+      callbacks: [{ href: 'https://older.example/cb', host: 'older.example', reason: null }],
+    },
+  ];
+  assert.deepEqual(addableRefusedHosts(rows, []), ['newest.example', 'older.example']);
+  assert.equal(formatRefusedBanner(['newest.example']), 'An AI tried to sign in through newest.example, which AkiMCP does not allow yet.');
+  assert.equal(formatRefusedBanner(['newest.example', 'older.example']), 'An AI tried to sign in through newest.example (+1 more), which AkiMCP does not allow yet.');
+  assert.equal(formatRefusedBanner([]), '');
+
+  // Mixed-callback row stays in listRefused() because of http://localhost, yet once https://newest.example/cb1 and /cb2 are allowed, newest.example leaves the banner/badge.
+  const entries = [{ match: 'prefix', value: 'https://newest.example/' }];
+  assert.deepEqual(addableRefusedHosts(rows, entries), ['older.example']);
+  assert.deepEqual(addableRefusedHosts([rows[0]], [{ match: 'exact', value: 'https://newest.example/cb1' }]), []);
+  assert.doesNotMatch(formatRefusedBanner(addableRefusedHosts(rows, [])), /SPOOFED|script/);
+});
+
+test('SSR panel renders #refusedCallbackBanner and #otherAiBadge accurately and protects [hidden] in panel.css', async () => {
+  writeSettings({});
+  const panelCss = readFileSync(new URL('../public/panel.css', import.meta.url), 'utf8');
+  assert.match(panelCss, /\[hidden\]\s*\{\s*display:\s*none\s*!important;\s*\}/, 'panel.css protects [hidden] from display overrides');
+  assert.match(panelCss, /\.tab-badge\s*\{/, 'panel.css styles .tab-badge');
+
+  // Allow every previously refused addable callback in this test process via a clean helper check + live mixed-callback row SSR check.
+  const render = () => renderPanel({ origin: 'https://example.test', ingress: 'funnel', client: {}, passphrase: 'pass', token: 'tok', accessToken: 'acc', repoRoot: '/', rulesDir: '/', userDir: '/' });
+
+  // Add a fresh mixed-callback refused row (1 addable + 1 unaddable) with hostile clientName.
+  const mixedAddable = 'https://ssr-signal.example/oauth/cb';
+  noteRefused([mixedAddable, 'http://127.0.0.1:9999/bad'], 'EVIL_CLIENT_NAME_<img src=x>');
+  const htmlBefore = render();
+  assert.match(htmlBefore, /<p class="helptext" id="refusedCallbackBanner"><span id="refusedCallbackText">An AI tried to sign in through ssr-signal\.example/, 'visible SSR banner leads with newest addable parsed host');
+  assert.doesNotMatch(htmlBefore, /EVIL_CLIENT_NAME_/, 'D8: SSR banner never renders self-declared clientName');
+  const expectedCount = addableRefusedHosts().length;
+  assert.ok(expectedCount >= 1);
+  assert.match(htmlBefore, new RegExp(`<span id="otherAiBadge" class="tab-badge">${expectedCount}</span>`), 'SSR badge count matches unique addable hosts');
+
+  // Allow every currently addable refused callback (including mixedAddable) so addableRefusedHosts() drops to 0 even though the mixed row stays in listRefused().
+  const allAddableHrefs = [...new Set(listRefused().flatMap((r) => r.callbacks.filter((c) => !c.reason).map((c) => c.href)))];
+  writeSettings({ oauth: { callbacks: allAddableHrefs.map((value) => ({ match: 'exact', value })) } });
+  assert.ok(listRefused().some((r) => r.callbacks.some((c) => c.href === mixedAddable)), 'mixed row still lives in listRefused() due to unaddable sibling');
+  assert.deepEqual(addableRefusedHosts(), [], 'addableRefusedHosts drops to [] once every addable callback is allowed');
+  const htmlAfter = render();
+  assert.match(htmlAfter, /<p class="helptext" id="refusedCallbackBanner" hidden><span id="refusedCallbackText"><\/span>/, 'SSR banner is hidden when no addable refused hosts remain');
+  assert.match(htmlAfter, /<span id="otherAiBadge" class="tab-badge" hidden><\/span>/, 'SSR badge is hidden when addable count is 0');
+});
+
+test('panel-client.js callback sync, passive throttle/lock, monotonic seq race guard, and openOtherAi single-fetch', async () => {
+  const clientSrc = readFileSync(new URL('../public/panel-client.js', import.meta.url), 'utf8');
+  const startIdx = clientSrc.indexOf("const CALLBACK_MATCH_LABEL =");
+  const endIdx = clientSrc.indexOf("let limitDefaults = {};");
+  assert.ok(startIdx > 0 && endIdx > startIdx, 'callback section exists in panel-client.js');
+  const slice = clientSrc.slice(startIdx, endIdx);
+  assert.doesNotMatch(slice.replace(/\/\/.*/g, ''), /innerHTML/, 'panel-client callback sync never uses innerHTML');
+
+  const els = {
+    refusedCallbackBanner: { hidden: true },
+    refusedCallbackText: { textContent: '' },
+    otherAiBadge: { hidden: true, textContent: '' },
+    callbacksReadError: { hidden: true, textContent: '' },
+    skippedCallbacks: { replaceChildren() {} },
+  };
+  let now = 10_000;
+  const pending = [];
+  const apiCalls = [];
+  const sandbox = {
+    URL,
+    Date: { now: () => now },
+    NOT_SORTABLE: {},
+    document: { getElementById: (id) => els[id] || null },
+    renderTable: () => {},
+    mutedNote: (t) => t,
+    timeCell: (t) => String(t),
+    refusedAddressCell: () => {},
+    removeCallbackButton: () => {},
+    api: (method, route) => {
+      apiCalls.push({ method, route });
+      return new Promise((resolve, reject) => pending.push({ resolve, reject }));
+    },
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(slice + '\nthis.__exports = { loadCallbacks, maybeRefreshCallbacks, syncRefusedSignal };', sandbox);
+  const { loadCallbacks, maybeRefreshCallbacks, syncRefusedSignal } = sandbox.__exports;
+
+  // 1. Passive refresh triggers once; concurrent and <5s calls are suppressed.
+  maybeRefreshCallbacks();
+  maybeRefreshCallbacks();
+  assert.equal(apiCalls.length, 1, 'in-flight passive lock suppresses duplicate passive fetch');
+
+  // 2. Explicit loadCallbacks() bypasses passive lock and wins race over slower passive req #1.
+  const explicit = loadCallbacks();
+  assert.equal(apiCalls.length, 2, 'explicit loadCallbacks bypasses passive lock');
+  const freshPayload = {
+    entries: [{ match: 'exact', value: 'https://a.example/cb', host: 'a.example' }],
+    skipped: [],
+    readError: null,
+    refused: [{ clientName: 'SECRET_NAME', callbacks: [{ href: 'https://a.example/cb', host: 'a.example', reason: null }, { href: 'http://localhost/x', host: 'localhost', reason: 'bad' }] }],
+  };
+  const stalePayload = {
+    entries: [],
+    skipped: [],
+    readError: null,
+    refused: [{ clientName: 'SECRET_NAME', callbacks: [{ href: 'https://a.example/cb', host: 'a.example', reason: null }] }],
+  };
+  // Req #2 (explicit, newer) resolves first -> hides banner & badge.
+  pending[1].resolve(freshPayload);
+  await explicit;
+  assert.equal(els.refusedCallbackBanner.hidden, true);
+  assert.equal(els.otherAiBadge.hidden, true);
+  assert.equal(els.otherAiBadge.textContent, '');
+
+  // Req #1 (passive, older) resolves late -> MUST NOT overwrite newer explicit state!
+  pending[0].resolve(stalePayload);
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(els.refusedCallbackBanner.hidden, true, 'stale passive response cannot re-open banner');
+  assert.equal(els.otherAiBadge.hidden, true, 'stale passive response cannot re-open badge');
+
+  // 3. Throttle blocks passive refresh within 5000ms, allows at >= 5000ms.
+  now += 4999;
+  maybeRefreshCallbacks();
+  assert.equal(apiCalls.length, 2, 'passive refresh throttled under 5000ms');
+  now += 1;
+  maybeRefreshCallbacks();
+  assert.equal(apiCalls.length, 3, 'passive refresh allowed at >= 5000ms');
+  // Passive error is swallowed silently without advancing lastCallbacksAt.
+  pending[2].reject(new Error('restarting'));
+  await new Promise((r) => setTimeout(r, 0));
+  maybeRefreshCallbacks();
+  assert.equal(apiCalls.length, 4, 'failed passive refresh does not lock out next retry');
+  pending[3].resolve(stalePayload);
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(els.refusedCallbackBanner.hidden, false);
+  assert.equal(els.refusedCallbackText.textContent, 'An AI tried to sign in through a.example, which AkiMCP does not allow yet.');
+  assert.doesNotMatch(els.refusedCallbackText.textContent, /SECRET_NAME/);
+  assert.equal(els.otherAiBadge.hidden, false);
+  assert.equal(els.otherAiBadge.textContent, '1');
+
+  // 4. Direct syncRefusedSignal clears when addable count drops to 0.
+  syncRefusedSignal([], []);
+  assert.equal(els.refusedCallbackBanner.hidden, true);
+  assert.equal(els.otherAiBadge.hidden, true);
+  assert.equal(els.otherAiBadge.textContent, '');
+
+  // 5. openOtherAi guards against double-clicking otherai when already active.
+  assert.match(clientSrc, /openOtherAi:\s*\(\)\s*=>\s*\{[\s\S]*if\s*\(!tab\.classList\.contains\('active'\)\)\s*tab\.click\(\);/);
 });

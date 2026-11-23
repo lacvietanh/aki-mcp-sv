@@ -421,7 +421,66 @@ function removeCallbackButton({ match, value, host }) {
   return btn;
 }
 const CALLBACK_MATCH_LABEL = { exact: 'exact address', prefix: 'starts with' };
+const CALLBACKS_REFRESH_MIN_MS = 5000;
+let callbacksSeq = 0;
+let lastCallbacksAt = 0;
+let passiveCallbacksInFlight = false;
+
+function callbackMatchesEntries(href, entries) {
+  if (typeof href !== 'string' || href.includes('#')) return false;
+  let url;
+  try { url = new URL(href); } catch { return false; }
+  if (url.protocol !== 'https:' || url.username || url.password) return false;
+  return (entries || []).some((e) => {
+    if (e.match === 'exact') return url.href === e.value;
+    if (e.match === 'prefix') {
+      try {
+        const base = new URL(e.value);
+        return url.origin === base.origin && url.pathname.startsWith(base.pathname);
+      } catch { return false; }
+    }
+    return false;
+  });
+}
+
+function addableRefusedHosts(rows, entries) {
+  const seen = new Set();
+  const hosts = [];
+  for (const row of rows || []) {
+    for (const cb of row?.callbacks || []) {
+      if (!cb || cb.reason || !cb.host) continue;
+      if (callbackMatchesEntries(cb.href, entries)) continue;
+      if (!seen.has(cb.host)) {
+        seen.add(cb.host);
+        hosts.push(cb.host);
+      }
+    }
+  }
+  return hosts;
+}
+
+function formatRefusedBanner(hosts) {
+  if (!hosts.length) return '';
+  const summary = hosts.length === 1 ? hosts[0] : `${hosts[0]} (+${hosts.length - 1} more)`;
+  return `An AI tried to sign in through ${summary}, which AkiMCP does not allow yet.`;
+}
+
+// D8: show parsed host names only via textContent, never self-declared clientName or innerHTML.
+function syncRefusedSignal(refused, entries) {
+  const hosts = addableRefusedHosts(refused, entries);
+  const banner = document.getElementById('refusedCallbackBanner');
+  const text = document.getElementById('refusedCallbackText');
+  const badge = document.getElementById('otherAiBadge');
+  if (text) text.textContent = formatRefusedBanner(hosts);
+  if (banner) banner.hidden = hosts.length === 0;
+  if (badge) {
+    badge.textContent = hosts.length ? String(hosts.length) : '';
+    badge.hidden = hosts.length === 0;
+  }
+}
+
 function renderCallbacks({ entries, skipped, readError, refused }) {
+  syncRefusedSignal(refused, entries);
   renderTable('refusedCallbacks', [
     ['Sign-in address', refusedAddressCell, NOT_SORTABLE],
     ['Name it gave itself', (r) => r.clientName || '—', { sortValue: (r) => r.clientName }],
@@ -441,7 +500,16 @@ function renderCallbacks({ entries, skipped, readError, refused }) {
   document.getElementById('skippedCallbacks').replaceChildren(...skipped.map(({ entry, reason }) => mutedNote('Skipped in setting.json: ' + entry + ': ' + reason)));
 }
 async function loadCallbacks() {
-  renderCallbacks(await api('GET', '/api/oauth-callbacks'));
+  const seq = ++callbacksSeq;
+  const data = await api('GET', '/api/oauth-callbacks');
+  lastCallbacksAt = Date.now();
+  if (seq === callbacksSeq) renderCallbacks(data);
+  return data;
+}
+function maybeRefreshCallbacks() {
+  if (passiveCallbacksInFlight || Date.now() - lastCallbacksAt < CALLBACKS_REFRESH_MIN_MS) return;
+  passiveCallbacksInFlight = true;
+  loadCallbacks().catch(() => {}).finally(() => { passiveCallbacksInFlight = false; });
 }
 
 let limitDefaults = {};
@@ -846,7 +914,8 @@ const ACTIONS = {
   }),
   openOtherAi: () => {
     document.querySelector('#s1 .tier-btn[data-tier="web"]').click();
-    document.querySelector('#s1 .tab[data-tab="otherai"]').click();
+    const tab = document.querySelector('#s1 .tab[data-tab="otherai"]');
+    if (!tab.classList.contains('active')) tab.click();
   },
   revokeAllTemp: (btn) => act(btn, 'msgTemp', async () => {
     const { message } = await api('POST', '/api/temp-token/revoke', { all: true });
@@ -971,3 +1040,6 @@ loadLog().catch((e) => say('msgLogSettings', e.message, false));
 loadTempTokens().catch((e) => say('msgTemp', e.message, false));
 setInterval(() => loadTempTokens().catch(() => {}), 30_000);
 loadPostmanDaemon().catch((e) => { document.getElementById('msgPmDaemon').textContent = e.message; });
+maybeRefreshCallbacks();
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') maybeRefreshCallbacks(); });
+window.addEventListener('focus', () => maybeRefreshCallbacks());

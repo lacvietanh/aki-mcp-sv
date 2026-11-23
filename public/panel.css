@@ -1,6 +1,7 @@
 :root { color-scheme: light dark; --bg:#faf9f7; --card:#fff; --line:#e5e2dc; --fg:#1a1a1a; --muted:#6b6b6b; --accent:#ff4800; --ok:#2e7d32; --err:#c62828; }
 @media (prefers-color-scheme: dark) { :root { --bg:#1a1817; --card:#232120; --line:#38352f; --fg:#ececec; --muted:#9a948c; --ok:#7bc47f; --err:#ef9a9a; } }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body { font-family: -apple-system, system-ui, sans-serif; background: var(--bg); color: var(--fg); margin: 0; padding: 24px 16px 8px; font-size: 14px; }
 main { max-width: 880px; margin: 0 auto; position: relative; }
 h1 { font-size: 26px; text-align: center; margin: 8px 0 4px; }
@@ -68,6 +69,7 @@ textarea { min-height: 90px; resize: vertical; line-height: 1.5; }
 .provider-icon { width: 15px; height: 15px; vertical-align: middle; }
 .tab:hover { color: var(--accent); }
 .tab.active { color: var(--accent); border-color: var(--accent); background: var(--card); font-weight: 600; margin-bottom: -1px; padding-bottom: 8px; }
+.tab-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 700; line-height: 1; }
 .tabpane { display: none; padding-top: 14px; }
 .tabpane.active { display: block; }
 .tier-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 18px 0 0; padding: 4px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; }

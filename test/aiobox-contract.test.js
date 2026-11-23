@@ -2,6 +2,7 @@
 // Shapes AIObox reads from AkiMCP (docs/plan/done/IMPORTANT-akimcp-aiobox-contract.md § Hợp đồng AIObox đọc từ AkiMCP): a change that breaks one fails here before it breaks the macro.
 import './setup.js';
 import assert from 'node:assert/strict';
+import { once } from 'node:events';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -13,7 +14,8 @@ const read = (name) => fs.readFileSync(path.join(tmp, name), 'utf8');
 const { writeLock } = await import('../scripts/instance-lock.js');
 const { getOrIssueAccessToken, loadOrCreatePassphrase } = await import('../scripts/oauth.js');
 const { recordCaller } = await import('../scripts/callers.js');
-const { ROUTES } = await import('../scripts/panel.js');
+const { ROUTES, startPanel } = await import('../scripts/panel.js');
+const { noteRefused } = await import('../scripts/oauth-callbacks.js');
 const { IDENTITY, DEFAULT_NAME, DEFAULT_KEY } = await import('../scripts/mcp-name.js');
 const { renderPanel } = await import('../scripts/config-page.js');
 const { createToolsServer } = await import('../scripts/tools-server.js');
@@ -68,6 +70,55 @@ assert.equal(typeof security.callers[0].lastSeen, 'number');
 const removed = await ROUTES['POST /api/clients/remove']({ clientId: 'claudeDcr', roll: false });
 assert.deepEqual(Object.keys(removed).sort(), ['message', 'ok']);
 assert.equal(removed.ok, true);
+
+// GET /api/oauth-callbacks and POST /api/oauth-callbacks/{add,remove}: exact 4.2.0 wire shape frozen for AIObox.
+noteRefused(['https://contract-ai.example/oauth/cb', 'http://localhost:9000/bad'], 'Contract AI');
+const listedCb = await ROUTES['GET /api/oauth-callbacks']();
+assert.deepEqual(Object.keys(listedCb).sort(), ['entries', 'readError', 'refused', 'skipped']);
+assert.equal(listedCb.readError, null);
+const refusedRow = listedCb.refused.find((r) => r.callbacks.some((c) => c.host === 'contract-ai.example'));
+assert.ok(refusedRow, 'noteRefused feeds GET /api/oauth-callbacks refused[]');
+assert.deepEqual(Object.keys(refusedRow).sort(), ['callbacks', 'clientName', 'count', 'firstAt', 'lastAt']);
+assert.equal(refusedRow.clientName, 'Contract AI');
+assert.equal(typeof refusedRow.firstAt, 'number');
+assert.equal(typeof refusedRow.lastAt, 'number');
+assert.equal(refusedRow.count, 1);
+assert.deepEqual(Object.keys(refusedRow.callbacks[0]).sort(), ['host', 'href', 'prefix', 'reason', 'shown']);
+assert.equal(refusedRow.callbacks[0].host, 'contract-ai.example');
+assert.equal(refusedRow.callbacks[0].prefix, 'https://contract-ai.example/oauth/');
+assert.equal(refusedRow.callbacks[0].reason, null);
+assert.equal(refusedRow.callbacks[1].prefix, null);
+assert.equal(typeof refusedRow.callbacks[1].reason, 'string');
+
+const addedCb = await ROUTES['POST /api/oauth-callbacks/add']({ match: 'exact', value: 'https://contract-ai.example/oauth/cb' });
+assert.deepEqual(Object.keys(addedCb).sort(), ['message', 'ok']);
+assert.equal(addedCb.ok, true);
+const afterAddCb = await ROUTES['GET /api/oauth-callbacks']();
+assert.deepEqual(afterAddCb.entries, [{ match: 'exact', value: 'https://contract-ai.example/oauth/cb', host: 'contract-ai.example' }]);
+const removedCb = await ROUTES['POST /api/oauth-callbacks/remove']({ match: 'exact', value: 'https://contract-ai.example/oauth/cb' });
+assert.deepEqual(Object.keys(removedCb).sort(), ['message', 'ok']);
+assert.equal(removedCb.ok, true);
+
+// HTTP-level 400 ({ error }, including wrong { url } body) and 403 (bad x-panel-token) gates for /api/oauth-callbacks*.
+const cbPanelToken = 'contract-panel-token';
+const cbPanel = startPanel({ port: 0, token: cbPanelToken, origin: 'https://host.example', ingress: 'funnel', client: { clientId: 'c', clientSecret: 's' }, passphrase: 'p', updateInfo: { mcp: {}, rule: {} } });
+if (!cbPanel.listening) await once(cbPanel, 'listening');
+const cbBase = `http://127.0.0.1:${cbPanel.address().port}`;
+try {
+  for (const route of ['/api/oauth-callbacks/add', '/api/oauth-callbacks/remove']) {
+    const badBody = await fetch(cbBase + route, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-panel-token': cbPanelToken }, body: JSON.stringify({ url: 'https://contract-ai.example/oauth/cb' }) });
+    assert.equal(badBody.status, 400, `${route} rejects legacy { url } body with 400`);
+    assert.equal(typeof (await badBody.json()).error, 'string');
+  }
+  for (const [method, route] of [['GET', '/api/oauth-callbacks'], ['POST', '/api/oauth-callbacks/add'], ['POST', '/api/oauth-callbacks/remove']]) {
+    const badTok = await fetch(cbBase + route, { method, headers: { 'Content-Type': 'application/json', 'x-panel-token': 'wrong' }, body: method === 'POST' ? JSON.stringify({ match: 'exact', value: 'https://contract-ai.example/oauth/cb' }) : undefined });
+    assert.equal(badTok.status, 403, `${route} requires x-panel-token`);
+    assert.equal(typeof (await badTok.json()).error, 'string');
+  }
+} finally {
+  cbPanel.close();
+  await once(cbPanel, 'close');
+}
 
 // /mcp initialize: AIObox copies serverInfo.title as the MCP name (serverInfo.name as fallback); the bridge returns this result unchanged.
 const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();

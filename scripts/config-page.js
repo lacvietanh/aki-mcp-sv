@@ -6,7 +6,7 @@ import { aioboxInstalled, AIOBOX_PANEL, AIOBOX_CONNECT } from './aiobox-guide.js
 import { IDENTITY, appliedKeys } from './mcp-name.js';
 import { renderIdentityField } from './identity-panel.js';
 import { TEMP_TTL_MS, TEMP_EXTEND_MS } from './oauth.js';
-import { listRefused } from './oauth-callbacks.js';
+import { addableRefusedHosts, formatRefusedBanner } from './oauth-callbacks.js';
 import { gatePort } from './userdata.js';
 
 const CLAUDE_DIR = path.join(os.homedir(), '.claude');
@@ -217,6 +217,7 @@ export function renderPanel({ origin, ingress = 'funnel', client, passphrase, to
   ${mcpUpd.updateAvailable ? `<div class="updrow"><strong>@akinet/akimcp</strong> <span class="mono">${esc(String(mcpUpd.current))} → ${esc(String(mcpUpd.latest))}</span> <button class="primary" data-act="pullUpdate">Pull &amp; restart</button><span class="msg" id="msgUpd"></span></div>` : ''}
   ${ruleUpd.updateAvailable ? `<div class="updrow updrule"><strong>akidevrule</strong> <span class="mono">${esc(String(ruleUpd.current))} → ${esc(String(ruleUpd.latest))}</span> <button class="primary" data-act="updateRules">Install / update</button><span class="msg" id="msgUpdRule"></span></div>` : ''}
 </div>` : '';
+  const refusedHosts = addableRefusedHosts();
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AkiMCP v${esc(String(mcpVer))}${isDev ? ' (dev)' : ''}</title>
 <link rel="icon" href="/favicon/favicon.ico" sizes="any"><meta name="theme-color" content="#ff4800">
@@ -315,7 +316,7 @@ ${secretField('Passphrase', passphrase)}
 ${secretField('Access token', accessToken)}
 <div class="acts"><button data-act="rollToken">Roll token</button><button data-act="rollTokenHard">Roll &amp; sign out all clients</button><button data-act="rollPassphrase">Roll passphrase</button><span class="msg" id="msgRoll"></span></div>
 <p class="helptext">One access token serves every client. <strong>Roll token</strong> replaces it: AIs connected with the passphrase refresh on their own (ClickUp may need one reconnect), but a token pasted as a fixed bearer (a local snippet below) stops working until it is pasted again. Connect Notion with the passphrase like the other web AIs, never with a pasted token. <strong>Roll &amp; sign out all clients</strong> also revokes refresh, so every AI must reconnect with the passphrase; use it if the token may have leaked. <strong>Roll passphrase</strong> issues a new one: the old passphrase stops authorizing new connections, while already-connected AIs keep working; use it if the passphrase may have leaked. Temporary tokens (Web → Any HTTP chat) expire on their own or are revoked one by one; <strong>Roll &amp; sign out all clients</strong> revokes them too.</p>
-${listRefused().some((row) => row.callbacks.some((c) => !c.reason)) ? `<p class="helptext">An AI tried to sign in through an address AkiMCP does not allow yet. <button type="button" data-act="openOtherAi">Open Web → Other AI (sign-in)</button></p>` : ''}
+<p class="helptext" id="refusedCallbackBanner"${refusedHosts.length ? '' : ' hidden'}><span id="refusedCallbackText">${esc(formatRefusedBanner(refusedHosts))}</span> <button type="button" data-act="openOtherAi">Open Web → Other AI (sign-in)</button></p>
 
 <div class="tier-switch" role="group" aria-label="Connector tier">
   <button type="button" class="tier-btn active" data-tier="local" aria-pressed="true" aria-controls="tabs-local"><span class="tier-title">Local · direct</span><span class="tier-sub">On this computer · 127.0.0.1 or stdio · no tunnel</span></button>
@@ -333,7 +334,7 @@ ${listRefused().some((row) => row.callbacks.some((c) => !c.reason)) ? `<p class=
 
 <nav class="tabs" id="tabs-web" data-tier-tabs="web" aria-label="Web connectors">
   <button class="tab" data-tab="httpchat"><img src="/img/providers/http.svg" class="provider-icon" alt="">Any HTTP chat</button>
-  <button class="tab" data-tab="otherai"><i class="fa-solid fa-right-to-bracket" aria-hidden="true"></i>Other AI (sign-in)</button>
+  <button class="tab" data-tab="otherai"><i class="fa-solid fa-right-to-bracket" aria-hidden="true"></i>Other AI (sign-in)<span id="otherAiBadge" class="tab-badge"${refusedHosts.length ? '' : ' hidden'}>${refusedHosts.length ? refusedHosts.length : ''}</span></button>
   <button class="tab" data-tab="claude"><img src="/img/providers/claude.png" class="provider-icon" alt="">Claude</button>
   <button class="tab" data-tab="grok"><img src="/img/providers/grok.png" class="provider-icon" alt="">Grok</button>
   <button class="tab" data-tab="chatgpt"><img src="/img/providers/gpt.png" class="provider-icon" alt="">ChatGPT</button>

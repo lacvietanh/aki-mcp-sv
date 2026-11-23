@@ -535,6 +535,7 @@ export const ROUTES = {
     return { ok: true, message: `${outcome} and rolled the access token. Signed-in OAuth connectors renew on their next request (ClickUp may need one reconnect); Bearer clients (Buda, local Claude Code, Codex and Cursor) need the new token: click Apply again or re-paste.` };
   },
   // No restart: /register and /authorize read setting.json on every request, so an added or removed address applies to the next sign-in.
+  // AIObox reads and manages refused OAuth callbacks via these three routes (docs/plan/done/IMPORTANT-akimcp-aiobox-contract.md).
   'GET /api/oauth-callbacks': async () => ({ ...readUserCallbacks(), refused: listRefused() }),
   'POST /api/oauth-callbacks/add': async (body) => {
     const { host, added } = addUserCallback(body);
