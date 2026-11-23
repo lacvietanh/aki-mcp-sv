@@ -125,10 +125,26 @@ try {
   assert.equal(bearerStatus(bearer(labels.TOKEN)), 'retired');
   assert.deepEqual((await ROUTES['GET /api/temp-tokens']()).tokens, []);
 
-  // The guide is served as markdown, not a binary download.
+  // The guide is served as markdown, not a binary download, and specifies atomic 0600 /tmp/akimcp.json, User-Agent, 403/fail-closed rules, and DELETE cleanup.
   const guide = await fetch(`${origin}/guide/mcp-http/v1.md`);
   assert.equal(guide.status, 200);
   assert.equal(guide.headers.get('content-type'), 'text/markdown; charset=utf-8');
+  const guideText = await guide.text();
+  for (const snippet of [
+    '`/tmp/akimcp.json`',
+    'NamedTemporaryFile("w", dir="/tmp", delete=False',
+    'os.chmod(tmp, 0o600)',
+    'os.replace(tmp, "/tmp/akimcp.json")',
+    '`User-Agent` | `akimcp-client/1.0`',
+    "-A 'akimcp-client/1.0'",
+    '`403 Forbidden`',
+    'fail closed at once: ask the owner for a new kickoff block; never scan other `/tmp/*` files',
+    '&& rm -f /tmp/akimcp.json',
+    'plus optional `ss` and `handle`',
+  ]) {
+    assert.ok(guideText.includes(snippet), `guide v1.md missing: ${snippet}`);
+  }
+  assert.doesNotMatch(guideText, /AIObox|chủ|lead/i, 'public v1.md keeps neutral owner terminology');
 
   // M3: Name normalization, NFC, control-char stripping, length caps, case-insensitive uniqueness, selector conflicts, 7-day extend cap, and 64-live cap.
   assert.equal(normalizeTempTokenName(undefined), null);
