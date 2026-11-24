@@ -1,77 +1,54 @@
 # aki-mcp-sv — project guidance
 
-Local MCP server (filesystem, search, shell, agy, aiobox) for web AIs (claude.ai, ChatGPT, Grok, Gemini /devmode, Notion, ClickUp, Buda) over Tailscale Funnel / Cloudflare Tunnel + OAuth 2.1. Entry: `npm start` → `scripts/start.js` (foreground, manual stop/start). Rule loader: `akirule` skill.
-
-## RECURRING #1 — "Couldn't connect" / no `POST /token`: Tailscale Funnel desync, NOT the code
-
-Signature: `npm start` is healthy, funnel status says "on", but client reports "Couldn't connect" and gatekeeper stops at `POST /authorize -> 302` with **no `POST /token`**. The local serve-config did not sync to Tailscale's public edge; external calls fail at the TLS layer.
-
-- **Do not debug `scripts/oauth.js` or `scripts/gatekeeper.js`** — OAuth & bridge code are correct.
-- **Do not trust local `curl https://$HOST`** — macOS WireGuard mesh (`100.100.100.100`) returns a false 200. Always probe the public IP via `--resolve`:
-  ```bash
-  HOST=$(tailscale status --json | jq -r .Self.DNSName | sed 's/\.$//'); PUB=$(dig @8.8.8.8 $HOST +short | head -1)
-  curl --resolve $HOST:443:$PUB https://$HOST/.well-known/oauth-authorization-server   # exit 35 / 000 = desync
-  ```
-- **Reset cycle**:
-  ```bash
-  tailscale funnel --https=443 off && tailscale serve reset && tailscale funnel --bg 9999
-  ```
-- **Bypass / Ingress precedence**: `--tunnel <cred.json>` (Cloudflare) > `PUBLIC_ORIGIN` > Tailscale Funnel.
-
-## Two client paths, one OAuth server
-
-`scripts/oauth.js` serves both without handler-level branching:
-- **Claude, ChatGPT, Grok, Gemini, Notion, ClickUp**: URL + passphrase only; they self-register via RFC 7591 DCR (`POST /register`), PKCE only, stored in `oauth-dcr-clients.json`.
-- **Pre-issued confidential client** in `oauth-client.json` (`client_secret_post`): any client that wants a static client; `scripts/start.js` prints its ID/secret.
-- **Bearer clients** (Buda): no DCR, so they send the shared access token as `Authorization: Bearer`; no OAuth code involved, and Roll token breaks them until the new token is set again.
-- **Invariants**: `resolveClient()` is the single SSoT lookup for both. Redirect URIs are allowlisted by `matchCallback` in `scripts/oauth-callbacks.js`: its built-ins plus the user's own `exact`/`prefix` entries in `setting.json` `oauth.callbacks`, matched on the parsed URL and re-checked at `/authorize`. Auth codes and refresh tokens are bound to their issuing client ID.
-
-## Adding a connector (web AI or local client)
-
-1. **Auth path from the client's own screens and facts, recorded with source and date first** (`docs/ref/fact-*` or the plan); take the highest rung it offers: OAuth with DCR (URL + passphrase) → OAuth without DCR (pre-issued Client ID/Secret + passphrase) → Bearer header only when it has no OAuth. Every rung must be settable by automation, not only by hand (owner 2026-10-22: a connector a macro cannot set up by itself is not finished); OAuth ranks first because it refreshes its own token (so Roll token needs no re-paste — ClickUp is the observed exception, it may need one reconnect, CHANGELOG 2026-10-24), keeps the token server to server and is a named client the panel removes alone. Never a per-client OAuth branch.
-2. **Redirect URI (OAuth only).** Any user adds an unknown callback in the panel (section 1 → Web → Other AI (sign-in)), no release needed; the refused attempt shows there and in the log line `[oauth] register REJECTED (redirect_uri not allowlisted): [origins]`. A built-in entry in `BUILTIN_CALLBACKS` (`scripts/oauth-callbacks.js`) only for a client that gets its own tab: take the exact callback from a real attempt, test it in `test/oauth-callbacks.test.js`, never in `gatekeeper.js`.
-3. **Panel tab** in `scripts/config-page.js` section 1, Local or Web tier, steps written from the client's real screens, saying what Roll token does to it; a README section with its link in the Contents line and its name in the headline list, `docs/index.md`, CHANGELOG. Elsewhere describe connectors as a group, never another hand-kept list.
-4. **Live check against the real client** before the plan goes to `done/`; until then its status says it was not run.
-
-## OS-agnostic by decision, not by accident
-
-- **Users run Windows, Linux or macOS**: panel, README, docs, plans and console text never assume macOS ("this Mac", a `~/Library` path or `brew` alone). Say "this computer" or "the machine running AkiMCP"; a path or step that differs per OS is given for each OS, or names the OS it applies to.
-- **Data tables only**: Platform differences exist strictly as declarative maps indexed by `process.platform` (`LAUNCHER` in `open-browser.js`, `WIN_EXTRA` in `allowlist.js`). Never branch business logic (`if (win32)`).
-- **Prerequisites over fallbacks**: Windows runs Unix binaries via Git for Windows (`grep`, `find`). Do not add pure-JS reimplementations.
-- **Permanently removed**: `scripts/chrome.js` stays deleted (Chrome 136 blocks remote debugging on default profile) and native folder picker stays removed.
+Local MCP server for web/local AIs (Funnel / Cloudflare Tunnel + OAuth 2.1). `npm start` → `scripts/start.js` (foreground, manual stop/start) · `npm test` · `docs/index.md`.
 
 ## Stable core — AIObox never drives an AkiMCP change (ABSOLUTE)
 
-Owner 2026-10-05, verbatim (full text: aiobox `docs/arch/akimcp-boundary.md` § 0a): "tôi k thích akimcp phải thay đổi chỉ vì aiobox. cần nó ổn định bất kể aiobox phát triển thế nào đi nữa. muốn tinh gọn hiệu quả nhất chỉ 1 lần v3 này thôi, rồi hanj chế thay đổi nó." · "chứ tôi thấy động tí là edit akimcp là không đúng nguyên tắc".
+Owner 2026-10-05 (`aiobox docs/arch/akimcp-boundary.md` § 0a): "tôi k thích akimcp phải thay đổi chỉ vì aiobox. cần nó ổn định bất kể aiobox phát triển thế nào đi nữa. muốn tinh gọn hiệu quả nhất chỉ 1 lần v3 này thôi, rồi hanj chế thay đổi nó." · "chứ tôi thấy động tí là edit akimcp là không đúng nguyên tắc".
 
-- **3.x is the last reshaping for AIObox.** After it, AkiMCP changes only for a core need or security. An edit here whose reason is an AIObox feature is refused: the feature belongs in AIObox (code, `akipanel`, its guide).
-- **AIObox internals live only in the AIObox adapter tool.** No other file names AIObox ops, handles, files or rules (funnel and bootstrap lines excepted, aiobox `docs/arch/akimcp-boundary.md` BR-1, BR-9). The adapter forwards generically, so AIObox can add ops without an AkiMCP release; AIObox is reached through exactly two tools, `op` a free string.
+- 3.x is the last AIObox reshaping; afterwards change only for core/security (AIObox features stay in AIObox).
+- 2 AIObox tools (`aiobox`, `aiobox_write`, free `op`); `aiobox` mentions in `scripts/` stay within `akimcp-boundary.md` BR-1/BR-9 allow-list.
+
+## OS-agnostic
+
+- Windows/Linux/macOS: say "this computer" (never "this Mac", `~/Library`, `brew` alone); name per-OS steps.
+- OS deltas go in `process.platform` tables (`open-browser.js`, `allowlist.js`) or OS-adapter modules; no `if (win32)` in core logic.
+- Windows uses Git for Windows Unix tools (`grep`, `find`) — no pure-JS rewrites.
+- Permanently removed: `scripts/chrome.js` (Chrome 136 default-profile block ≠ `chrome-mcp.js`) & native folder picker.
+
+## Public repo hygiene
+
+- Zero real secrets/tokens/passphrases in tracked files, commits, or probes (read env or `~/.aki/mcpsv/setting.json`; fakes in fixtures).
+- Redact tunnel/Tailscale hosts, non-loopback IPs, emails, private chat URLs in `docs/`.
+- Scan `git diff --cached` pre-commit; unpushed leak fix overrides `done/` immutability.
+
+## Runtime, OAuth & session lifecycle
+
+- **1 process:** `start.js` runs gatekeeper (OAuth + `/mcp`), panel, boot `warmToolsServer()`. `tools-server.js` delegates to `provider-registry.js` (`docs/arch/provider-toolkit.md`); default prefix `aki__` (`mcp-name.js`). `roots.js` reads `setting.json` fresh per call.
+- **1 session (`streamable-bridge.js`):** 1 `InMemoryTransport` session (no `mcp-hub`, fs child, SSE; cached `initialize`). No per-client `Map` or `MCP_MAX_SESSIONS`. Timeout: `MCP_REQUEST_TIMEOUT_MS` (10m).
+- **Postman daemon:** never boot-started — only `POST /api/postman-launch` (`launchPostmanDaemon()`). Shared `$AKI_DATA_DIR` (`~/.aki/mcpsv`): paths in `postman-data-paths.cjs` (`daemon.pid` honored on quit); `prompts/` in `postman-daemon.cjs`.
+- **1 OAuth server (`oauth.js`):** `resolveClient()` SSoT, no per-client branches. DCR (`oauth-dcr-clients.json`, PKCE or confidential e.g. Notion), static (`oauth-client.json`), Bearer (Roll token breaks shared Bearer). Callbacks: `oauth-callbacks.js` + `setting.json` `oauth.callbacks` (re-checked at `/authorize`, never `gatekeeper.js`); codes/refresh bind `client_id`.
 
 ## Native command, then guide, then tool
 
-Pick the first rung that works; a higher rung needs the lower one to have failed, with the evidence in the PR.
+Lowest rung wins; higher rungs need PR evidence:
+1. **Native command:** OS/browser/app controls via generic tools (`run_cmd`, `devtools_eval`, `task_start`).
+2. **Guide line:** one line in `docs/feat/tools.md`, tool `next`, or AIObox guide (e.g. F1/CDP move).
+3. **Tool/op:** mid-task need, native takes 3+ calls or fails in logs (`akimcp-boundary.md` T5′), generic without AIObox.
 
-1. **Native command.** The OS, the browser or the app already exposes the control (`osascript`/System Events, CDP `Browser.setWindowBounds`, an app's global shortcut, a CLI). Use it through the generic tools already served (`run_cmd`, `devtools_eval`, `task_start`). No code.
-2. **Guide line.** The native path works but an AI does not find it, or calls it wrong. Write one line where that AI already reads (`docs/feat/tools.md`, a tool's result `next`, or the AIObox guide for AIObox). No new tool.
-3. **Tool or op.** Only when the job is needed mid-task AND the cheapest native path costs 3+ calls or keeps failing in the log (aiobox `akimcp-boundary.md` T5′), AND it is generic: useful without AIObox. AIObox-only jobs become AIObox ops, never AkiMCP code.
+## RECURRING #1 — Tailscale Funnel desync, NOT the code
 
-Example (2026-10-05): moving the AIObox window took six probes because no rung-2 line existed; the fix is a guide line pointing at the F1 shortcut and `Browser.setWindowBounds`, not a new tool.
+`npm start` healthy + funnel "on", `POST /authorize -> 302` with **no `POST /token`** = Funnel TLS desync — **never debug `oauth.js`/`gatekeeper.js`**. Local `curl https://$HOST` gives false 200 on macOS WireGuard `100.100.100.100`:
+```bash
+H=$(tailscale status --json|jq -r .Self.DNSName|sed 's/\.$//'); curl --resolve $H:443:$(dig @8.8.8.8 $H +short|head -1) https://$H/.well-known/oauth-authorization-server
+tailscale funnel --https=443 off && tailscale serve reset && tailscale funnel --bg 9999
+```
+Ingress: `--tunnel <cred.json>` > `PUBLIC_ORIGIN` > `ingress.json` > Tailscale Funnel.
 
-## Session lifecycle
+## Adding a connector
 
-- **Single shared session**: `scripts/streamable-bridge.js` maintains exactly **one** internal session for the process, held over an in-process `InMemoryTransport` pair (no child process, no SSE). External clients multiplex onto it via JSON-RPC ID remapping; `initialize` is answered locally from cache.
-- **No per-client session Map**: Never reintroduce per-client session tracking or an `MCP_MAX_SESSIONS` cap.
-- **Timeouts & Persistence**: Per-request timeout only (`MCP_REQUEST_TIMEOUT_MS`, default 10m). Tokens persist in `scripts/oauth.js`; Funnel routing is ephemeral.
-
-## Process topology (Stage 2 — single process)
-
-1 Node process. `start.js` orchestrates: in-process gatekeeper (OAuth + `/mcp`), panel, a boot-time `warmToolsServer()` call. The `scripts/postman/` daemon child (see `docs/feat/tools.md`) is never started at boot — `scripts/postman/postman-mcp.js`'s `launchPostmanDaemon()` is its one spawn path, triggered only by clicking Launch Postman in the panel's Postman tab (`POST /api/postman-launch`). Status/quit also honor `$AKI_DATA_DIR/daemon.pid` so an externally-started daemon is not invisible to Ctrl+C; the daemon's `data.json`/`daemon.pid`/`ownership-status.json`/`new-window.flag` and the per-provider chat prompts (`prompts/`) share the main server's one data dir, `~/.aki/mcpsv` by default, with the paths defined once in `scripts/postman/postman-data-paths.cjs`. `scripts/tools-server.js` builds the one shared `McpServer`, mounting 16 `register(server)` modules — `rule-context`, `shell`, `agy`, `kiro`, `search`, `filesystem`, `postman`, `cdp`, `aiobox`, `chrome`, `fetch`, `system`, `task`, `port`, `git`, `sqlite` (39 tools total) (tool namespace: the default prefix `aki__`, which panel section 1 can change — `aki__run_cmd`, `aki__agy_run`, `aki__kiro_read`, `aki__find_path`, `aki__search_content`, `aki__postman_status`, plus the native filesystem tools). `streamable-bridge.js` talks to it directly over `InMemoryTransport`; no `mcp-hub`, no third-party filesystem child. Folder scope (`scripts/roots.js`) is read fresh from `setting.json` on every call — a panel save takes effect on the next tool call, no restart.
+**Read `docs/ref/adding-connector.md` first.** Gates: highest auth rung (OAuth DCR → static → Bearer if no OAuth), macro-automatable (Owner 2026-10-22), no per-client OAuth branch (ClickUp may need reconnect after Roll token), unknown callbacks live via `Other AI (sign-in)` (no release).
 
 ## Release process
 
-Governed directly by `RULE-release.md` (`B4`, `B6`, `B7`). Repo-specific deltas:
-- **No `releases.json`**: CLI/local app; `CHANGELOG.md` + GitHub Release are the only release artifacts.
-- **Bare semver tags**: New git tags must be bare semver (`1.7.0`, not `v1.7.0`). Existing `v1.x.x` tags are immutable history. Display title may show `v{version}`.
-- **Drift check**: Before committing, verify section numbers in `scripts/config-page.js`, `README.md`, and `docs/index.md`.
-- **Immutability**: `done/` plan docs and released CHANGELOG blocks are read-only.
-- **Never suggest removing `public/` images**: the panel and README use them; a reference scan that misses them is wrong, not proof they are dead.
+`RULE-release.md` (`B4`, `B6`, `B7`): no `releases.json` (`CHANGELOG.md` + GitHub Release); bare semver tags (`1.7.0`, `v1.x.x` immutable history, runs `release.yml` Trusted Publishing `@akinet/akimcp`); sync section numbers (`config-page.js`, `README.md`, `docs/index.md`); `done/` & released CHANGELOG read-only; **never suggest removing `public/` images** (panel/README use them; grep misses them).

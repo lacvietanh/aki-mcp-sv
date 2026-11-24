@@ -67,7 +67,7 @@ function cutAtWord(label) {
   return wordEnd > 0 ? head.slice(0, wordEnd) : head;
 }
 
-// A minted path creates no file, so a second chat in the same minute would find it free: this process (the only one that mints, CLAUDE.md § Process topology) remembers what it handed out.
+// Minting writes no file yet, so this sole minting process (CLAUDE.md § Runtime, OAuth & session lifecycle) tracks handed-out paths to avoid same-minute collisions.
 const minted = new Set();
 
 // D2, D4: the local clock the owner reads; a name already taken or already minted gets 2 random base36 characters more.
