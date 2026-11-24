@@ -380,16 +380,16 @@ ${secretField('Access token', accessToken)}
 
 <div class="tabpane" id="tab-gemini">
   <p class="lnk"><a href="${esc(GEMINI_CONNECTOR_URL)}" target="_blank" rel="noopener">↗ Open Gemini Developer Mode</a> · <span class="mono">gemini.google.com/devmode</span> (no trailing <span class="mono">/</span>; <span class="mono">/u/&lt;n&gt;/devmode</span> works too)</p>
-  <p class="helptext">Requires Google AI Pro or AI Ultra. Free Google accounts redirect from <span class="mono">/devmode</span> to <span class="mono">/app</span>, where custom MCP apps are not available.</p>
+  <p class="helptext">Requires Google AI Pro or AI Ultra. A cold load of <span class="mono">/devmode</span> can redirect to <span class="mono">/app</span> even on paid accounts — if that happens, open <strong>Settings → Developer Mode</strong> from the bottom-left Gemini sidebar (Free Google accounts do not have Developer Mode).</p>
   <ol class="steps">
-    <li>In Developer Mode, click <strong>Choose an app</strong> (or the active app button) → <strong>+ Create new</strong>.</li>
+    <li>In Developer Mode, click <strong>Choose an app</strong> (or the active app button) → <strong>Create new</strong>.</li>
     <li>Paste the <strong>MCP URL</strong> above and click <strong>Next</strong>.</li>
     <li>Tick the risk acknowledgment checkbox, then click <strong>Connect</strong>.</li>
     <li>On the Google Account Linking notice (<span class="mono">myaccount.google.com</span>), click <strong>Agree and continue</strong>.</li>
     <li>Enter the <strong>Passphrase</strong> when AkiMCP opens its confirmation page, then click <strong>Approve</strong>.</li>
     <li>In <strong>Save your custom app</strong>, set the name to <strong>Display name</strong> above (<span class="mono">AkiMCP</span> by default) and click <strong>Connect</strong> (or <strong>Save</strong>).</li>
   </ol>
-  <p class="helptext">Gemini self-registers via DCR (PKCE, no Client ID or Secret to paste) and refreshes on its own after <strong>Roll token</strong>; after <strong>Roll &amp; sign out all clients</strong>, open the <strong>Authentication</strong> tab in <span class="mono">/devmode</span> and click <strong>Reconnect</strong>. On the first call to each tool, Gemini shows an inline confirmation card: choose <strong>Allow once</strong> or <strong>Always allow</strong> (saved server-side per custom app).</p>
+  <p class="helptext">Gemini self-registers via DCR (PKCE, no Client ID or Secret to paste) and refreshes on its own after <strong>Roll token</strong>; after <strong>Roll &amp; sign out all clients</strong>, open the <strong>Authentication</strong> tab in <span class="mono">/devmode</span> and click <strong>Disconnect account</strong> / <strong>Use a different account</strong> (or <strong>Reconnect</strong>). Read-only tool calls can run directly, while actions requiring confirmation show an inline card with <strong>Allow once</strong> or <strong>Always allow</strong> (saved server-side per custom app).</p>
 </div>
 
 <div class="tabpane" id="tab-notion">
