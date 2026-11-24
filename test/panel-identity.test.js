@@ -172,7 +172,7 @@ test('the Gemini tab documents the live /devmode flow, SPA fallback, token recov
   const geminiTab = html.slice(start, end);
   assert.ok(geminiTab.includes('href="https://gemini.google.com/devmode"'), 'links to /devmode without trailing slash');
   assert.ok(!geminiTab.includes('gemini.google.com/devmode/"'), 'never links to /devmode/ with trailing slash');
-  assert.ok(geminiTab.includes('Google AI Pro or AI Ultra'), 'states paid plan requirement');
+  assert.ok(geminiTab.includes('Google AI Pro or AI Ultra') && geminiTab.includes('unguaranteed'), 'states paid plan target and Free unguaranteed caveat');
   assert.ok(geminiTab.includes('Settings') && geminiTab.includes('Developer Mode'), 'documents SPA fallback via Settings -> Developer Mode');
   assert.ok(geminiTab.includes('Choose an app') && geminiTab.includes('Create new'), 'documents live app registration controls');
   assert.ok(!geminiTab.includes('+ Create new'), 'omits redundant plus sign on Create new');

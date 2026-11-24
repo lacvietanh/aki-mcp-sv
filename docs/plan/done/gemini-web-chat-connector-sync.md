@@ -1,6 +1,6 @@
 # Gemini Web Chat Connector Sync (`aki-mcp-sv` + `akimcp.top`)
 
-> status: proposed · Stage 5 cross-repo sync for Gemini Developer Mode (`https://gemini.google.com/devmode`) connector guidance, panel preview artifact, and tool-surface counts
+> status: done 2026-11-25 · Stage 5 cross-repo sync completed (Pro + Free TIER0 live QA verified)
 
 ## 1. Context & Live Verification Evidence
 
@@ -13,9 +13,9 @@ Google Gemini web chat (`https://gemini.google.com/devmode`) runs a live MCP con
 - **`Authentication` tab & token rotation recovery**: Inside `<dev-mode-side-panel>`, the two tabs are `Tool schemas` and `Authentication`. When linked, `Authentication` shows `Connected · Account linked` with **Disconnect account** and **Use a different account** (used alongside **Reconnect** after clicking **Roll & sign out all clients** in the AkiMCP control panel).
 - **AIObox integration alignment**: AIObox now reads live `5h` and `7d` Gemini quota windows via background `UsagePageQuery` GraphQL directly on `/app` and `/devmode` tabs (preserving `/u/<n>` multi-account prefixes) and ships automated **Connect AkiMCP** and **Widen** macros for Gemini.
 
-### 1.2 Pending Live Verification Slot on Google Free Account
-- `[ ]` **Pending Owner Keychain `Always Allow`**: Verify on a signed-in **Google Free** account whether the in-page **Settings** menu completely hides the **Developer Mode** (`a[href="/devmode"]`) entry (or renders an upsell state) and record the exact `UsagePageQuery` `pools` payload on Free.
-- **Execution rule**: All verified Google AI Pro updates across `aki-mcp-sv` (Part A) and `akimcp.top` (Part B) can be implemented immediately; the single Free-account fallback clause is locked in once the macOS Keychain prompt is approved.
+### 1.2 Verified Live on Google Free Account (`TIER0`, Chrome 158)
+- `[x]` **Live QA verified on Google Free (`subscriptionTier: "TIER0"`)**: In-page **Settings** completely omits **Developer Mode** (`a[href="/devmode"]` absent in both EN and VI locales, with no upsell entry), and `UsagePageQuery` returns `subscriptionTier: "TIER0"` with `GXU_FIVE_HOURLY` and `GXU_WEEKLY` pools. A cold load of `/devmode` without `?hl=en` on a non-EN locale redirects to `/app`, whereas opening `/devmode?hl=en` directly still reaches Developer Mode and loads `37/37` enabled `aki__*` tools (default prefix `aki__`).
+- **Documentation rule**: Do not claim Free Google accounts are strictly blocked from Developer Mode; state that **Settings** omits **Developer Mode** on Free Google accounts and direct `/devmode` access on Free is unguaranteed and locale-dependent (while AIObox pool routing continues to prefer paid accounts via `akimcp.paidOnly`).
 
 ---
 
@@ -24,7 +24,7 @@ Google Gemini web chat (`https://gemini.google.com/devmode`) runs a live MCP con
 ### 2.1 `scripts/config-page.js` (`#tab-gemini` at `:381–393`, preserve `GEMINI_SETTINGS_URL` at `:18, :560`)
 - **Current baseline**: `scripts/config-page.js:381–393` already removed the historical `Not recommended` / `17106276` / `2026-08-09` warning and documents the 6-step DCR flow (**Choose an app** → paste **MCP URL** & click **Next** → tick risk checkbox & click **Connect** → `myaccount.google.com` **Agree and continue** → enter **Passphrase** & click **Approve** → **Save your custom app** with **Display name** `AkiMCP` & click **Connect** / **Save**). Keep this exact 6-step DCR order intact.
 - **Apply exact 4 live deltas on `#tab-gemini` (`:381–393`)**:
-  1. **`:383` (SPA entry fallback)**: Clarify that a cold load of `/devmode` can redirect to `/app` even on paid **Google AI Pro or AI Ultra** accounts — when that happens, open **Settings → Developer Mode** from the bottom-left Gemini sidebar (whereas Free Google accounts do not have Developer Mode access).
+  1. **`:383` (SPA entry fallback & Free caveat)**: State `Built for Google AI Pro or AI Ultra`, clarify that a cold load of `/devmode` can redirect to `/app` even on paid accounts — when that happens, open **Settings → Developer Mode** from the bottom-left Gemini sidebar — and note that Free Google accounts omit Developer Mode in Settings while direct `/devmode` access on Free is unguaranteed/locale-dependent.
   2. **`:385` (Button label)**: Change `<strong>+ Create new</strong>` to `<strong>Create new</strong>` (remove the redundant `+` sign).
   3. **`:392` (`Authentication` tab recovery)**: Expand the post-**Roll & sign out all clients** instruction on the **Authentication** tab in `/devmode` to include **Disconnect account** / **Use a different account** (alongside **Reconnect**) so users see the exact live button labels when re-linking.
   4. **`:392` (Confirmation card behavior)**: Clarify that read-only tool calls can run directly while actions requiring confirmation show an inline confirmation card with **Allow once** or **Always allow** (saved server-side per custom app).
@@ -58,11 +58,11 @@ Google Gemini web chat (`https://gemini.google.com/devmode`) runs a live MCP con
 
 ### 3.1 `app/data/guides.ts` (Inline Bilingual `{ en, vi }` Blocks at `:691–704` & `:908–916`)
 - **Gemini connection block (`:691–704`, inline `{ en, vi }`)**:
-  - `intro` (`:694`): Clarify in both `en` and `vi` that a cold load of `gemini.google.com/devmode` can redirect to `/app` even on paid **Google AI Pro** / **AI Ultra** accounts — instruct users to enter via **Settings → Developer Mode** in the bottom-left Gemini menu (whereas Free accounts do not have Developer Mode).
+  - `intro` (`:694`): Clarify in both `en` and `vi` (`Built for Google AI Pro or AI Ultra`) that a cold load of `gemini.google.com/devmode` can redirect to `/app` even on paid accounts — instruct users to enter via **Settings → Developer Mode** in the bottom-left Gemini sidebar (while Free Google accounts omit Developer Mode in Settings and direct `/devmode` access on Free is unguaranteed and locale-dependent).
   - `steps` (`:695–702`): Update step 1 (`:696`, `en` + `vi`) from `+ Create new` to **Create new** while keeping the 6-step DCR sequence intact.
   - `note` (`:703`): Update `en` + `vi` to mention **Disconnect account** / **Use a different account** (alongside **Reconnect**) on the **Authentication** tab after **Roll & sign out all clients**, and clarify read-only direct execution vs **Allow once** / **Always allow** confirmation cards.
 - **Gemini `/devmode` troubleshooting entries (`:908–916`, inline `{ en, vi }`)**:
-  - `/devmode` redirect entry (`:912`, `en` + `vi`): Update so it explains both causes — cold-load `/devmode -> /app` redirect on Pro/Ultra (solved by clicking **Settings → Developer Mode** in the bottom-left menu) vs Free accounts lacking Developer Mode.
+  - `/devmode` redirect entry (`:912`, `en` + `vi`): Update so it explains cold-load `/devmode -> /app` redirects on Pro/Ultra (solved via **Settings → Developer Mode** in the bottom-left sidebar) and the Free account behavior (Settings omits Developer Mode; direct `/devmode` access is unguaranteed and locale-dependent).
   - `Roll & sign out all clients` recovery entry (`:914`, `en` + `vi`): Include **Disconnect account** / **Use a different account** alongside **Reconnect** under the **Authentication** tab.
 
 ### 3.2 `app/generated/panel-demo.ts` (`:2`)
@@ -83,12 +83,12 @@ Google Gemini web chat (`https://gemini.google.com/devmode`) runs a live MCP con
 
 ## 4. Acceptance Checklist & Privacy / Test Discipline Gates
 
-- [ ] **Strict Test Discipline (`RULE-test.md`)**:
+- [x] **Strict Test Discipline (`RULE-test.md`)**:
   - `python3 suite_lint.py --all test/panel-identity.test.js` reports **0 hits** on the edited `#tab-gemini` block (`:166–184`; pre-existing harness lines `:25`/`:44` out of scope).
   - `node --test test/panel-identity.test.js test/tool-surface.test.js` and full `npm test` in `aki-mcp-sv` pass 100% with **0** `$TMPDIR` leaks and **0** stray/temp files.
-- [ ] **Web Gates (`akimcp.top`)**:
+- [x] **Web Gates (`akimcp.top`)**:
   - `npm run check`, `npm run typecheck`, and `npm run build` pass 100% after `node scripts/pull-panel.js`.
-- [ ] **Privacy Gate (`CLAUDE.md §7`)**:
+- [x] **Privacy Gate (`CLAUDE.md §7`)**:
   - Zero personal emails, zero account/profile handles or internal window identifiers, zero local machine paths, and zero tokens/secrets in code, tests, docs, or commit messages.
-- [ ] **L8 Audit & Release Hold**:
+- [x] **L8 Audit & Release Hold**:
   - Submit both Part A (`aki-mcp-sv`) and Part B (`akimcp.top`) diffs for POST-IMPL L8 audit before committing, and hold `/akiship` until final cross-repo audit completes.

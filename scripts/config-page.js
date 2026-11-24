@@ -380,7 +380,7 @@ ${secretField('Access token', accessToken)}
 
 <div class="tabpane" id="tab-gemini">
   <p class="lnk"><a href="${esc(GEMINI_CONNECTOR_URL)}" target="_blank" rel="noopener">↗ Open Gemini Developer Mode</a> · <span class="mono">gemini.google.com/devmode</span> (no trailing <span class="mono">/</span>; <span class="mono">/u/&lt;n&gt;/devmode</span> works too)</p>
-  <p class="helptext">Requires Google AI Pro or AI Ultra. A cold load of <span class="mono">/devmode</span> can redirect to <span class="mono">/app</span> even on paid accounts — if that happens, open <strong>Settings → Developer Mode</strong> from the bottom-left Gemini sidebar (Free Google accounts do not have Developer Mode).</p>
+  <p class="helptext">Built for Google AI Pro or AI Ultra. A cold load of <span class="mono">/devmode</span> can redirect to <span class="mono">/app</span> even on paid accounts — if that happens, open <strong>Settings → Developer Mode</strong> from the bottom-left Gemini sidebar (Free Google accounts omit Developer Mode in Settings, and direct <span class="mono">/devmode</span> access on Free is unguaranteed/locale-dependent).</p>
   <ol class="steps">
     <li>In Developer Mode, click <strong>Choose an app</strong> (or the active app button) → <strong>Create new</strong>.</li>
     <li>Paste the <strong>MCP URL</strong> above and click <strong>Next</strong>.</li>
