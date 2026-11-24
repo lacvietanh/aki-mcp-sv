@@ -19,7 +19,7 @@ Owner 2026-10-05 (`aiobox docs/arch/akimcp-boundary.md` § 0a): "tôi k thích a
 ## Public repo hygiene
 
 - Zero real secrets/tokens/passphrases in tracked files, commits, or probes (read env or `~/.aki/mcpsv/setting.json`; fakes in fixtures).
-- Redact tunnel/Tailscale hosts, non-loopback IPs, emails, private chat URLs in `docs/`.
+- Redact tunnel/Tailscale hosts, non-loopback IPs (except 100.100.100.100), emails, private chat URLs in `docs/`.
 - Scan `git diff --cached` pre-commit; unpushed leak fix overrides `done/` immutability.
 
 ## Runtime, OAuth & session lifecycle
