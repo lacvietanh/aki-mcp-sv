@@ -55,12 +55,16 @@ git clone https://github.com/lacvietanh/aki-mcp-sv.git
 cd aki-mcp-sv
 npm install
 
-# Run in isolated development mode (~/.aki/mcpsv-dev, ports 9997/9996)
-npm run dev
-
-# Or run in standard production mode (~/.aki/mcpsv, ports 9999/9998)
+# Run directly from this repo on your real data dir (~/.aki/mcpsv, ports 9999/9998)
 npm start
+# (equivalent to `node bin/akimcp.js`, or picking "Local repo" in AIObox)
+
+# Optional isolated mode (~/.aki/mcpsv-dev, ports 9997/9996) — only when you need
+# a second parallel test instance without touching your primary ~/.aki/mcpsv server
+npm run dev   # or: node bin/akimcp.js --dev
 ```
+
+Running directly from the repo (`npm start`, `node bin/akimcp.js`, or AIObox **Local repo**) operates directly on your primary `~/.aki/mcpsv` data directory (no separate dev profile). Use `--dev` / `npm run dev` only as an optional isolated mode (`~/.aki/mcpsv-dev`, ports `9997/9996`) when running a second instance side-by-side.
 
 ## Run
 
