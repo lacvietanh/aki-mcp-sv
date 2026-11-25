@@ -2,7 +2,7 @@
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning per [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [4.3.0] - 2026-11-25
 
 ### Added
 - **Dynamic refused OAuth callback banner, tab count badge, focus/visibility refresh, and `/api/oauth-callbacks*` contract freeze** (`scripts/oauth-callbacks.js`, `scripts/config-page.js`, `public/panel.css`, `public/panel-client.js`, `scripts/panel.js`, `test/oauth-callbacks.test.js`, `test/aiobox-contract.test.js`, `docs/plan/done/IMPORTANT-akimcp-aiobox-contract.md`, `docs/plan/done/oauth-refused-panel-signal.md`): the control panel now keeps `#refusedCallbackBanner` (naming unique parsed host(s) only via `textContent`, never `clientName` per D8) and `#otherAiBadge` on **Web → Other AI (sign-in)** live in sync without a full page reload, refreshing on boot, `visibilitychange` (`visible`), and window `focus` with a 5 s passive throttle, in-flight lock, silent passive error handling, and a monotonic `callbacksSeq` guard so slower passive responses cannot overwrite explicit Refresh/Add/Remove updates. Mixed-callback rows clear from the banner/badge as soon as their addable callbacks are allowed, `[hidden] { display: none !important; }` protects hidden state in `public/panel.css`, and `openOtherAi` avoids double-fetching when `otherai` is already the active web tab. The 4.2.0 wire shapes for `GET /api/oauth-callbacks`, `POST /api/oauth-callbacks/add`, and `POST /api/oauth-callbacks/remove` are now frozen in `docs/plan/done/IMPORTANT-akimcp-aiobox-contract.md` and locked in `test/aiobox-contract.test.js`. Tool definitions are unchanged; restart AkiMCP for it to take effect. Tested in `test/oauth-callbacks.test.js` and `test/aiobox-contract.test.js`.
