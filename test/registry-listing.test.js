@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// server.json and the npm package must agree or `mcp-publisher publish` fails (docs/plan/done/mcp-registry-listing.md): name = mcpName, versions = package version, its stdio entry really starts the tools.
+// Verify server.json agrees with package.json (name, version, stdio entry) so mcp-publisher publish succeeds (docs/plan/done/mcp-registry-listing.md).
 import './setup.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

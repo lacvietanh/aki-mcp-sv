@@ -98,13 +98,13 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             exit 0
           fi
-          # release.B4: body must carry the tagged CHANGELOG section, not a bare --generate-notes (near-empty on this repo — commits go straight to trunk, no PR history for it to derive from) plus a compare-link footer.
+          # release.B4: extract the tagged CHANGELOG section with a compare-link footer (commits go straight to trunk, so --generate-notes alone is near-empty).
           awk -v tag="$TAG" '
             $0 ~ "^## \\[" tag "\\]" { flag=1; next }
             flag && /^## \[/ { flag=0 }
             flag
           ' CHANGELOG.md > /tmp/changelog-section.md
-          # Bare-semver tags only (release.yml's own trigger pattern) -- legacy v1.x.x tags (CLAUDE.md: "immutable history") sort ahead of them lexically and would pick the wrong "previous" release otherwise.
+          # Bare-semver tags only: legacy v1.x.x tags (CLAUDE.md) sort ahead lexically and would pick the wrong previous release.
           PREV_TAG=$(git tag --list '[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | grep -v "^${TAG}$" | head -1)
           {
             cat /tmp/changelog-section.md

@@ -125,7 +125,7 @@ try {
   assert.equal(bearerStatus(bearer(labels.TOKEN)), 'retired');
   assert.deepEqual((await ROUTES['GET /api/temp-tokens']()).tokens, []);
 
-  // The guide is served as markdown, not a binary download, and specifies persistent workspace akimcp.md, atomic 0600 /tmp/akimcp.json fallback, User-Agent, 403/fail-closed rules, DELETE cleanup, and POST revoke_self.
+  // Guide serves as markdown and covers akimcp.md, 0600 /tmp/akimcp.json fallback, User-Agent, 403/fail-closed, DELETE cleanup, and POST revoke_self.
   const guide = await fetch(`${origin}/guide/mcp-http/v1.md`);
   assert.equal(guide.status, 200);
   assert.equal(guide.headers.get('content-type'), 'text/markdown; charset=utf-8');
