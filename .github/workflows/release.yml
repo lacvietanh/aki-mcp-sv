@@ -119,9 +119,21 @@ jobs:
               line = $0
               sub(/^- \*\*/, "", line)
               sub(/\*\*.*$/, "", line)
-              gsub(/`/, "", line)
-              if (length(line) > 72) line = substr(line, 1, 69) "..."
-              print line
+              while (gsub(/ *\([^()]*\)/, "", line) > 0) {}
+              gsub(/[`*~]/, "", line)
+              gsub(/  +/, " ", line)
+              gsub(/ ,/, ",", line)
+              sub(/^ +/, "", line)
+              sub(/[,:; ]+$/, "", line)
+              n = split(line, words, " ")
+              out = ""
+              for (i = 1; i <= n && i <= 12; i++) {
+                cand = (out == "" ? words[i] : out " " words[i])
+                if (length(cand) > 72) break
+                out = cand
+              }
+              sub(/[,:; ]+$/, "", out)
+              print out
               exit
             }
           ' /tmp/changelog-section.md)

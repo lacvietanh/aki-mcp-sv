@@ -59,8 +59,7 @@ npm install
 npm start
 # (equivalent to `node bin/akimcp.js`, or picking "Local repo" in AIObox)
 
-# Optional isolated mode (~/.aki/mcpsv-dev, ports 9997/9996) — only when you need
-# a second parallel test instance without touching your primary ~/.aki/mcpsv server
+# Optional isolated mode (~/.aki/mcpsv-dev, ports 9997/9996) — only when you need a second parallel test instance without touching your primary ~/.aki/mcpsv server
 npm run dev   # or: node bin/akimcp.js --dev
 ```
 
