@@ -2,7 +2,7 @@
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning per [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [4.3.1] - 2026-11-26
 
 ### Changed
 - **HTTP client spec (`public/guide/mcp-http/v1.md`), `SHARED_WORK` (`scripts/rule-context-mcp.js`), and product docs (`README.md`, `docs/feat/security.md`, `docs/feat/session-file.md`, `docs/feat/tools.md`) separate persistent chat VM workspaces (`akimcp.md`) from isolated `/tmp/akimcp.json` subshells and document POST-only `revoke_self` on 4.3.0+** (`public/guide/mcp-http/v1.md`, `scripts/rule-context-mcp.js`, `test/temp-token.test.js`, `test/rule-context.test.js`, `README.md`, `docs/feat/security.md`, `docs/feat/session-file.md`, `docs/feat/tools.md`): separates three runtime storage tiers (persistent shell in-memory variables, persistent chat VM workspace file such as `akimcp.md` with a hard security lock forbidding commits/exports and requiring immediate cleanup on revoke, and isolated subshell fallback `/tmp/akimcp.json` `0600`), replaces the stale section 4 note that POST-only clients cannot self-revoke with `aki__temp_token` `op="revoke_self"` via `POST tools/call` on AkiMCP 4.3.0+, and updates `SHARED_WORK` bullet 3 without touching `RULE_CONTEXT_DESCRIPTION` or `tempTokenKickoff` (0 chars added to `tools/list`, preserving `37,883 / 37,922`). Tested in `test/temp-token.test.js`, `test/rule-context.test.js` and `test/tool-surface.test.js`.
