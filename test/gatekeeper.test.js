@@ -18,6 +18,7 @@ process.on('unhandledRejection', (e) => unhandled.push(e));
 
 const { startGatekeeper } = await import('../scripts/gatekeeper.js');
 const server = startGatekeeper('https://example.ts.net');
+try {
 await new Promise((resolve) => server.once('listening', resolve));
 const { port } = server.address();
 const base = `http://127.0.0.1:${port}`;
@@ -55,6 +56,9 @@ assert.ok(!/[\x00-\x1f]/.test(storedName), 'and carries no control character int
 
 assert.deepEqual(unhandled, []);
 
-server.close();
-rmSync(dir, { recursive: true, force: true });
+} finally {
+  server.closeAllConnections();
+  server.close();
+  rmSync(dir, { recursive: true, force: true });
+}
 console.log('gatekeeper.test.js: ok');

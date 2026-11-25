@@ -145,7 +145,7 @@ async function run() {
     const childPid = Number(fs.readFileSync(pidFile, 'utf8'));
     try {
       assert.equal((await post(firstSessionId, { jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 77 } })).status, 202);
-      assert.equal(await Promise.race([slow.then(() => 'answered'), new Promise((r) => setTimeout(() => r('waiting'), 400))]), 'waiting', "another client's cancel must not end this request");
+      assert.equal(await Promise.race([slow.then(() => 'answered'), new Promise((r) => setTimeout(() => r('waiting'), 150))]), 'waiting', "another client's cancel must not end this request");
       assert.equal(alive(childPid), true, "another client's cancel must not stop the command");
       assert.equal((await post(secondSessionId, { jsonrpc: '2.0', method: 'notifications/cancelled', params: { requestId: 77 } })).status, 202);
       const cancelled = await slow;

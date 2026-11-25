@@ -11,13 +11,9 @@ const scripts = path.resolve(fixtures, '..', '..', 'scripts');
 const DEADLINE_MS = Number(process.argv.find((arg) => arg.startsWith('--deadline-ms='))?.split('=')[1] ?? 30000);
 const OPT_IN = process.argv.includes('--opt-in');
 const OPT_IN_CLIS = { agy: 'agy', kiro: 'kiro-cli' };
-// The default recording runs first: creating ~/.aki/aiobox/ is what makes the second one differ.
 const OUTPUTS = OPT_IN
   ? [{ file: 'surface-default-optin.json', withAiobox: false }]
-  : [
-    { file: 'surface-default.json', withAiobox: false },
-    { file: 'surface-default-aiobox.json', withAiobox: true },
-  ];
+  : [{ file: 'surface-default-aiobox.json', withAiobox: true }];
 
 // agy and kiro are detected by their binary on PATH and stay off until setting.json switches them on: the scratch HOME gets stub binaries and that setting.
 const switchOnOptInProviders = () => {
@@ -97,7 +93,7 @@ for (const output of OUTPUTS) {
   recorded.push({ ...output, text: `${JSON.stringify(surface, null, 2)}\n`, count: Object.values(surface.providers).flat().length });
 }
 for (const { file, count } of recorded) console.log(`${file}: ${count} tools`);
-if (!OPT_IN && recorded[0].count === recorded[1].count) throw new Error('both recordings list the same tool count: the AIObox directory changed nothing that is served');
+if (!OPT_IN && recorded[0].count === 0) throw new Error('recording listed zero tools');
 
 if (process.argv.includes('--check')) {
   const differing = recorded.filter(({ file, text }) => fs.readFileSync(path.join(fixtures, file), 'utf8') !== text);

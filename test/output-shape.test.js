@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import './setup.js';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -38,8 +39,10 @@ assert.match(shaped, /\[\.\.\. \d+ lines omitted \.\.\.\]/);
 assert.ok(rest.every((l) => l.startsWith('row ') || l.startsWith('[...')), 'no line is cut in half');
 const saved = /saved to (.+?) — read_text_file/.exec(marker)[1];
 assert.equal(fs.readFileSync(saved, 'utf8'), raw, 'the saved file is the raw output, unmodified');
-// Windows has no POSIX mode bits: stat reports 0o666 whatever was asked.
-if (process.platform !== 'win32') assert.equal(fs.statSync(saved).mode & 0o777, 0o600, 'the saved file is owner-only');
+test('spilled output file is written owner-only (0600)', { skip: process.platform === 'win32' ? 'POSIX mode bits are not enforced on Windows' : false }, () => {
+  const freshSaved = /saved to (.+?) — read_text_file/.exec(shapeForModel(raw))[1];
+  assert.equal(fs.statSync(freshSaved).mode & 0o777, 0o600, 'the saved file is owner-only');
+});
 
 // Cleaning happens before the cut, but the saved file is the RAW text (colour codes included).
 const coloured = Array.from({ length: 3000 }, (_, i) => `\x1b[32mok ${i}\x1b[0m ${'y'.repeat(20)}`).join('\n');
@@ -55,6 +58,4 @@ for (const part of [emojiShaped[1], emojiShaped.at(-1)]) assert.ok(!/[\uD800-\uD
 // The spill directory keeps only the newest 20 files.
 for (let i = 0; i < 25; i++) shapeForModel(raw + i);
 assert.equal(fs.readdirSync(spillDir()).length, 20);
-fs.rmSync(process.env.AKI_MCP_DATA_DIR, { recursive: true, force: true });
-
-console.log('output-shape.test.js: ok');
+after(() => fs.rmSync(process.env.AKI_MCP_DATA_DIR, { recursive: true, force: true }));

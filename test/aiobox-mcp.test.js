@@ -16,7 +16,7 @@ const home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'aiobox-mcp-t
 process.env.HOME = home;
 process.env.USERPROFILE = home;
 const { default: cdp } = await import('../scripts/cdp-engine.js');
-const { register, provider, parseHandle, formatHandle, stripHandle, extraRuleFiles, CALL_WAIT_MAX_S, setTimings } = await import('../scripts/aiobox-mcp.js');
+const { register, provider, parseHandle, formatHandle, stripHandle, extraRuleFiles, CALL_WAIT_MAX_S } = await import('../scripts/aiobox-mcp.js');
 const { GUIDE_URL } = await import('../scripts/aiobox-guide.js');
 const VERSION = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 const aioboxHome = path.join(home, '.aki', 'aiobox');
@@ -45,14 +45,21 @@ assert.equal(stripHandle('New Tab'), 'New Tab');
 assert.equal(CALL_WAIT_MAX_S, 50);
 
 assert.equal(provider.detect().available, false, 'no ~/.aki/aiobox/ = not installed');
-assert.match(provider.detect().reason, /AIObox \(not installed here\).*https:\/\/aiobox\.app\/guide\/aiobox\.md\?from=akimcp$/, 'the not-installed reason says what AIObox adds (D7)');
+assert.match(provider.detect().reason, /AIObox \(not installed here\).*https:\/\/aiobox\.app\/guide\/aiobox\.md\?from=akimcp$/, 'the not-installed reason says what AIObox adds');
 
+const testTimings = {};
+const setTimings = (patch) => Object.assign(testTimings, patch);
 const mcp = new McpServer({ name: 't', version: '1' });
-register(mcp);
+register(mcp, { timings: () => testTimings });
 const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
 await mcp.connect(serverSide);
 const client = new Client({ name: 't', version: '1' });
 await client.connect(clientSide);
+let responder;
+let taker;
+let db;
+let gClient;
+try {
 const call = async (name, args) => {
   const r = await client.callTool({ name, arguments: args });
   return { isError: !!r.isError, text: r.content[0].text, content: r.content };
@@ -219,7 +226,7 @@ cdp.evaluate = async ({ port, target, expression }) => {
 // A fake AIObox answering windows.refresh: takes the id, deletes the file, rewrites windows.json with answered = id and a higher generation.
 let answering = true;
 let refreshes = 0;
-const responder = setInterval(() => {
+responder = setInterval(() => {
   if (!answering || !fs.existsSync(refreshFile)) return;
   const id = fs.readFileSync(refreshFile, 'utf8').trim();
   fs.unlinkSync(refreshFile);
@@ -333,29 +340,29 @@ pages['T-GPT'].akipanel = panelWith(echo);
 pages['T-NOTION'].akipanel = panelWith(echo);
 
 // One call ends within its deadline even when a tab never answers, and says what is safe next: the op's own timeoutNext, else a generic line by mode.
-setTimings({ callBudgetMs: 800 });
+setTimings({ callBudgetMs: 200 });
 const timed = async (name, args) => { const t0 = Date.now(); const r = await call(name, args); return { ...r, ms: Date.now() - t0 }; };
 frozen.add('T-GPT');
 const frozenRead = await timed('aiobox', { op: 'read', window: 'P7·W2' });
 assert.equal(refused(frozenRead, 'timeout').next, 'read again with op=read', 'timeoutNext of the op');
-assert.ok(frozenRead.ms < 800 + 400, `a frozen read ends at the deadline (${frozenRead.ms} ms)`);
+assert.ok(frozenRead.ms < 200 + 400, `a frozen read ends at the deadline (${frozenRead.ms} ms)`);
 assert.match(refused(await timed('aiobox', { op: 'peek', window: 'P7·W2' }), 'timeout').next, /^call it again; out of time again/, 'a read without timeoutNext gets the generic read line');
 const frozenSend = await timed('aiobox_write', { op: 'send', window: 'P7·W2' });
 assert.match(refused(frozenSend, 'timeout').next, /may have taken effect: check with a read op before trying again/, 'a write without timeoutNext gets the generic write line');
-assert.ok(frozenSend.ms < 800 + 400);
-setTimings({ callBudgetMs: 2_000 });
+assert.ok(frozenSend.ms < 200 + 400);
+setTimings({ callBudgetMs: 250 });
 const eachFrozen = body(await call('aiobox', { op: 'whoami' }));
 assert.deepEqual([eachFrozen[0].ok, eachFrozen[1].by, eachFrozen[1].code], [true, 'akimcp', 'timeout'], 'one frozen tab is one timeout row');
 setTimings({ callBudgetMs: null });
 frozen.clear();
 
 // Channel request: requests/<id>.json, envelope v2, then the runs row; only outcome and detail come back. A fake AIObox takes each file the way the app does.
-const db = new DatabaseSync(runsFile);
+db = new DatabaseSync(runsFile);
 db.exec('CREATE TABLE runs (id INTEGER PRIMARY KEY, request TEXT, started_at TEXT, ended_at TEXT, outcome TEXT, detail TEXT)');
 const addRun = db.prepare('INSERT INTO runs (request, started_at, outcome, detail) VALUES (?, ?, ?, ?)');
 let takerMode = 'ok';
 const taken = [];
-const taker = setInterval(() => {
+taker = setInterval(() => {
   if (takerMode === 'ignore' || !fs.existsSync(requestsPath)) return;
   for (const name of fs.readdirSync(requestsPath).filter((n) => n.endsWith('.json'))) {
     const file = path.join(requestsPath, name);
@@ -373,7 +380,7 @@ const taker = setInterval(() => {
     else if (takerMode === 'running') addRun.run(envelope.id, now, null, null);
     else if (takerMode === 'late') {
       addRun.run(envelope.id, now, null, null);
-      setTimeout(() => db.prepare('UPDATE runs SET outcome = ?, detail = ? WHERE request = ?').run('ok', '{"late":true}', envelope.id), 600);
+      setTimeout(() => db.prepare('UPDATE runs SET outcome = ?, detail = ? WHERE request = ?').run('ok', '{"late":true}', envelope.id), 150);
     }
   }
 }, 20);
@@ -411,7 +418,7 @@ takerMode = 'retried';
 assert.deepEqual([body(await call('aiobox_write', { op: 'close_window', window: 'P7·W2' })).outcome], ['ok']);
 // Taken but never ended: timeout carrying the request id, and the generic write line.
 takerMode = 'running';
-setTimings({ callBudgetMs: 900 });
+setTimings({ callBudgetMs: 220 });
 const stuck = refused(await call('aiobox_write', { op: 'close_window', window: 'P7·W2' }), 'timeout');
 assert.equal(stuck.request, taken.at(-1).id);
 assert.match(stuck.next, /may have taken effect/);
@@ -426,7 +433,7 @@ takerMode = 'ignore';
 const ignored = refused(await call('aiobox_write', { op: 'close_window', window: 'P7·W2' }), 'timeout');
 assert.match(ignored.request, /^akimcp-/);
 assert.deepEqual(fs.readdirSync(requestsPath), [], 'the request file is deleted when the call gives up');
-setTimings({ callBudgetMs: null, requestPickupMs: 300 });
+setTimings({ callBudgetMs: null, requestPickupMs: 150 });
 const silent = refused(await call('aiobox_write', { op: 'close_window', window: 'P7·W2' }), 'app_not_listening');
 assert.match(silent.why, /did not take request akimcp-/);
 assert.deepEqual(fs.readdirSync(requestsPath), []);
@@ -441,7 +448,7 @@ assert.match(JSON.parse(listedText).answered, /^akimcp-/);
 assert.equal((await call('aiobox', { op: 'profiles' })).text, profilesText);
 assert.equal(refreshes, 1, 'only windows.json is refreshed');
 answering = false;
-setTimings({ refreshWaitMs: 300 });
+setTimings({ refreshWaitMs: 150 });
 refused(await call('aiobox', { op: 'windows' }), 'app_not_listening');
 answering = true;
 fs.mkdirSync(path.join(aioboxHome, 'archive'));
@@ -515,7 +522,7 @@ fs.writeFileSync(mapFile, mapText);
 assert.equal(body(await call('aiobox', { op: 'state' })).running, true);
 assert.equal('next' in body(await call('aiobox', { op: 'state' })), false);
 
-// extraRuleFiles & D23 RULE_PUSH gate: resolves provider guides, enforces guide/ symlink containment, fails open.
+// extraRuleFiles & RULE_PUSH gate: resolves provider guides, enforces guide/ symlink containment, fails open.
 const guideSubdir = path.join(aioboxHome, 'guide');
 fs.mkdirSync(guideSubdir, { recursive: true });
 const notionGuide = path.join(guideSubdir, 'notion.md');
@@ -536,10 +543,10 @@ assert.deepEqual(extraRuleFiles({ window: 'P1·W1' }), [fs.realpathSync(notionGu
 assert.deepEqual(extraRuleFiles({ window: 'P7·W9' }), [fs.realpathSync(gptGuide)], 'resolves provider across retired handle chain');
 assert.deepEqual(extraRuleFiles({ args: { window: 'P7·W2·T2' } }), [fs.realpathSync(claudeGuide)], 'resolves provider from args.window');
 assert.deepEqual(extraRuleFiles({ args: { provider: 'claude', like: 'P1·W1' } }), [fs.realpathSync(claudeGuide)], 'args.like is skipped when args.provider already names the target provider (N1)');
-assert.deepEqual(extraRuleFiles({ window: 'P7·W2', args: { like: 'P1·W1' } }), [fs.realpathSync(gptGuide)], 'args.like is skipped when window already names the target provider (N1)');
+assert.deepEqual(extraRuleFiles({ window: 'P7·W2', args: { like: 'P1·W1' } }), [fs.realpathSync(gptGuide)], 'args.like is skipped when window already names the target provider');
 assert.deepEqual(extraRuleFiles({ args: { like: 'P1·W1' } }), [fs.realpathSync(notionGuide)], 'args.like is used as fallback when neither args.provider nor window is present');
-assert.deepEqual(extraRuleFiles({ args: { provider: 'escaped' } }), [], 'symlink pointing outside ~/.aki is rejected (B2)');
-assert.deepEqual(extraRuleFiles({ args: { provider: 'setting_escape' } }), [], 'symlink pointing to ~/.aki/mcpsv/setting.json outside guideDir is rejected (B2)');
+assert.deepEqual(extraRuleFiles({ args: { provider: 'escaped' } }), [], 'symlink pointing outside ~/.aki is rejected');
+assert.deepEqual(extraRuleFiles({ args: { provider: 'setting_escape' } }), [], 'symlink pointing to ~/.aki/mcpsv/setting.json outside guideDir is rejected');
 assert.deepEqual(extraRuleFiles({ args: { provider: '../guide' } }), [], 'path traversal failing FILE_ID is rejected');
 for (const bad of badFileIds) assert.deepEqual(extraRuleFiles({ args: { provider: bad } }), [], `extraRuleFiles rejects invalid FILE_ID ${JSON.stringify(bad)}`);
 for (const id of goodDottedIds) assert.deepEqual(extraRuleFiles({ args: { provider: id } }), [fs.realpathSync(path.join(guideSubdir, `${id}.md`))], `extraRuleFiles accepts valid dotted/edge FILE_ID ${id}`);
@@ -568,7 +575,7 @@ const { createToolsServer } = await import('../scripts/tools-server.js');
 const gatedServer = createToolsServer();
 const [gClientSide, gServerSide] = InMemoryTransport.createLinkedPair();
 await gatedServer.connect(gServerSide);
-const gClient = new Client({ name: 'aiobox-gated-test', version: '1' });
+gClient = new Client({ name: 'aiobox-gated-test', version: '1' });
 await gClient.connect(gClientSide);
 const ctxRes = await gClient.callTool({ name: 'aki__akidevrule_context', arguments: { workingPath: home } });
 const baseRec = ctxRes.structuredContent.receipt;
@@ -607,11 +614,12 @@ assert.equal(calls.length, sendBeforeCount + 4, 'recAiStudio covers dotted provi
 const pushAiStudioArg = await gClient.callTool({ name: 'aki__aiobox_write', arguments: { op: 'new_window', args: { provider: 'aistudio.google.com' }, receipt: baseRec } });
 assert.match(pushAiStudioArg.content[0].text, /^RULE_PUSH:/);
 assert.match(pushAiStudioArg.content[1].text, /# Guide for aistudio\.google\.com/);
-await gClient.close();
-
-clearInterval(responder);
-clearInterval(taker);
-db.close();
-await client.close();
-fs.rmSync(home, { recursive: true, force: true });
+} finally {
+  if (responder) clearInterval(responder);
+  if (taker) clearInterval(taker);
+  if (db) db.close();
+  if (gClient) await gClient.close();
+  await client.close();
+  fs.rmSync(home, { recursive: true, force: true });
+}
 console.log('aiobox-mcp.test.js: ok');

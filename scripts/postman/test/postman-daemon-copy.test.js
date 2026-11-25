@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import os from 'node:os';
 import { createRequire } from 'node:module';
+import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -42,9 +43,10 @@ try {
   rmSync(tempRoot, { recursive: true, force: true });
 }
 
+const dataPaths = require(path.join(mcpRoot, 'postman-data-paths.cjs'));
+assert.equal(dataPaths.AKI_DATA_DIR, process.env.AKI_DATA_DIR || path.join(os.homedir(), '.aki', 'mcpsv'), 'runtime data dir comes from AKI_DATA_DIR or ~/.aki/mcpsv');
 const indexSrc = readFileSync(path.join(mcpRoot, 'postman-daemon.cjs'), 'utf8');
 assert.match(indexSrc, /require\('\.\/postman-data-paths\.cjs'\)/, 'the daemon takes its runtime paths from the shared module');
-assert.match(readFileSync(path.join(mcpRoot, 'postman-data-paths.cjs'), 'utf8'), /const AKI_DATA_DIR = process\.env\.AKI_DATA_DIR \|\| path\.join\(os\.homedir\(\), '\.aki', 'mcpsv'\)/);
 for (const file of ['postman-daemon.cjs', 'postman-mcp.js', 'postman-usage.cjs', 'postman-daemon-pid.cjs', 'postman-data-paths.cjs']) {
   assert.doesNotMatch(readFileSync(path.join(mcpRoot, file), 'utf8'), /cdp-postman|LEGACY_CDP/, `${file}: no legacy data dir`);
 }
@@ -123,17 +125,27 @@ function assertSectionsPresentAndOrdered(a, b, c) {
 }
 for (const positions of [[-1, 10, 20], [0, -1, 20], [0, 10, -1]]) assert.throws(() => assertSectionsPresentAndOrdered(...positions), /missing/);
 assertSectionsPresentAndOrdered(chatAgentStart, modelSelectorStart, promptInstructionStart);
-assert.match(mcpSrc, /const liveModelId = localStorage\.getItem\('ai-chat-last-selected-model'\)/);
 assert.doesNotMatch(mcpSrc, /if \(localStorage\.getItem\('ai-chat-last-selected-model'\) === model\.id\) return true/);
-assert.match(mcpSrc, /function selectionMatches\(selection, model\)/);
-assert.match(mcpSrc, /if \(model\.auto\) return/);
-assert.match(mcpSrc, /selection\.modelText === model\.label \|\| selection\.id === model\.id/);
-assert.match(mcpSrc, /const confirmed = await getCurrentModelSelection\(\)/);
-assert.match(mcpSrc, /const confirmedId = selectedModelId\(confirmed\)/);
+const panelSrc = readFileSync(path.join(mcpRoot, 'page', 'postman-panel.js'), 'utf8');
+const looksAutoLine = panelSrc.match(/^\s*const looksAuto = .+$/m)?.[0];
+const selStart = panelSrc.indexOf('function selectionMatches(');
+const selEnd = panelSrc.indexOf('// Applies the requested model.', selStart);
+assert.ok(looksAutoLine && selStart > 0 && selEnd > selStart, 'selectionMatches helper exists in postman-panel.js');
+const selCtx = {};
+vm.createContext(selCtx);
+vm.runInContext(`${looksAutoLine}\n${panelSrc.slice(selStart, selEnd)}\nthis.selectionMatches = selectionMatches;`, selCtx);
+const autoModel = { id: 'auto', label: 'Auto', auto: true };
+const concreteModel = { id: 'claude-4', label: 'Claude 4', auto: false };
+assert.equal(selCtx.selectionMatches({ modelText: 'Auto', id: 'claude-4' }, autoModel), true, 'Auto matches Auto button label even when localStorage holds last concrete id');
+assert.equal(selCtx.selectionMatches({ modelText: 'Auto', id: 'claude-4' }, concreteModel), false, 'Concrete model never matches while Auto is active');
+assert.equal(selCtx.selectionMatches({ modelText: 'Claude 4', id: 'other' }, concreteModel), true, 'Concrete model matches live button label');
+assert.equal(selCtx.selectionMatches({ modelText: '', id: 'claude-4' }, concreteModel), true, 'Concrete model falls back to committed localStorage id when label absent');
+assert.equal(selCtx.selectionMatches({ modelText: 'Other', id: 'other' }, concreteModel), false, 'Mismatched selection returns false');
 assert.match(mcpSrc, /grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/);
 assert.match(mcpSrc, /#aki-control-panel \.aki-model-row \.aki-label \{[^}]*white-space: nowrap/s);
 assert.equal((mcpSrc.match(/<input type="radio" name="aki-model"/g) || []).length, 4, 'model selector must keep exactly four semantic radios');
 
-assert.equal(typeof require(path.join(mcpRoot, 'postman-paths.cjs')).getPostmanPaths, 'function', 'postman-paths.cjs locates the Postman executable; the data-dir paths live in postman-data-paths.cjs');
+const resolvedPaths = require(path.join(mcpRoot, 'postman-paths.cjs')).getPostmanPaths();
+assert.ok(resolvedPaths && typeof resolvedPaths.execPath === 'string' && typeof resolvedPaths.appPath === 'string', 'getPostmanPaths returns executable and app path fields');
 
 console.log('postman-daemon-copy.test.js: ok');

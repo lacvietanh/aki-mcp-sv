@@ -79,7 +79,9 @@ export function mountProviders(server, prefix, options = {}) {
           const gated = isGated(restConfig);
           const hasSchema = restConfig.inputSchema !== undefined;
           // A read tool always runs; one that touched a project with rule files appends a line naming them (D23). The rule tool itself is left as it is.
-          const call = gated ? gate(handler, hasSchema, extraRuleFiles) : (p === rule ? handler : withRules(handler, hasSchema));
+          const gateFn = options.ruleGate?.gate || gate;
+          const withRulesFn = options.ruleGate?.withRules || withRules;
+          const call = gated ? gateFn(handler, hasSchema, extraRuleFiles) : (p === rule ? handler : withRulesFn(handler, hasSchema));
           // Claude requires both readOnlyHint and destructiveHint on every tool (A12), and the MCP default for a missing destructiveHint is true: a read-only tool states false here, once.
           const a = restConfig.annotations;
           const declared = a?.readOnlyHint === true && a.destructiveHint === undefined ? { ...restConfig, annotations: { ...a, destructiveHint: false } } : restConfig;

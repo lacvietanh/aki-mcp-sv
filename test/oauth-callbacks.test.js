@@ -192,6 +192,28 @@ test('/register refuses an unknown callback with a hint and a refused row; after
   assert.equal((await authorizePage(clientId, callback)).status, 400, 'a registered client whose address was removed cannot sign in again');
 });
 
+test('/register rejects attacker-host, userinfo, fragment, port, and traversal redirect URIs', async () => {
+  const badUris = [
+    'https://oauth-redirect.googleusercontent.com.attacker.com',
+    'http://oauth-redirect.googleusercontent.com',
+    'https://a@oauth-redirect.googleusercontent.com',
+    'https://oauth-redirect.googleusercontent.com/r/x#f',
+    'https://search.clickup-prod.com/other',
+    'https://search.clickup-prod.com.attacker.com/connect/mcp',
+    'https://chatgpt.com/connector/oauth/%2e%2e/x',
+    'https://chatgpt.com/connector/oauth/.%2e/x',
+    'https://chatgpt.com/connector/oauth/\\..\\..\\x',
+    'https://grok.com/connectors-oauth-exchange-code/../x',
+    'https://chatgpt.com/connector/oauth/x#f',
+    'https://chatgpt.com:8443/connector/oauth/x',
+  ];
+  for (const uri of badUris) {
+    const res = await register({ redirect_uris: [uri] });
+    assert.equal(res.status, 400, uri);
+    assert.equal((await res.json()).error, 'invalid_redirect_uri', uri);
+  }
+});
+
 test('/register without a usable callback says why instead of pointing to Add', async () => {
   writeSettings({});
   const descriptions = {};
@@ -260,7 +282,7 @@ test('add and remove refuse to overwrite a setting.json they cannot keep intact'
   }
 });
 
-test('addableRefusedHosts deduplicates by parsed host, ignores unaddable and already-allowed callbacks (mixed-row safe), and formats D8 banner', () => {
+test('addableRefusedHosts deduplicates by parsed host, ignores unaddable and already-allowed callbacks (mixed-row safe), and formats banner', () => {
   const rows = [
     {
       clientName: 'SPOOFED <script>alert(1)</script>',
@@ -316,8 +338,7 @@ test('SSR panel renders #refusedCallbackBanner and #otherAiBadge accurately and 
   assert.deepEqual(addableRefusedHosts(), [], 'addableRefusedHosts drops to [] once every addable callback is allowed');
   const htmlAfter = render();
   assert.match(htmlAfter, /<div class="updbar updrow" id="refusedCallbackBanner" role="status" aria-live="polite" hidden><span id="refusedCallbackText"><\/span>/, 'SSR banner is hidden when no addable refused hosts remain');
-  const configPageSrc = readFileSync(new URL('../scripts/config-page.js', import.meta.url), 'utf8');
-  assert.doesNotMatch(configPageSrc, /<button(?![^>]*\btype="button")/, 'every config-page.js button explicitly declares type="button"');
+  assert.doesNotMatch(htmlAfter, /<button(?![^>]*\btype="button")/, 'every rendered panel button explicitly declares type="button"');
   assert.match(htmlAfter, /<code class="copy[^"]*"[^>]*\btabindex="0"\s+role="button"/, 'copyEl renders keyboard-focusable role="button" with tabindex="0"');
   assert.match(panelCss, /\.copy:focus-visible,\s*th\[data-sort\]:focus-visible\s*\{\s*outline:\s*2px\s+solid\s+var\(--accent\)/, 'panel.css defines unified :focus-visible outline');
   assert.match(htmlAfter, /<span id="otherAiBadge" class="tab-badge" hidden><\/span>/, 'SSR badge is hidden when addable count is 0');
@@ -389,7 +410,7 @@ test('panel-client.js callback sync, passive throttle/lock, monotonic seq race g
 
   // Req #1 (passive, older) resolves late -> MUST NOT overwrite newer explicit state!
   pending[0].resolve(stalePayload);
-  await new Promise((r) => setTimeout(r, 0));
+  await new Promise(setImmediate);
   assert.equal(els.refusedCallbackBanner.hidden, true, 'stale passive response cannot re-open banner');
   assert.equal(els.otherAiBadge.hidden, true, 'stale passive response cannot re-open badge');
 
@@ -402,11 +423,11 @@ test('panel-client.js callback sync, passive throttle/lock, monotonic seq race g
   assert.equal(apiCalls.length, 3, 'passive refresh allowed at >= 5000ms');
   // Passive error is swallowed silently without advancing lastCallbacksAt.
   pending[2].reject(new Error('restarting'));
-  await new Promise((r) => setTimeout(r, 0));
+  await new Promise(setImmediate);
   maybeRefreshCallbacks();
   assert.equal(apiCalls.length, 4, 'failed passive refresh does not lock out next retry');
   pending[3].resolve(stalePayload);
-  await new Promise((r) => setTimeout(r, 0));
+  await new Promise(setImmediate);
   assert.equal(els.refusedCallbackBanner.hidden, false);
   assert.equal(els.refusedCallbackText.textContent, 'An AI tried to sign in through a.example, which AkiMCP does not allow yet.');
   assert.doesNotMatch(els.refusedCallbackText.textContent, /SECRET_NAME/);
@@ -419,14 +440,129 @@ test('panel-client.js callback sync, passive throttle/lock, monotonic seq race g
   assert.equal(els.otherAiBadge.hidden, true);
   assert.equal(els.otherAiBadge.textContent, '');
 
-  // 5. openOtherAi guards against double-clicking otherai when already active.
-  assert.match(clientSrc, /openOtherAi:\s*\(\)\s*=>\s*\{[\s\S]*if\s*\(!tab\.classList\.contains\('active'\)\)\s*tab\.click\(\);/);
+  // 5. Execute panel-client.js helpers in VM: api() non-JSON guard, keyboard copy, accessible remove buttons, Enter submits, and openOtherAi guard.
+  const makeEl = (tag) => {
+    const attrs = new Map();
+    const classes = new Set();
+    const el = {
+      tagName: tag.toUpperCase(),
+      children: [],
+      dataset: {},
+      classList: { add: (c) => classes.add(c), remove: (c) => classes.delete(c), contains: (c) => classes.has(c) },
+      setAttribute: (k, v) => attrs.set(k, v),
+      getAttribute: (k) => attrs.get(k) ?? null,
+      append: (...nodes) => el.children.push(...nodes),
+      remove: () => {},
+      closest: (sel) => (sel === '.copy' && classes.has('copy') ? el : null),
+    };
+    return el;
+  };
+  const uiEls = {
+    paths: makeEl('div'),
+    cmdChips: makeEl('div'),
+    trustedDirs: makeEl('div'),
+    newCmd: makeEl('input'),
+    tempName: makeEl('input'),
+    callbackValue: makeEl('input'),
+    cmdFilter: makeEl('input'),
+    allow: makeEl('div'),
+  };
+  const listeners = {};
+  const clicks = [];
+  let webTierClicks = 0;
+  let otherAiClicks = 0;
+  const otherAiTab = {
+    active: false,
+    classList: { contains: (c) => c === 'active' && otherAiTab.active },
+    click: () => { otherAiClicks++; otherAiTab.active = true; },
+  };
+  const copied = [];
+  const uiSandbox = {
+    TOKEN: 't',
+    RULES_DIR: '/rules',
+    CLAUDE_DIR: '/claude',
+    AKI_DIR: '/aki',
+    icon: (n) => makeEl(`icon-${n}`),
+    riskOf: () => null,
+    markDirty: () => {},
+    markAllowDirty: () => {},
+    markTrustedDirty: () => {},
+    say: () => {},
+    copyFromEl: (el) => copied.push(el),
+    renderAllowlist: () => {},
+    renderTrustedDirs: () => {},
+    renderRules: () => {},
+    filterCommands: () => {},
+    fetch: async () => ({ ok: false, status: 502, json: async () => { throw new SyntaxError('html'); } }),
+    document: {
+      createElement: makeEl,
+      getElementById: (id) => uiEls[id] || (uiEls[id] = makeEl('div')),
+      addEventListener: (ev, fn) => { listeners[ev] = fn; },
+      querySelectorAll: () => [],
+      querySelector: (sel) => {
+        if (sel === '#s1 .tier-btn[data-tier="web"]') return { click: () => { webTierClicks++; } };
+        if (sel === '#s1 .tab[data-tab="otherai"]') return otherAiTab;
+        if (sel === '[data-act="mintTemp"]') return { click: () => clicks.push('mintTemp') };
+        if (sel === '[data-act="addCallback"]') return { click: () => clicks.push('addCallback') };
+        return makeEl('div');
+      },
+    },
+  };
+  const apiStart = clientSrc.indexOf('async function api(');
+  const apiEnd = clientSrc.indexOf('\nfunction say(', apiStart);
+  const keyStart = clientSrc.indexOf("document.addEventListener('keydown'");
+  const keyEnd = clientSrc.indexOf('// Nothing about a folder row', keyStart);
+  const pathStart = clientSrc.indexOf('const isProtectedPath =');
+  const pathEnd = clientSrc.indexOf('function addRow(', pathStart);
+  const trustStart = clientSrc.indexOf('function addTrustedDir(');
+  const trustEnd = clientSrc.indexOf('function renderTrustedDirs(', trustStart);
+  const loadStart = clientSrc.indexOf('async function loadState(');
+  const loadEnd = clientSrc.indexOf('\n}\n', loadStart) + 2;
+  const openStart = clientSrc.indexOf('  openOtherAi: () => {');
+  const openEnd = clientSrc.indexOf('  revokeAllTemp:', openStart);
+  vm.createContext(uiSandbox);
+  vm.runInContext([
+    clientSrc.slice(apiStart, apiEnd),
+    clientSrc.slice(keyStart, keyEnd),
+    clientSrc.slice(pathStart, pathEnd),
+    clientSrc.slice(trustStart, trustEnd),
+    clientSrc.slice(loadStart, loadEnd),
+    `const openOtherAi = ({ ${clientSrc.slice(openStart, openEnd)} }).openOtherAi;`,
+    'this.__ui = { api, addPath, addChip, addTrustedDir, loadState, openOtherAi };',
+  ].join('\n'), uiSandbox);
+  const ui = uiSandbox.__ui;
 
-  // 6. A-M1 & A-N1: copyEl keyboard Enter/Space, clipboard .catch(), addChip/addPath/addTrustedDir remove button aria-label, Enter submit on #tempName/#callbackValue, and non-JSON api() guard.
-  assert.match(clientSrc, /document\.addEventListener\('keydown',[\s\S]*e\.key !== 'Enter' && e\.key !== ' '[\s\S]*e\.preventDefault\(\);\s*copyFromEl\(el\);/, 'panel-client handles Enter/Space on .copy');
-  assert.match(clientSrc, /x\.type = 'button'; x\.className = 'x'; x\.title = `Remove \$\{bin\}`; x\.setAttribute\('aria-label', `Remove \$\{bin\}`\);/, 'addChip creates a <button type="button" class="x"> with aria-label');
-  assert.match(clientSrc, /del\.type = 'button'; del\.title = 'Remove folder'; del\.setAttribute\('aria-label', 'Remove folder'\);/, 'addPath delete button has aria-label');
-  assert.match(clientSrc, /del\.type = 'button'; del\.title = 'Remove directory'; del\.setAttribute\('aria-label', 'Remove directory'\);/, 'addTrustedDir delete button has aria-label');
-  assert.match(clientSrc, /getElementById\('tempName'\)[\s\S]*mintTemp[\s\S]*getElementById\('callbackValue'\)[\s\S]*addCallback/, '#tempName and #callbackValue submit on Enter');
-  assert.match(clientSrc, /res\.json\(\)\.catch\(\(\) => null\)/, 'api() guards against non-JSON error responses');
+  await assert.rejects(() => ui.api('GET', '/api/test'), /HTTP 502/, 'api() falls back to HTTP status on non-JSON error responses');
+  ui.addPath('/workspace/app', false);
+  const pathBtn = uiEls.paths.children[0].children.find((c) => c.tagName === 'BUTTON');
+  assert.equal(pathBtn.type, 'button');
+  assert.equal(pathBtn.getAttribute('aria-label'), 'Remove folder');
+  ui.addChip('git');
+  const chipBtn = uiEls.cmdChips.children[0].children.find((c) => c.tagName === 'BUTTON');
+  assert.equal(chipBtn.type, 'button');
+  assert.equal(chipBtn.getAttribute('aria-label'), 'Remove git');
+  ui.addTrustedDir('/workspace/trusted', false);
+  const trustBtn = uiEls.trustedDirs.children[0].children.find((c) => c.tagName === 'BUTTON');
+  assert.equal(trustBtn.type, 'button');
+  assert.equal(trustBtn.getAttribute('aria-label'), 'Remove directory');
+
+  const copyEl = makeEl('code');
+  copyEl.classList.add('copy');
+  let prevented = 0;
+  listeners.keydown({ key: 'Enter', target: copyEl, preventDefault: () => { prevented++; } });
+  listeners.keydown({ key: ' ', target: copyEl, preventDefault: () => { prevented++; } });
+  listeners.keydown({ key: 'a', target: copyEl, preventDefault: () => { prevented++; } });
+  assert.equal(copied.length, 2, 'Enter and Space on .copy trigger copyFromEl');
+  assert.equal(prevented, 2, 'Enter and Space prevent default scrolling/activation');
+
+  uiSandbox.fetch = async () => ({ ok: true, status: 200, json: async () => ({ paths: [], allow: {}, trustedDirs: [], rules: {} }) });
+  await ui.loadState();
+  uiEls.tempName.onkeydown({ key: 'Enter', preventDefault: () => {} });
+  uiEls.callbackValue.onkeydown({ key: 'Enter', preventDefault: () => {} });
+  assert.deepEqual(clicks, ['mintTemp', 'addCallback'], 'Enter on #tempName and #callbackValue submits the form');
+
+  ui.openOtherAi();
+  ui.openOtherAi();
+  assert.equal(webTierClicks, 2);
+  assert.equal(otherAiClicks, 1, 'openOtherAi does not re-click otherai tab when already active');
 });

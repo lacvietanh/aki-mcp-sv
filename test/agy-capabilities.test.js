@@ -19,7 +19,7 @@ import {
   probe,
   capabilities,
   refresh,
-  resetCache,
+  createCapabilitiesStore,
 } from '../scripts/agy-capabilities.js';
 import { VALUE_COMPLAINT } from '../scripts/agy-mcp.js';
 import { MODEL_COMPLAINT } from '../scripts/kiro-mcp.js';
@@ -209,8 +209,8 @@ async function runTests() {
     assert.equal(staleFrame.quota, null, 'frame quota older than 6 h is dropped');
     assert.equal(readLocalQuotaFrame('huge@example.com', { homeDir: fakeHome }), null, 'frame file over 256 KB skipped');
 
-    // Per-account 1h cache isolation + 30s /usage micro-TTL (D1, Q2, B2).
-    resetCache();
+    // Per-account 1h cache isolation + 30s /usage micro-TTL.
+    const multiStore = createCapabilitiesStore();
     let clock = 1_000_000;
     let activeAccount = 'pro@example.com';
     let modelProbeCount = 0;
@@ -233,7 +233,7 @@ async function runTests() {
       });
     };
 
-    const proCaps1 = await capabilities({ spawn: multiSpawn, probeUsage: multiUsage, homeDir: fakeHome, now: () => clock, includeUsage: true });
+    const proCaps1 = await capabilities({ spawn: multiSpawn, probeUsage: multiUsage, homeDir: fakeHome, now: () => clock, includeUsage: true, store: multiStore });
     assert.equal(proCaps1.account, 'pro@example.com');
     assert.equal(proCaps1.planTier, 'Google AI Pro');
     assert.equal(proCaps1.models.length, 23);
@@ -243,7 +243,7 @@ async function runTests() {
 
     // Within 30s micro-TTL: neither /usage nor models re-probes.
     clock += 10_000;
-    const proCaps2 = await capabilities({ spawn: multiSpawn, probeUsage: multiUsage, homeDir: fakeHome, now: () => clock, includeUsage: true });
+    const proCaps2 = await capabilities({ spawn: multiSpawn, probeUsage: multiUsage, homeDir: fakeHome, now: () => clock, includeUsage: true, store: multiStore });
     assert.equal(proCaps2.account, 'pro@example.com');
     assert.equal(usageProbeCount, 1, '/usage reused within 30s micro-TTL');
     assert.equal(modelProbeCount, 1);
@@ -252,7 +252,7 @@ async function runTests() {
     fs.writeFileSync(path.join(tierDir, 'starter@example.com'), 'Antigravity Starter Quota\n');
     activeAccount = 'starter@example.com';
     clock += 31_000;
-    const starterCaps = await capabilities({ spawn: multiSpawn, probeUsage: multiUsage, homeDir: fakeHome, now: () => clock, includeUsage: true });
+    const starterCaps = await capabilities({ spawn: multiSpawn, probeUsage: multiUsage, homeDir: fakeHome, now: () => clock, includeUsage: true, store: multiStore });
     assert.equal(starterCaps.account, 'starter@example.com');
     assert.equal(starterCaps.planTier, 'Antigravity Starter Quota');
     assert.equal(starterCaps.models.length, 5);
@@ -262,25 +262,25 @@ async function runTests() {
     // Switch back to Pro within 1h: Pro cache is still hot (modelProbeCount stays 2).
     activeAccount = 'pro@example.com';
     clock += 31_000;
-    const proAgain = await capabilities({ spawn: multiSpawn, probeUsage: multiUsage, homeDir: fakeHome, now: () => clock, includeUsage: true });
+    const proAgain = await capabilities({ spawn: multiSpawn, probeUsage: multiUsage, homeDir: fakeHome, now: () => clock, includeUsage: true, store: multiStore });
     assert.equal(proAgain.models.length, 23);
     assert.equal(usageProbeCount, 3);
     assert.equal(modelProbeCount, 2, 'Pro account cache stayed isolated and warm');
 
-    // refresh() bypasses the 30s /usage micro-TTL immediately (Q2).
+    // refresh() bypasses the 30s /usage micro-TTL immediately.
     clock += 1_000;
-    await refresh({ spawn: multiSpawn, probeUsage: multiUsage, homeDir: fakeHome, now: () => clock });
+    await refresh({ spawn: multiSpawn, probeUsage: multiUsage, homeDir: fakeHome, now: () => clock, store: multiStore });
     assert.equal(usageProbeCount, 4, 'refresh() bypasses 30s /usage micro-TTL');
     assert.equal(modelProbeCount, 3);
 
     // Live /usage fails -> falls back to fresh .frame quota.
-    resetCache();
     const fallbackCaps = await capabilities({
       spawn: multiSpawn,
       probeUsage: () => Promise.resolve({ ok: false, account: 'pro@example.com', groups: null }),
       homeDir: fakeHome,
       now: () => nowMs,
       includeUsage: true,
+      store: createCapabilitiesStore(),
     });
     assert.equal(fallbackCaps.quota.source, 'frame');
   } finally {
@@ -298,13 +298,13 @@ async function runTests() {
   assert.equal(blind.version, null);
   assert.equal(blind.models, null);
 
-  resetCache();
-  await capabilities({ spawn: blindSpawn });
-  assert.equal((await capabilities({ spawn: fakeSpawn })).models, null, 'inside the retry window the failure is reused');
-  assert.equal((await capabilities({ spawn: fakeSpawn, now: () => Date.now() + 61_000 })).models.length, 23, 'after the retry window it probes again');
-  assert.equal((await refresh({ spawn: blindSpawn })).models.length, 23, 'a failed refresh does not erase a good list');
+  const retryStore = createCapabilitiesStore();
+  await capabilities({ spawn: blindSpawn, store: retryStore });
+  assert.equal((await capabilities({ spawn: fakeSpawn, store: retryStore })).models, null, 'inside the retry window the failure is reused');
+  assert.equal((await capabilities({ spawn: fakeSpawn, now: () => Date.now() + 61_000, store: retryStore })).models.length, 23, 'after the retry window it probes again');
+  assert.equal((await refresh({ spawn: blindSpawn, store: retryStore })).models.length, 23, 'a failed refresh does not erase a good list');
 
-  // B3: explainMissingModel — plan_mismatch only when planTier is null or does not satisfy required plans.
+  // explainMissingModel — plan_mismatch only when planTier is null or does not satisfy required plans.
   const starterModels = parseModels(MODELS_STARTER);
   const m1 = explainMissingModel('gemini-4-neon-high', 'Antigravity Starter Quota', starterModels);
   assert.equal(m1.kind, 'plan_mismatch');
@@ -355,10 +355,10 @@ async function runTests() {
     process.env.PATH = probeBin + path.delimiter + prevPath;
     process.env.FAKE_PROBE_MARKER = markerFile;
     const t0 = Date.now();
-    const probeRes = await runUsageProbe({ timeoutMs: 1500 });
+    const probeRes = await runUsageProbe({ timeoutMs: 800 });
     const elapsed = Date.now() - t0;
     assert.equal(probeRes.ok, false, 'timed-out runUsageProbe must return ok: false');
-    assert.ok(elapsed < 6000, 'timed-out runUsageProbe must abort promptly, got ' + elapsed + 'ms');
+    assert.ok(elapsed < 2500, 'timed-out runUsageProbe must abort promptly, got ' + elapsed + 'ms');
     const waitDeadline = Date.now() + 2000;
     while (Date.now() < waitDeadline) {
       if (fs.existsSync(markerFile)) {

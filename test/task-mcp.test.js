@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import './setup.js';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -51,7 +52,9 @@ async function runTests() {
   assert.equal(pidAlive(0), false);
   assert.equal(pidAlive(-1), false);
   assert.equal(pidAlive(1.5), false);
-  if (process.platform !== 'win32') assert.equal(pidAlive(1), true, 'pid 1 is not ours to signal (EPERM) and is alive');
+  test('pidAlive treats EPERM on PID 1 as alive', { skip: process.platform === 'win32' ? 'POSIX PID 1 EPERM check not applicable on Windows' : false }, () => {
+    assert.equal(pidAlive(1), true, 'pid 1 is not ours to signal (EPERM) and is alive');
+  });
 
   // 3. Test log tailing logic
   const tempLog = path.join(os.tmpdir(), `test-tail-${Date.now()}.log`);

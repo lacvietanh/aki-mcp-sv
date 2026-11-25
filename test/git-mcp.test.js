@@ -110,11 +110,14 @@ M  scripts/start.js
   assert.ok((await call({ op: 'status', repoPath: os.tmpdir() })).isError, 'a path outside the allowed folders is refused');
 
   console.log('git-mcp.test.js: ok');
-  return call;
+  return { call, client };
 }
 
-const call = await testGitMcp();
-after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+const { call, client } = await testGitMcp();
+after(async () => {
+  await client.close();
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
 
 const cannotDenyAccess = process.platform === 'win32' || process.getuid?.() === 0 ? 'chmod 000 does not deny access on Windows or as root' : false;
 

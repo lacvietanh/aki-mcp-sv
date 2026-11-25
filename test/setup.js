@@ -6,7 +6,7 @@ import path from 'node:path';
 const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'akimcp-test-')));
 const home = path.join(root, 'home');
 fs.mkdirSync(home);
-for (const key of Object.keys(process.env)) if (/^(AKI_|MCP_|GATEKEEPER_PORT$|PANEL_PORT$|PUBLIC_ORIGIN$|NODE_ENV$|CLAUDE_CONFIG_DIR$)/.test(key)) delete process.env[key];
+for (const key of Object.keys(process.env)) if (/^(AKI_|MCP_|GATEKEEPER_PORT$|PANEL_PORT$|PUBLIC_ORIGIN$|NODE_ENV$|CLAUDE_CONFIG_DIR$|POSTMAN_ACCESS_TOKEN$)/.test(key)) delete process.env[key];
 delete process.env.XDG_CONFIG_HOME;
 Object.assign(process.env, { GIT_CONFIG_GLOBAL: path.join(home, '.gitconfig'), GIT_CONFIG_NOSYSTEM: '1', HOME: home, USERPROFILE: home, APPDATA: path.join(home, 'AppData', 'Roaming'), LOCALAPPDATA: path.join(home, 'AppData', 'Local'), TMPDIR: root, TMP: root, TEMP: root });
 process.on('exit', () => fs.rmSync(root, { recursive: true, force: true }));

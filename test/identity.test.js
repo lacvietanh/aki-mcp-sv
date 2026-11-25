@@ -3,7 +3,6 @@ import './setup.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveIdentity, problemLine, served, announceIdentity, IDENTITY, IDENTITY_PROBLEM } from '../scripts/mcp-name.js';
-import { readSettings } from '../scripts/allowlist.js';
 
 const DEFAULTS = { name: 'AkiMCP', key: 'akimcp', prefix: 'aki__' };
 
@@ -52,7 +51,7 @@ test('a null field counts as not set, and resolveIdentity takes the stored ident
 
 test('the process identity is the default under an empty setting.json, and served() adds the prefix', () => {
   assert.deepEqual(IDENTITY, DEFAULTS);
-  assert.deepEqual(IDENTITY_PROBLEM, resolveIdentity(readSettings().identity).problem);
+  assert.equal(IDENTITY_PROBLEM, null);
   assert.equal(served('run_cmd'), 'aki__run_cmd');
 });
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // write_file / edit_file keep an existing file's permission bits through the atomic temp-then-rename write, and name an ss write in their result.
 import './setup.js';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -34,7 +35,7 @@ const call = async (name, args) => {
 const ssFile = path.join(SS_DIR, 'demo', '2026.10.24-1812-ab.md');
 const legacy = path.join(home, '.aki', 'mcpsv', 'task', 'old-thread', 'working.md');
 for (const f of [ssFile, legacy]) fs.mkdirSync(path.dirname(f), { recursive: true });
-// v2 D6: the line also says whether the ss has the frontmatter keys and headings, as a fact.
+// The write-time line also reports whether the ss has the required frontmatter keys and headings.
 assert.equal(await call('write_file', { path: ssFile, content: '# goal\n' }), `wrote ${ssFile}\nss file written: ${ssFile} · shape: missing ${shapeOf('# goal\n').join(', ')}`);
 assert.match(await call('edit_file', { path: ssFile, edits: [{ oldText: 'goal', newText: 'state' }] }), new RegExp(`\\nss file written: ${ssFile.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · shape: missing status, repo, .*## Log$`));
 const shaped = ['---', ...['status', 'repo', 'chat', 'started', 'parent', 'successor', 'room', 'plan', 'transcript'].map((k) => `${k}: none`), '---', '# t', ...['Now', 'Asked', 'Next', 'Decisions', 'Open', 'Files', 'Log'].map((h) => `## ${h}`), ''].join('\n');
@@ -43,7 +44,12 @@ assert.match(await call('edit_file', { path: ssFile, edits: [{ oldText: '## Log'
 assert.equal(await call('write_file', { path: legacy, content: 'x\n' }), `wrote ${legacy}`);
 assert.equal(await call('write_file', { path: path.join(home, 'work', 'plain.md'), content: 'x\n' }), `wrote ${path.join(home, 'work', 'plain.md')}`);
 
-if (process.platform !== 'win32') {
+after(async () => {
+  await client.close();
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test('edit_file and write_file preserve POSIX file modes', { skip: process.platform === 'win32' ? 'POSIX mode bits are not enforced on Windows' : false }, async () => {
   const script = path.join(home, 'work', 'run.sh');
   fs.writeFileSync(script, '#!/bin/sh\necho one\n');
   fs.chmodSync(script, 0o755);
@@ -57,8 +63,4 @@ if (process.platform !== 'win32') {
   await call('write_file', { path: secret, content: 'b\n' });
   assert.equal(fs.readFileSync(secret, 'utf8'), 'b\n', 'write_file replaces the content');
   assert.equal(fs.statSync(secret).mode & 0o777, 0o600, 'write_file over a file keeps its mode');
-}
-
-await client.close();
-fs.rmSync(tmp, { recursive: true, force: true });
-console.log('filesystem-mcp: ok');
+});

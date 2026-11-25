@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// F7 (docs/plan/done/akimcp-tool-refactor.md § 8): without AIObox, nothing served points at it — tools hidden, no output names a hidden tool or the AIObox site; install + re-detect brings both back.
+// Without AIObox, nothing served points at it — tools hidden, no output names a hidden tool or the AIObox site; install + re-detect brings both back.
 import './setup.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -89,7 +89,7 @@ assert.ok(!client.getInstructions().includes(AIOBOX_STEP), 'and when hidden');
 for (const instructions of [client.getInstructions(), client2.getInstructions()]) assert.doesNotMatch(instructions, /A page title starting with a handle|Inside an AIObox window/);
 const toolsWithAiobox = (await client2.listTools()).tools;
 assert.match(toolsWithAiobox.find((t) => t.name === 'aki__aiobox').description, /^AIObox windows\. Call op=state first/);
-// Installing AIObox changes no other tool's definition, so a client's Always allow on them holds (A12); aki__aiobox/aki__aiobox_write are new, so not in describedBare.
+// Installing AIObox changes no other tool's definition, so a client's Always allow on them holds; aki__aiobox/aki__aiobox_write are new, so not in describedBare.
 assert.ok(toolsWithAiobox.filter((t) => describedBare.has(t.name)).length > 10, 'the served-with-AIObox list is compared, not the bare one again');
 for (const t of toolsWithAiobox) if (describedBare.has(t.name)) assert.equal(JSON.stringify(t), describedBare.get(t.name), `${t.name} definition changed with AIObox installed`);
 await client2.close();

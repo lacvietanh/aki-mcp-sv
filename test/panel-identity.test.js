@@ -55,6 +55,7 @@ function inWorld(settings, body) {
 const PREVIEW = 'POST /api/identity-preview';
 const preview = (body) => ({ route: PREVIEW, body });
 const page = { page: true };
+const AIOBOX_WARN_NAMES = ['Aki-MCP', 'WorkMCP', 'AkiMCP Work', 'Aki MCP'];
 
 test('a Display name that closes the script tag serves AkiMCP in the script block, and the red row shows the refused value as text', () => inWorld({ identity: { name: '</script><script>alert(1)</script>' } }, (world) => {
   const [html] = world.run([page]);
@@ -65,14 +66,28 @@ test('a Display name that closes the script tag serves AkiMCP in the script bloc
   assert.ok(html.includes('data-act="resetIdentityNow">Reset to AkiMCP</button>'));
 }));
 
-test('a default user sees the field, the derived rows and S7a, with nothing to save or reset', () => inWorld({}, (world) => {
-  const [html] = world.run([page]);
+let defaultReadOnly;
+const getDefaultReadOnly = () => defaultReadOnly ??= inWorld({}, (world) => {
+  const replies = world.run([
+    page,
+    ...AIOBOX_WARN_NAMES.map((name) => preview({ name })),
+    ...ERRORS.map(([, draft]) => preview(draft)),
+  ]);
+  return {
+    html: replies[0],
+    aioboxReplies: replies.slice(1, 1 + AIOBOX_WARN_NAMES.length),
+    errorReplies: replies.slice(1 + AIOBOX_WARN_NAMES.length),
+  };
+});
+
+test('a default user sees the field, the derived rows and current serving identity, with nothing to save or reset', () => {
+  const { html } = getDefaultReadOnly();
   for (const text of ['<label for="idName">Display name</label>', 'The name AI clients list this server as. The Server ID and Tool prefix below are made from it as you type; to set either one yourself, open Customize fields.', '<span class="mono">akimcp</span>', '<span class="mono">aki__</span>', '<span class="mono">aki__run_cmd</span>', 'Serving now: AkiMCP · Server ID akimcp · tools aki__*']) assert.ok(html.includes(text), text);
   assert.ok(html.includes('id="idSave" data-act="saveIdentity" disabled>Save name</button>'));
   assert.ok(html.includes('id="idReset" data-act="resetIdentityFields" hidden>Reset to AkiMCP</button>'));
   assert.ok(!html.includes('MCP Name'), 'the read-only row is gone');
   assert.ok(!html.includes('msg err">Display name'), 'no red row');
-}));
+});
 
 test('an empty Tool prefix drops the prefix words from the paste-in instruction and the other-computer note', () => inWorld({ identity: { name: 'Work', prefix: '' } }, (world) => {
   const [html] = world.run([page]);
@@ -81,12 +96,11 @@ test('an empty Tool prefix drops the prefix words from the paste-in instruction 
   assert.ok(html.includes('Serving now: Work · Server ID work · tools with no prefix'));
 }));
 
-test('the AIObox warning shows for Aki-MCP and WorkMCP and stays silent for AkiMCP Work and Aki MCP', () => inWorld({}, (world) => {
-  const names = ['Aki-MCP', 'WorkMCP', 'AkiMCP Work', 'Aki MCP'];
-  const replies = world.run(names.map((name) => preview({ name })));
+test('the AIObox warning shows for Aki-MCP and WorkMCP and stays silent for AkiMCP Work and Aki MCP', () => {
+  const { aioboxReplies: replies } = getDefaultReadOnly();
   const warned = replies.map((reply) => reply.html.notes.includes('AIObox connects claude.ai by itself only when the Display name contains AkiMCP'));
   assert.deepEqual(warned, [true, true, false, false]);
-}));
+});
 
 const SERVER_ID_AND_PREFIX = 'Server ID and Tool prefix together are 30 characters, 28 at most. Shorten the Display name, or set Tool prefix by hand in Customize fields.';
 const ERRORS = [
@@ -106,15 +120,15 @@ const ERRORS = [
   ['a Server ID with capitals and a symbol', { name: 'Work', key: 'My.Tools' }, 'key', 'Server ID can use only letters a to z and digits. Remove ".".'],
   ['a Tool prefix without two underscores', { name: 'Work', prefix: 'x_' }, 'prefix', 'Tool prefix must be empty or end with two underscores, for example x__.'],
 ];
-test('each refused draft shows its own text under its own field and disables Save', () => inWorld({}, (world) => {
-  const replies = world.run(ERRORS.map(([, draft]) => preview(draft)));
+test('each refused draft shows its own text under its own field and disables Save', () => {
+  const { errorReplies: replies } = getDefaultReadOnly();
   ERRORS.forEach(([label, , slot, text], i) => {
     const { canSave, html } = replies[i];
     assert.equal(canSave, false, `${label}: Save is disabled`);
     const where = slot === 'name' ? html.name : html.rows;
     assert.ok(where.includes(esc(text)), `${label}: ${text}`);
   });
-}));
+});
 
 test('Save with keep writes the serving Server ID and Tool prefix as hand-set values, and after a restart the served names are unchanged', () => inWorld({ identity: { name: 'Work Laptop' } }, (world) => {
   const [offer, kept, saved, restarted] = world.run([
@@ -136,7 +150,7 @@ test('Save with keep writes the serving Server ID and Tool prefix as hand-set va
 
 test('Reset to AkiMCP in the fields writes only on Save; the Save clears identity and leaves applied.keys', () => inWorld({ identity: { name: 'Work Laptop' }, applied: { keys: ['aki-mcp', 'akimcp', 'worklaptop'] } }, (world) => {
   const [filled] = world.run([preview({ name: 'AkiMCP' })]);
-  assert.ok(filled.html.notes.includes('After Save, restart AkiMCP (press Ctrl+C in the terminal where it runs'), 'S8 line 1 shows');
+  assert.ok(filled.html.notes.includes('After Save, restart AkiMCP (press Ctrl+C in the terminal where it runs'), 'restart instruction shows');
   assert.equal(filled.canSave, true);
   assert.deepEqual(world.saved().identity, { name: 'Work Laptop' }, 'a preview writes nothing');
   const [saved] = world.run([{ route: 'POST /api/identity', body: { name: 'AkiMCP' } }]);
@@ -163,8 +177,8 @@ test('Save refuses an invalid draft and writes nothing', () => inWorld({}, (worl
   assert.equal(world.saved().identity, undefined);
 }));
 
-test('the Gemini tab documents the live /devmode flow, SPA fallback, token recovery, and confirmation cards while preserving Saved info', () => inWorld({}, (world) => {
-  const [html] = world.run([page]);
+test('the Gemini tab documents the live /devmode flow, SPA fallback, token recovery, and confirmation cards while preserving Saved info', () => {
+  const { html } = getDefaultReadOnly();
   const start = html.indexOf('<div class="tabpane" id="tab-gemini">');
   assert.ok(start !== -1, '#tab-gemini exists');
   const end = html.indexOf('<div class="tabpane" id="tab-notion">', start);
@@ -181,4 +195,4 @@ test('the Gemini tab documents the live /devmode flow, SPA fallback, token recov
   assert.ok(geminiTab.includes('Allow once') && geminiTab.includes('Always allow'), 'documents inline confirmation controls');
   const outsideGemini = html.slice(0, start) + html.slice(end);
   assert.ok(outsideGemini.includes('https://gemini.google.com/saved-info'), 'preserves GEMINI_SETTINGS_URL in Section 3');
-}));
+});

@@ -301,9 +301,15 @@ export function runUsageProbe({ timeoutMs = PROBE_TIMEOUT_MS } = {}) {
   });
 }
 
-const accountCaches = new Map(); // accountKey -> { version, models, modes, efforts, outputFormats, at, ttl }
-let usageCache = null; // { account, groups, at }
-let lastAccountKey = null;
+export function createCapabilitiesStore() {
+  return {
+    accountCaches: new Map(), // accountKey -> { version, models, modes, efforts, outputFormats, at, ttl }
+    usageCache: null, // { account, groups, at }
+    lastAccountKey: null,
+  };
+}
+
+const defaultStore = createCapabilitiesStore();
 
 // One probe of the three capability commands; each field is null when its command failed or parsed to nothing.
 export async function probe({ spawn = runAgy, cwd, now = Date.now } = {}) {
@@ -321,8 +327,8 @@ export async function probe({ spawn = runAgy, cwd, now = Date.now } = {}) {
   };
 }
 
-async function resolveUsage({ probeUsage, homeDir, now, forceUsage }) {
-  let raw = usageCache;
+async function resolveUsage({ probeUsage, homeDir, now, forceUsage, store }) {
+  let raw = store.usageCache;
   if (forceUsage || !raw || now() - raw.at >= USAGE_TTL_MS) {
     const res = await probeUsage();
     raw = {
@@ -330,7 +336,7 @@ async function resolveUsage({ probeUsage, homeDir, now, forceUsage }) {
       groups: Array.isArray(res?.groups) && res.groups.length ? res.groups : null,
       at: now(),
     };
-    usageCache = raw;
+    store.usageCache = raw;
   }
 
   const account = raw.account;
@@ -343,19 +349,19 @@ async function resolveUsage({ probeUsage, homeDir, now, forceUsage }) {
   return { account, planTier, quota };
 }
 
-async function loadForAccount({ accountKey, spawn, cwd, now }) {
+async function loadForAccount({ accountKey, spawn, cwd, now, store }) {
   const fresh = await probe({ spawn, cwd, now });
-  const prev = accountCaches.get(accountKey);
+  const prev = store.accountCaches.get(accountKey);
   const entry = fresh.models
     ? { ...fresh, ttl: TTL_MS }
     : { ...(prev?.models ? prev : fresh), at: fresh.at, ttl: RETRY_MS };
-  accountCaches.set(accountKey, entry);
+  store.accountCaches.set(accountKey, entry);
   return entry;
 }
 
 const noopUsage = () => Promise.resolve({ ok: false, account: null, groups: null });
 
-// Lazily probed and cached per authenticated account (D1, Q2, B2).
+// Lazily probed and cached per authenticated account.
 export async function capabilities({
   spawn = runAgy,
   probeUsage,
@@ -364,19 +370,20 @@ export async function capabilities({
   now = Date.now,
   includeUsage = false,
   verifyAccount = false,
+  store = defaultStore,
 } = {}) {
   const usageFn = probeUsage ?? (spawn === runAgy ? runUsageProbe : noopUsage);
   let usage = null;
-  if (includeUsage || verifyAccount || !lastAccountKey) {
-    usage = await resolveUsage({ probeUsage: usageFn, homeDir, now, forceUsage: false });
+  if (includeUsage || verifyAccount || !store.lastAccountKey) {
+    usage = await resolveUsage({ probeUsage: usageFn, homeDir, now, forceUsage: false, store });
   }
-  const accountKey = usage?.account || lastAccountKey || '__default__';
-  lastAccountKey = accountKey;
+  const accountKey = usage?.account || store.lastAccountKey || '__default__';
+  store.lastAccountKey = accountKey;
 
-  const cached = accountCaches.get(accountKey);
+  const cached = store.accountCaches.get(accountKey);
   const entry = cached && now() - cached.at < cached.ttl
     ? cached
-    : await loadForAccount({ accountKey, spawn, cwd, now });
+    : await loadForAccount({ accountKey, spawn, cwd, now, store });
 
   const account = usage?.account ?? (accountKey === '__default__' ? null : accountKey);
   const planTier = usage
@@ -391,34 +398,24 @@ export async function capabilities({
   };
 }
 
-// Forced re-probe: bypasses both the 30 s /usage micro-TTL (Q2) and the 1 h per-account cache.
+// Forced re-probe: bypasses both the 30 s /usage micro-TTL and the 1 h per-account cache.
 export async function refresh({
   spawn = runAgy,
   probeUsage,
   cwd,
   homeDir = os.homedir(),
   now = Date.now,
+  store = defaultStore,
 } = {}) {
   const usageFn = probeUsage ?? (spawn === runAgy ? runUsageProbe : noopUsage);
-  const usage = await resolveUsage({ probeUsage: usageFn, homeDir, now, forceUsage: true });
-  const accountKey = usage.account || lastAccountKey || '__default__';
-  lastAccountKey = accountKey;
-  const entry = await loadForAccount({ accountKey, spawn, cwd, now });
+  const usage = await resolveUsage({ probeUsage: usageFn, homeDir, now, forceUsage: true, store });
+  const accountKey = usage.account || store.lastAccountKey || '__default__';
+  store.lastAccountKey = accountKey;
+  const entry = await loadForAccount({ accountKey, spawn, cwd, now, store });
   return {
     ...entry,
     account: usage.account,
     planTier: usage.planTier,
     quota: usage.quota,
   };
-}
-
-// Test seam: drop all per-account and /usage caches so a test starts cold.
-export function resetUsageCache() {
-  usageCache = null;
-}
-
-export function resetCache() {
-  accountCaches.clear();
-  usageCache = null;
-  lastAccountKey = null;
 }

@@ -176,7 +176,7 @@ ${field('idName', 'Display name', draft.name, false, '')}
 <div id="idNameErr">${parts.name}</div>
 <div id="idRows">${parts.rows}</div>
 <div id="idNotes">${parts.notes}</div>
-<div class="acts"><button class="primary" id="idSave" data-act="saveIdentity"${p.canSave ? '' : ' disabled'}>Save name</button><button id="idReset" data-act="resetIdentityFields"${showReset() ? '' : ' hidden'}>Reset to AkiMCP</button><span class="msg" id="msgIdentity"></span></div>
+<div class="acts"><button type="button" class="primary" id="idSave" data-act="saveIdentity"${p.canSave ? '' : ' disabled'}>Save name</button><button type="button" id="idReset" data-act="resetIdentityFields"${showReset() ? '' : ' hidden'}>Reset to AkiMCP</button><span class="msg" id="msgIdentity"></span></div>
 <p class="helptext" id="idStatus">${esc(statusText())}</p>
 <details class="adv" id="idCustom"><summary>Customize fields</summary>
 ${field('idKey', 'Server ID', draft.key ?? p.shown.key ?? '', draft.key !== undefined, '<p class="helptext">The name client configs store this server under. Lowercase letters and digits, starting with a letter.</p>')}

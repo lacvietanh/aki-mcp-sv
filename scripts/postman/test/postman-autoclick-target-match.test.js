@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import vm from 'node:vm';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const require = createRequire(import.meta.url);
@@ -33,9 +34,15 @@ for (const label of ['unrelated', 'unrelated (2)', 'runner (2)', 'run (0)', 'run
   assert.equal(matchesKnownTarget(label), false, `unrelated or invalid label should not match: ${label}`);
 }
 
-const indexSrc = readFileSync(path.join(repoRoot, 'scripts/postman/postman-daemon.cjs'), 'utf8');
+const matcherSrc = readFileSync(path.join(repoRoot, 'scripts/postman/page/postman-autoclick-target-match.cjs'), 'utf8');
 const autoclickerSrc = readFileSync(path.join(repoRoot, 'scripts/postman/page/postman-autoclick.js'), 'utf8');
-assert.match(indexSrc, /PAGE_FILES = \['postman-autoclick-target-match\.cjs'/);
-assert.match(autoclickerSrc, /matchesAutoClickTarget\(text, t\)/);
+const sandbox = { window: {}, document: { querySelectorAll: () => [], getElementById: () => null }, isVisible: () => true };
+vm.createContext(sandbox);
+vm.runInContext(`${matcherSrc}\n${autoclickerSrc}\nthis.__ac = { AutoClickManager, AUTO_CLICK_TARGETS };`, sandbox);
+const manager = new sandbox.__ac.AutoClickManager(sandbox.__ac.AUTO_CLICK_TARGETS);
+assert.equal(manager.matchPrimary('approve (3)')?.configKey, 'autoApprove', 'AutoClickManager wires matchesAutoClickTarget for counted approve');
+assert.equal(manager.matchPrimary('run (2)')?.configKey, 'autoRun', 'AutoClickManager matches counted run');
+assert.equal(manager.matchPrimary('runner (2)'), null, 'AutoClickManager rejects partial exact-match run');
+assert.equal(manager.matchPrimary('unrelated (3)'), null, 'AutoClickManager ignores unrelated labels');
 
 console.log('autoclick-target-match.test.js: ok');

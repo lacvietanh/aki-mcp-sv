@@ -70,7 +70,7 @@ const registered = full;
 // readOnlyHint only where the tool cannot write by mechanism; every non-read-only tool also states whether it destroys.
 for (const t of registered) {
   assert.equal(typeof t.annotations?.readOnlyHint, 'boolean', `${t.name} lacks annotations.readOnlyHint`);
-  // Claude requires both hints on every tool (A12); the registry fills destructiveHint:false for a read-only one.
+  // Claude requires both hints on every tool; the registry fills destructiveHint:false for a read-only one.
   assert.equal(typeof t.annotations.destructiveHint, 'boolean', `${t.name} lacks destructiveHint`);
   if (t.annotations.readOnlyHint) assert.equal(t.annotations.destructiveHint, false, `${t.name} is read-only yet destructive`);
 }
@@ -84,7 +84,7 @@ for (const t of registered) {
   assert.ok((t.description || '').length <= 700, `${t.name} description is ${t.description.length} chars, over 700`);
 }
 
-// D7(a): no description or parameter text names a model id (except kiro_read's single pinned D8 id; docs/plan/done/audit-tool-drift-oct25.md F1-F2).
+// No description or parameter text names a model id (except kiro_read's single pinned default id).
 const MODEL_ID_SHAPE = /gemini-\d|claude-(sonnet|opus|haiku)-\d|gpt-oss/i;
 for (const t of registered) {
   const text = `${t.description || ''} ${Object.values(t.inputSchema?.properties || {}).map((p) => p.description || '').join(' ')}`;
@@ -96,7 +96,7 @@ for (const t of registered) {
   assert.equal(hit, null, `${t.name} names a model id (${hit?.[0]}); read ids from the CLI (list="models"), never hardcode them`);
 }
 
-// D7(b): the README tool count must equal the machine-independent total of tools all providers register.
+// The README tool count must equal the machine-independent total of tools all providers register.
 const registeredCount = providers.flatMap((p) => p.tools).length;
 const readme = fs.readFileSync(new URL('../README.md', import.meta.url), 'utf8');
 const readmeCounts = [...readme.matchAll(/(\d+)\s+tools/g)].map((m) => Number(m[1]));

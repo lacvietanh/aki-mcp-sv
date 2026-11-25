@@ -16,29 +16,37 @@ export const RECEIPT_RE = /^sha256:[a-f0-9]{64}$/;
 const MAX_ISSUED = 200;
 const receiptSchema = z.string().optional().describe(`required: sha256:… receipt from ${served('akidevrule_context')}`);
 
-let assemble = assembleRuleContext;
-const issued = new Map(); // receipt → { mode, workingPath, extraFiles }, least recently issued or used first
-const evicted = new Set(); // receipts dropped from issued past MAX_ISSUED, oldest first: a call with one is told why
-// S9: calls made together with the same receipt into a project it does not cover each held the whole rule file; the first result carries it, the others for SHOWN_MS only point at it.
-const shown = new Map(); // `${receipt}|${rule file sha256}` → ms its text went out in a result, oldest first
 const SHOWN_MS = 10_000;
-let now = () => Date.now();
+const AGAIN = `call ${served('akidevrule_context')} (without knownReceipt if the rules are no longer in your context), then call this tool again with receipt=<the sha256:… it returns> (a schema of this tool without receipt is stale: reconnect AkiMCP first)`;
 
-// Tests swap the assembler; the issued list starts empty again.
-export function setAssembler(fn) {
-  assemble = fn || assembleRuleContext;
-  issued.clear();
-  evicted.clear();
-  shown.clear();
+// A tool is gated unless it declares it cannot write (readOnlyHint true, the same flag clients use to skip confirmation).
+export const isGated = (config) => config?.annotations?.readOnlyHint !== true;
+
+// The tool's input schema with receipt and ss added: a raw shape, a zod object, or none at all.
+export function withReceipt(inputSchema) {
+  const added = { [RECEIPT_ARG]: receiptSchema, [SS_ARG]: ssSchema };
+  if (inputSchema === undefined) return added;
+  const own = typeof inputSchema?.extend === 'function' ? inputSchema.shape : inputSchema;
+  for (const name of Object.keys(added)) if (own?.[name]) throw new Error(`a gated tool already has an input named ${name}`);
+  return typeof inputSchema?.extend === 'function' ? inputSchema.extend(added) : { ...inputSchema, ...added };
 }
 
-// Tests move the clock the shown window is measured on.
-export function setNow(fn) {
-  now = fn || (() => Date.now());
+// A ran call that names its chat's ss gets the stale line when the file is missing or behind; a fresh file, a refused call or a rule push gets nothing.
+function withSsLine(result, ss) {
+  if (ss === undefined || ss === '' || !Array.isArray(result?.content)) return result;
+  const line = staleLine(ss);
+  return line ? { ...result, content: [...result.content, { type: 'text', text: line }] } : result;
 }
 
-// Called by aki__akidevrule_context with the receipt it returned and the input that produced it, so a check can make the same call again.
-export function recordIssued(receipt, input = {}) {
+// Isolated receipt/dedup gate instance; production uses the module default below, tests pass custom assemble/now via options.ruleGate.
+export function createRuleGate({ assemble = assembleRuleContext, now = () => Date.now() } = {}) {
+  const issued = new Map(); // receipt → { mode, workingPath, extraFiles }, least recently issued or used first
+  const evicted = new Set(); // receipts dropped from issued past MAX_ISSUED, oldest first: a call with one is told why
+  // Calls made together with the same receipt into a project it does not cover: the first result carries the rule file, the others for SHOWN_MS only point at it.
+  const shown = new Map(); // `${receipt}|${rule file sha256}` → ms its text went out in a result, oldest first
+
+  // Called by aki__akidevrule_context with the receipt it returned and the input that produced it, so a check can make the same call again.
+  function recordIssued(receipt, input = {}) {
   if (typeof receipt !== 'string' || !RECEIPT_RE.test(receipt)) return;
   issued.delete(receipt);
   evicted.delete(receipt);
@@ -49,13 +57,11 @@ export function recordIssued(receipt, input = {}) {
     issued.delete(oldest);
     evicted.add(oldest);
   }
-  while (evicted.size > MAX_ISSUED) evicted.delete(evicted.values().next().value);
-}
+    while (evicted.size > MAX_ISSUED) evicted.delete(evicted.values().next().value);
+  }
 
-const AGAIN = `call ${served('akidevrule_context')} (without knownReceipt if the rules are no longer in your context), then call this tool again with receipt=<the sha256:… it returns> (a schema of this tool without receipt is stale: reconnect AkiMCP first)`;
-
-// { refused: { code, message } } or { entry, current } with the rules the receipt stands for now.
-async function verify(receipt) {
+  // { refused: { code, message } } or { entry, current } with the rules the receipt stands for now.
+  async function verify(receipt) {
   if (receipt === undefined || receipt === '') return { refused: { code: 'RULE_RECEIPT_MISSING', message: `no rule receipt: ${AGAIN}` } };
   if (!RECEIPT_RE.test(receipt)) return { refused: { code: 'RULE_RECEIPT_INVALID', message: `receipt must be sha256:<64 hex>: ${AGAIN}` } };
   const entry = issued.get(receipt);
@@ -73,10 +79,10 @@ async function verify(receipt) {
   return { entry, current };
 }
 
-// null = the receipt is current; otherwise { code, message } for the refusal.
-export async function checkReceipt(receipt) {
-  return (await verify(receipt)).refused || null;
-}
+  // null = the receipt is current; otherwise { code, message } for the refusal.
+  async function checkReceipt(receipt) {
+    return (await verify(receipt)).refused || null;
+  }
 
 // Rule files this call touches not yet covered by the receipt: a new covering receipt plus the text to show, or null to just run. A same-bytes file as one covered counts as covered (S6).
 async function uncovered(own, entry, current, extraRuleFiles) {
@@ -118,27 +124,8 @@ function claimShown(receipt, files, shaOf) {
   return { fresh, recent };
 }
 
-// A tool is gated unless it declares it cannot write (readOnlyHint true, the same flag clients use to skip confirmation).
-export const isGated = (config) => config?.annotations?.readOnlyHint !== true;
-
-// The tool's input schema with receipt and ss added: a raw shape, a zod object, or none at all.
-export function withReceipt(inputSchema) {
-  const added = { [RECEIPT_ARG]: receiptSchema, [SS_ARG]: ssSchema };
-  if (inputSchema === undefined) return added;
-  const own = typeof inputSchema?.extend === 'function' ? inputSchema.shape : inputSchema;
-  for (const name of Object.keys(added)) if (own?.[name]) throw new Error(`a gated tool already has an input named ${name}`);
-  return typeof inputSchema?.extend === 'function' ? inputSchema.extend(added) : { ...inputSchema, ...added };
-}
-
-// A ran call that names its chat's ss gets the D10 line when the file is missing or behind; a fresh file, a refused call or a rule push gets nothing.
-function withSsLine(result, ss) {
-  if (ss === undefined || ss === '' || !Array.isArray(result?.content)) return result;
-  const line = staleLine(ss);
-  return line ? { ...result, content: [...result.content, { type: 'text', text: line }] } : result;
-}
-
-// Wraps a gated tool's handler: checks and strips receipt and ss, then calls the tool as it was registered (a tool registered without an input schema gets only `extra`).
-export function gate(handler, hadSchema, extraRuleFiles) {
+  // Wraps a gated tool's handler: checks and strips receipt and ss, then calls the tool as it was registered (a tool registered without an input schema gets only `extra`).
+  function gate(handler, hadSchema, extraRuleFiles) {
   return async (input, ...rest) => {
     const { [RECEIPT_ARG]: receipt, [SS_ARG]: ss, ...own } = input || {};
     const { refused, entry, current } = await verify(receipt);
@@ -158,16 +145,22 @@ export function gate(handler, hadSchema, extraRuleFiles) {
   };
 }
 
-// Wraps a read tool's handler: it always runs; when it touched a project with rule files, one line naming them is appended (structuredContent stays as the tool made it).
-export function withRules(handler, hadSchema) {
-  return async (...args) => {
-    const result = await handler(...args);
-    if (!hadSchema || !Array.isArray(result?.content) || result.isError) return result;
-    try {
-      const line = await rulesLine(await rulesFor(pathsOf(args[0])));
-      return line ? { ...result, content: [...result.content, { type: 'text', text: line }] } : result;
-    } catch {
-      return result; // a rule lookup never breaks a read
-    }
-  };
+  // Wraps a read tool's handler: it always runs; when it touched a project with rule files, one line naming them is appended (structuredContent stays as the tool made it).
+  function withRules(handler, hadSchema) {
+    return async (...args) => {
+      const result = await handler(...args);
+      if (!hadSchema || !Array.isArray(result?.content) || result.isError) return result;
+      try {
+        const line = await rulesLine(await rulesFor(pathsOf(args[0])));
+        return line ? { ...result, content: [...result.content, { type: 'text', text: line }] } : result;
+      } catch {
+        return result; // a rule lookup never breaks a read
+      }
+    };
+  }
+
+  return { recordIssued, checkReceipt, gate, withRules };
 }
+
+const defaultGate = createRuleGate();
+export const { recordIssued, checkReceipt, gate, withRules } = defaultGate;

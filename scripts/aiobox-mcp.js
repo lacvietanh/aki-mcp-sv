@@ -30,8 +30,9 @@ const FILE_READ_CAP = 4 * 1024 * 1024;
 // One call ends within CALL_WAIT_MAX_S end to end: a client gives up after about a minute with nothing back.
 export const CALL_WAIT_MAX_S = 50;
 const callDeadline = new AsyncLocalStorage();
-const timings = { callBudgetMs: null, requestPickupMs: 5_000, refreshWaitMs: 5_000 }; // callBudgetMs null: no extra cap; tests shorten any of them
-export const setTimings = (patch) => Object.assign(timings, patch);
+const DEFAULT_TIMINGS = { callBudgetMs: null, requestPickupMs: 5_000, refreshWaitMs: 5_000 };
+const callTimings = new AsyncLocalStorage();
+const currentTimings = () => callTimings.getStore() ?? DEFAULT_TIMINGS;
 const deadlineAt = () => callDeadline.getStore();
 const leftMs = () => { const deadline = deadlineAt(); return deadline === undefined ? Infinity : deadline - Date.now(); };
 class OutOfTime extends Error {
@@ -58,7 +59,7 @@ const sleep = (ms) => {
   if (left <= 0) return Promise.reject(new OutOfTime());
   return new Promise((r) => setTimeout(r, Math.min(ms, left)));
 };
-const withinCall = (waitS, run) => callDeadline.run(Date.now() + Math.min((waitS ?? CALL_WAIT_MAX_S) * 1000, timings.callBudgetMs ?? Infinity), run);
+const withinCall = (waitS, run) => callDeadline.run(Date.now() + Math.min((waitS ?? CALL_WAIT_MAX_S) * 1000, currentTimings().callBudgetMs ?? Infinity), run);
 
 // AkiMCP's own refusal, told apart from AIObox's by `by: "akimcp"`: a stable code, why, and the one next step.
 class Refusal extends Error {
@@ -154,7 +155,8 @@ async function refreshMap(before) {
   const tmp = `${refreshFile()}.${process.pid}.tmp`;
   fs.writeFileSync(tmp, `${id}\n`);
   fs.renameSync(tmp, refreshFile());
-  for (const end = asked + timings.refreshWaitMs; Date.now() < end; await sleep(REFRESH_POLL_MS)) {
+  const refreshWaitMs = currentTimings().refreshWaitMs;
+  for (const end = asked + refreshWaitMs; Date.now() < end; await sleep(REFRESH_POLL_MS)) {
     let map;
     try {
       map = readMap();
@@ -166,7 +168,7 @@ async function refreshMap(before) {
   try {
     if (fs.readFileSync(refreshFile(), 'utf8').trim() === id) fs.unlinkSync(refreshFile());
   } catch {}
-  throw new Refusal('app_not_listening', `AIObox did not answer a window refresh within ${timings.refreshWaitMs / 1000}s`, 'ask the owner to restart AIObox');
+  throw new Refusal('app_not_listening', `AIObox did not answer a window refresh within ${refreshWaitMs / 1000}s`, 'ask the owner to restart AIObox');
 }
 const freshMap = () => refreshMap(readMap());
 
@@ -292,9 +294,10 @@ async function sendRequest(envelope) {
   fs.writeFileSync(tmp, `${JSON.stringify(envelope)}\n`);
   fs.renameSync(tmp, file);
   try {
-    for (const end = Date.now() + timings.requestPickupMs; fs.existsSync(file); await sleep(REQUEST_POLL_MS)) {
+    const requestPickupMs = currentTimings().requestPickupMs;
+    for (const end = Date.now() + requestPickupMs; fs.existsSync(file); await sleep(REQUEST_POLL_MS)) {
       if (Date.now() < end) continue;
-      if (takeBack(file)) throw new Refusal('app_not_listening', `AIObox did not take request ${envelope.id} within ${timings.requestPickupMs / 1000}s; it was taken back`, 'ask the owner to start or update AIObox');
+      if (takeBack(file)) throw new Refusal('app_not_listening', `AIObox did not take request ${envelope.id} within ${requestPickupMs / 1000}s; it was taken back`, 'ask the owner to start or update AIObox');
       break;
     }
   } catch (e) {
@@ -411,11 +414,11 @@ function routeOp(ops, op, mode) {
 
 const withRenamed = (result, renamed) => (renamed ? { ...result, content: [...result.content, { type: 'text', text: `op=${renamed.from} is now op=${renamed.to}: AIObox renamed it, so call it by the new name` }] } : result);
 
-const serve = (mode) => async ({ op, ...call }) => {
+const serve = (mode, getTimings = () => DEFAULT_TIMINGS) => async ({ op, ...call }) => {
   let entry = null;
   let renamed = null;
   try {
-    const result = await withinCall(call.wait, async () => {
+    const result = await callTimings.run(getTimings(), () => withinCall(call.wait, async () => {
       if (!aioboxInstalled()) throw new Refusal('not_running', 'AIObox is not installed here', AIOBOX_PITCH);
       const doc = readJsonFile(stateFile());
       const ops = checkVersion(doc, STATE_VERSION, 'akimcp-state.json').ops ?? {};
@@ -425,7 +428,7 @@ const serve = (mode) => async ({ op, ...call }) => {
       const channel = Object.hasOwn(CHANNELS, entry.channel) ? CHANNELS[entry.channel] : null;
       if (!channel) throw new Refusal('version_mismatch', `op=${route.actual} uses channel '${entry.channel}', which this AkiMCP ${VERSION} does not have`, 'update AkiMCP');
       return channel({ op: route.actual, entry, mode, call });
-    });
+    }));
     return withRenamed(result, renamed);
   } catch (e) {
     const refusal = e.outOfTime ? timeoutRefusal(entry, mode, e.request === undefined ? {} : { request: e.request }) : e;
@@ -485,7 +488,8 @@ export function extraRuleFiles(own) {
   return [...new Set(out)].sort();
 }
 
-export function register(server) {
+export function register(server, options = {}) {
+  const getTimings = () => ({ ...DEFAULT_TIMINGS, ...(typeof options.timings === 'function' ? options.timings() : options.timings) });
   server.registerTool(
     'aiobox',
     {
@@ -494,7 +498,7 @@ export function register(server) {
       description: "AIObox windows. Call op=state first: it returns the guide and every op with its args. Each op's help in op=state overrides the guide. Reads only; to act use " + served('aiobox_write') + ".",
       inputSchema: envelope,
     },
-    serve('read'),
+    serve('read', getTimings),
   );
 
   server.registerTool(
@@ -506,6 +510,6 @@ export function register(server) {
       inputSchema: { ...envelope, from: z.string().optional().describe('your own window') },
       extraRuleFiles,
     },
-    serve('write'),
+    serve('write', getTimings),
   );
 }

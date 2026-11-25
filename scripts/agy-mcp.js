@@ -27,11 +27,11 @@ function loadAllowedModes() {
 }
 
 // Model resolved at call time (D2/B5a): explicit arg wins; else setting.json agy.defaultModel; else newest Flash high (fallback medium) from caps (passed in by list to avoid double-spawn).
-async function resolveModel(explicit, cwd, caps = null) {
+async function resolveModel(explicit, cwd, caps = null, store = undefined) {
   if (explicit) return explicit;
   const configured = readSettings().agy?.defaultModel;
   if (typeof configured === 'string' && configured) return configured;
-  const resolvedCaps = caps ?? await capabilities({ cwd });
+  const resolvedCaps = caps ?? await capabilities({ cwd, ...(store ? { store } : {}) });
   return defaultFlashModel(resolvedCaps.models);
 }
 
@@ -60,12 +60,12 @@ function run(args, cwd, timeoutMs) {
 // Value/tier complaint detector (B1): anchored to model/tier context so `--mode plan` in a generic "Command failed" line never false-matches.
 export const VALUE_COMPLAINT = /invalid (?:model|effort|output)|not a valid|unsupported|conflicts with --|unknown (?:model|effort|output|option|flag)|(?<!-)\bmodel\b(?:(?!\s--).){0,40}\b(?:not available|not found|requires|plan|tier|entitlement)\b|(?<!mode\s)\b(?:plan|tier|entitlement)\b(?:(?!\s--).){0,40}(?<!-)\bmodel\b/i;
 
-async function runWithValueHelp(args, cwd, timeoutMs, explicitModel) {
+async function runWithValueHelp(args, cwd, timeoutMs, explicitModel, store = undefined) {
   const { result, said } = await run(args, cwd, timeoutMs);
   if (!result.isError) return result;
   const message = result.content[0].text;
   if (!said || !VALUE_COMPLAINT.test(message)) return result;
-  const caps = await refresh({ cwd });
+  const caps = await refresh({ cwd, ...(store ? { store } : {}) });
   const tierHint = explicitModel && Array.isArray(caps.models) && !caps.models.some((m) => m.id === explicitModel)
     ? `\n\n${explainMissingModel(explicitModel, caps.planTier, caps.models).message}`
     : '';
@@ -74,12 +74,12 @@ async function runWithValueHelp(args, cwd, timeoutMs, explicitModel) {
 }
 
 // Pre-flight check for an explicit model (B2/B3/D3): refreshes once when absent from cache before rejecting with a clear tier/model explanation.
-async function validateExplicitModel(explicitModel, cwd, { verifyAccount }) {
+async function validateExplicitModel(explicitModel, cwd, { verifyAccount, store }) {
   if (!explicitModel) return null;
-  let caps = await capabilities({ cwd, verifyAccount });
+  let caps = await capabilities({ cwd, verifyAccount, ...(store ? { store } : {}) });
   if (!Array.isArray(caps.models)) return null;
   if (caps.models.some((m) => m.id === explicitModel)) return null;
-  caps = await refresh({ cwd });
+  caps = await refresh({ cwd, ...(store ? { store } : {}) });
   if (!Array.isArray(caps.models)) return null;
   if (caps.models.some((m) => m.id === explicitModel)) return null;
   return err(explainMissingModel(explicitModel, caps.planTier, caps.models).message);
@@ -134,7 +134,8 @@ function describe(modes) {
     'Name exact paths (agy resolves outside cwd); prompt is one verbatim arg.';
 }
 
-export function register(server) {
+export function register(server, options = {}) {
+  const store = options.capabilitiesStore;
   const modes = loadAllowedModes();
   server.registerTool(
     'agy_run',
@@ -161,8 +162,8 @@ export function register(server) {
       const allowed = loadAllowedModes();
 
       if (list) {
-        const caps = await capabilities({ cwd: dir, includeUsage: true });
-        return listReply(list, caps, await resolveModel(undefined, dir, caps), allowed);
+        const caps = await capabilities({ cwd: dir, includeUsage: true, ...(store ? { store } : {}) });
+        return listReply(list, caps, await resolveModel(undefined, dir, caps, store), allowed);
       }
       if (!prompt || !String(prompt).trim()) {
         return err('rejected: prompt is required unless list="models" or list="capabilities" is set.');
@@ -180,10 +181,10 @@ export function register(server) {
           return err(`rejected: background=true requires the task provider (${served('task_manage')}) to be enabled. Switch "task" on in the control panel (section 4) or run synchronously with timeoutSec (up to ${MAX_SYNC_TIMEOUT_SEC}s).`);
         }
 
-        const rejected = await validateExplicitModel(model, dir, { verifyAccount: true });
+        const rejected = await validateExplicitModel(model, dir, { verifyAccount: true, store });
         if (rejected) return rejected;
 
-        const resolvedModel = await resolveModel(model, dir);
+        const resolvedModel = await resolveModel(model, dir, null, store);
         const useFormat = outputFormat ?? 'json';
         const bgTimeoutSec = timeoutSec ?? DEFAULT_BG_TIMEOUT_SEC;
         const args = ['--mode', useMode];
@@ -231,10 +232,10 @@ export function register(server) {
         return err(`rejected: timeoutSec ${timeoutSec} exceeds the ${MAX_SYNC_TIMEOUT_SEC}s synchronous ceiling. Use background=true (up to ${MAX_BG_TIMEOUT_SEC}s) and track via ${served('task_manage')}.`);
       }
 
-      const rejected = await validateExplicitModel(model, dir, { verifyAccount: false });
+      const rejected = await validateExplicitModel(model, dir, { verifyAccount: false, store });
       if (rejected) return rejected;
 
-      const resolvedModel = await resolveModel(model, dir);
+      const resolvedModel = await resolveModel(model, dir, null, store);
       const syncTimeoutMs = (timeoutSec ?? DEFAULT_SYNC_TIMEOUT_SEC) * 1000;
       const args = ['--mode', useMode];
       if (resolvedModel) args.push('--model', resolvedModel);
@@ -242,7 +243,7 @@ export function register(server) {
       if (outputFormat) args.push('--output-format', outputFormat);
       // -p takes the prompt as its value and must come last — anything after it is silently swallowed as part of the prompt, not parsed as a flag (docs/ref/harness-fact.md, the flag-order trap).
       args.push('-p', prompt);
-      return runWithValueHelp(args, dir, syncTimeoutMs, model);
+      return runWithValueHelp(args, dir, syncTimeoutMs, model, store);
     },
   );
 }

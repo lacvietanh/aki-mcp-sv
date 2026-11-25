@@ -12,44 +12,43 @@ const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'rule-gate-tes
 fs.mkdirSync(path.join(tmp, 'data'));
 fs.writeFileSync(path.join(tmp, 'data', 'setting.json'), JSON.stringify({ folders: [tmp] }));
 process.env.AKI_MCP_DATA_DIR = path.join(tmp, 'data');
-const gateMod = await import('../scripts/rule-gate.js');
-const { checkReceipt, recordIssued, setAssembler, setNow, isGated, withReceipt, gate } = gateMod;
+const { createRuleGate, isGated, withReceipt } = await import('../scripts/rule-gate.js');
 
 // The check alone, against a fake assembler whose receipt the test controls.
 const A = `sha256:${'a'.repeat(64)}`;
 const B = `sha256:${'b'.repeat(64)}`;
 let current = A;
 const asked = [];
-setAssembler(async (input) => { asked.push(input); return { receipt: current }; });
-assert.equal((await checkReceipt(undefined)).code, 'RULE_RECEIPT_MISSING');
-assert.equal((await checkReceipt('')).code, 'RULE_RECEIPT_MISSING');
-assert.equal((await checkReceipt('sha256:xyz')).code, 'RULE_RECEIPT_INVALID');
-assert.equal((await checkReceipt(A)).code, 'RULE_RECEIPT_UNKNOWN', 'a well-formed receipt this server never issued is refused');
-recordIssued(A, { workingPath: '/w', mode: 'effective' });
-assert.equal(await checkReceipt(A), null, 'an issued receipt the rules still produce passes');
+const unitGate = createRuleGate({ assemble: async (input) => { asked.push(input); return { receipt: current }; } });
+assert.equal((await unitGate.checkReceipt(undefined)).code, 'RULE_RECEIPT_MISSING');
+assert.equal((await unitGate.checkReceipt('')).code, 'RULE_RECEIPT_MISSING');
+assert.equal((await unitGate.checkReceipt('sha256:xyz')).code, 'RULE_RECEIPT_INVALID');
+assert.equal((await unitGate.checkReceipt(A)).code, 'RULE_RECEIPT_UNKNOWN', 'a well-formed receipt this server never issued is refused');
+unitGate.recordIssued(A, { workingPath: '/w', mode: 'effective' });
+assert.equal(await unitGate.checkReceipt(A), null, 'an issued receipt the rules still produce passes');
 assert.deepEqual(asked.at(-1), { mode: 'effective', workingPath: '/w', extraFiles: [] }, 'the check makes the same call that issued the receipt');
 current = B;
-const stale = await checkReceipt(A);
+const stale = await unitGate.checkReceipt(A);
 assert.equal(stale.code, 'RULE_RECEIPT_STALE', 'once the rules change the old receipt is refused');
-for (const r of [await checkReceipt(undefined), stale]) assert.match(r.message, /call aki__akidevrule_context \(without knownReceipt if the rules are no longer in your context\), then call this tool again with receipt=/);
-setAssembler(async () => { throw new Error('disk gone'); });
-recordIssued(A);
-assert.equal((await checkReceipt(A)).code, 'RULE_RECEIPT_UNCHECKED', 'rules that cannot be read never let a call through');
+for (const r of [await unitGate.checkReceipt(undefined), stale]) assert.match(r.message, /call aki__akidevrule_context \(without knownReceipt if the rules are no longer in your context\), then call this tool again with receipt=/);
+const brokenGate = createRuleGate({ assemble: async () => { throw new Error('disk gone'); } });
+brokenGate.recordIssued(A);
+assert.equal((await brokenGate.checkReceipt(A)).code, 'RULE_RECEIPT_UNCHECKED', 'rules that cannot be read never let a call through');
 
 // Past MAX_ISSUED (200) the oldest receipt drops out, and a call with it is told so instead of "never issued".
 const R = (i) => `sha256:${String(i).padStart(64, '0')}`;
-setAssembler(async ({ workingPath }) => ({ receipt: workingPath }));
-for (let i = 1; i <= 201; i++) recordIssued(R(i), { workingPath: R(i) });
-assert.equal((await checkReceipt(R(1))).code, 'RULE_RECEIPT_EVICTED');
-assert.equal(await checkReceipt(R(2)), null);
-recordIssued(R(1), { workingPath: R(1) });
-assert.equal(await checkReceipt(R(1)), null, 'issued again, it counts again');
-setAssembler(async ({ workingPath }) => ({ receipt: workingPath }));
-for (let i = 1; i <= 200; i++) recordIssued(R(i), { workingPath: R(i) });
-assert.equal(await checkReceipt(R(1)), null);
-recordIssued(R(201), { workingPath: R(201) });
-assert.equal(await checkReceipt(R(1)), null, 'a receipt in use is not the one dropped');
-assert.equal((await checkReceipt(R(2))).code, 'RULE_RECEIPT_EVICTED');
+const evictGate = createRuleGate({ assemble: async ({ workingPath }) => ({ receipt: workingPath }) });
+for (let i = 1; i <= 201; i++) evictGate.recordIssued(R(i), { workingPath: R(i) });
+assert.equal((await evictGate.checkReceipt(R(1))).code, 'RULE_RECEIPT_EVICTED');
+assert.equal(await evictGate.checkReceipt(R(2)), null);
+evictGate.recordIssued(R(1), { workingPath: R(1) });
+assert.equal(await evictGate.checkReceipt(R(1)), null, 'issued again, it counts again');
+const lruGate = createRuleGate({ assemble: async ({ workingPath }) => ({ receipt: workingPath }) });
+for (let i = 1; i <= 200; i++) lruGate.recordIssued(R(i), { workingPath: R(i) });
+assert.equal(await lruGate.checkReceipt(R(1)), null);
+lruGate.recordIssued(R(201), { workingPath: R(201) });
+assert.equal(await lruGate.checkReceipt(R(1)), null, 'a receipt in use is not the one dropped');
+assert.equal((await lruGate.checkReceipt(R(2))).code, 'RULE_RECEIPT_EVICTED');
 
 // Which tools are gated and how their schema and handler change.
 assert.equal(isGated({ annotations: { readOnlyHint: true } }), false);
@@ -59,22 +58,23 @@ assert.deepEqual(Object.keys(withReceipt({ path: 1 })), ['path', 'receipt', 'ss'
 assert.deepEqual(Object.keys(withReceipt(undefined)), ['receipt', 'ss']);
 assert.throws(() => withReceipt({ receipt: 1 }), /already has an input named receipt/);
 assert.throws(() => withReceipt({ ss: 1 }), /already has an input named ss/);
-setAssembler(async () => ({ receipt: A }));
-recordIssued(A);
+const handlerGate = createRuleGate({ assemble: async () => ({ receipt: A }) });
+handlerGate.recordIssued(A);
 const seen = [];
-const noSchema = gate(async (...args) => { seen.push(args); return 'ok'; }, false);
+const noSchema = handlerGate.gate(async (...args) => { seen.push(args); return 'ok'; }, false);
 assert.equal(await noSchema({ receipt: A }, 'extra'), 'ok');
 assert.deepEqual(seen.pop(), ['extra'], 'a tool registered without inputs still gets only extra');
-const withSchema = gate(async (...args) => { seen.push(args); return 'ok'; }, true);
+const withSchema = handlerGate.gate(async (...args) => { seen.push(args); return 'ok'; }, true);
 assert.equal(await withSchema({ receipt: A, path: '/x' }, 'extra'), 'ok');
 assert.deepEqual(seen.pop(), [{ path: '/x' }, 'extra'], 'receipt is stripped before the tool sees its input');
 assert.equal((await withSchema({ path: '/x' }, 'extra')).isError, true);
 assert.equal(seen.length, 0, 'a refused call never reaches the tool');
 
 // End to end through the served tools: the real assembler, the real write_file.
-setAssembler(null);
+let clockOffset = 0;
+const e2eGate = createRuleGate({ now: () => Date.now() + clockOffset });
 const { createToolsServer } = await import('../scripts/tools-server.js');
-const server = createToolsServer();
+const server = createToolsServer({ ruleGate: e2eGate });
 const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
 await server.connect(serverSide);
 const client = new Client({ name: 'rule-gate-test', version: '1' });
@@ -202,9 +202,9 @@ const mixed = await write(path.join(r3, 'deep', 'x.txt'), coveringR1);
 assert.match(mixed.content[1].text, /# r3 deep rule/, 'a rule file not shown yet is shown');
 assert.doesNotMatch(mixed.content[1].text, /# r3 rule\n/, 'the one just shown is not repeated');
 assert.match(mixed.content[0].text, /^RULE_PUSH: Not run yet: rules for this path are below\. .*CLAUDE\.md \(sha256 [a-f0-9]{12}\) went with another call a moment ago; .*Call again with receipt=sha256:/);
-setNow(() => Date.now() + 11_000);
+clockOffset = 11_000;
 assert.match(text(await write(path.join(r3, 'a.txt'), coveringR1)), /# r3 rule/, 'after the shown window the rule file is shown again');
-setNow(null);
+clockOffset = 0;
 for (const n of ['a', 'b', 'c']) {
   const r = await write(path.join(r3, `${n}.txt`), rec3);
   assert.ok(!r.isError && !newReceipt(r), `the new receipt runs every one of them: ${text(r)}`);
@@ -250,7 +250,7 @@ try {
 }
 fs.rmSync(mapFile);
 
-// An acting call that names its chat's ss ends with one line when that file is missing or behind, and with nothing while it is current (D10).
+// An acting call that names its chat's ss ends with one line when that file is missing or behind, and with nothing while it is current.
 const { SS_DIR, shapeOf } = await import('../scripts/session-file.js');
 const ssFile = path.join(SS_DIR, 'demo', '2026.10.24-1812-ab.md');
 const ssReceipt = (await client.callTool({ name: 'aki__akidevrule_context', arguments: { workingPath: tmp } })).structuredContent.receipt;
@@ -284,7 +284,7 @@ const guideB = path.join(extraDir, 'beta.md');
 fs.writeFileSync(guideA, '# alpha provider guide\n@~/.aki/mcpsv/auth.json\n');
 fs.writeFileSync(guideB, '# beta provider guide\n');
 const ranExtra = [];
-const gatedExtra = gate(
+const gatedExtra = e2eGate.gate(
   async (own) => { ranExtra.push(own); return { content: [{ type: 'text', text: `ran:${own.target}` }] }; },
   true,
   async (own) => {

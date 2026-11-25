@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -39,7 +39,9 @@ const { getOrIssueAccessToken } = await import('../scripts/oauth.js');
 const HOME = process.env.HOME; // setup.js already pointed HOME at a fresh temp dir
 const read = (p) => fs.readFileSync(path.join(HOME, p), 'utf8');
 
-async function runTests() {
+after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+
+test('Codex, Cursor, and Claude Code apply handlers merge configs and clean retired keys', async (t) => {
   const token = getOrIssueAccessToken();
 
   // Codex: first apply writes the table; a second apply replaces it in place (one table, not two); a sibling table is untouched.
@@ -62,7 +64,9 @@ async function runTests() {
   assert.ok(!swept.includes('aki-mcp') && swept.includes('[mcp_servers.akimcp]'), 'only the akimcp table remains');
   assert.doesNotMatch(swept, /\n\n\n/, 'removing the retired table leaves no blank-line residue');
   assert.ok(!swept.includes('Bearer old') && swept.includes('[other]') && swept.includes('[tail]'), 'old subtable dropped, siblings kept');
-  if (process.platform !== 'win32') assert.equal(fs.statSync(codexPath).mode & 0o777, 0o600, 'a token file is not world-readable');
+  await t.test('Codex config.toml is written owner-only (0600)', { skip: process.platform === 'win32' ? 'POSIX mode bits are not enforced on Windows' : false }, () => {
+    assert.equal(fs.statSync(codexPath).mode & 0o777, 0o600, 'a token file is not world-readable');
+  });
 
   // Codex: a literal-quoted key is the same table, and an array row inside it does not end it.
   fs.writeFileSync(codexPath, "[other]\nkeep = true\n\n[mcp_servers.'aki-mcp']\nurl = \"http://127.0.0.1:9999/mcp\"\nargs = [\n  [1, 2],\n  [3, 4]\n]\n\n[tail]\nz = 1\n");
@@ -109,14 +113,20 @@ async function runTests() {
   // A local-scope entry (what the pre-3.1 snippet made, no -s) wins over user scope, so Apply removes it inside its own project; a project folder that is gone is skipped.
   const project = path.join(tmp, 'project');
   fs.mkdirSync(project);
-  process.env.CLAUDE_CONFIG_DIR = path.join(tmp, 'claude-config');
-  fs.mkdirSync(process.env.CLAUDE_CONFIG_DIR);
-  fs.writeFileSync(path.join(process.env.CLAUDE_CONFIG_DIR, '.claude.json'), JSON.stringify({ mcpServers: { 'aki-mcp': { type: 'http', url: 'http://127.0.0.1:9999/mcp' } }, projects: { [project]: { mcpServers: { 'aki-mcp': { type: 'http', url: 'http://127.0.0.1:9999/mcp' } } }, [path.join(tmp, 'gone')]: { mcpServers: { 'aki-mcp': {} } }, [tmp]: { mcpServers: { other: {}, akimcp: {} } } } }));
   const savedPath = process.env.PATH;
-  process.env.PATH = `${binDir}${path.delimiter}${savedPath}`;
-  const applied = await ROUTES['POST /api/claude-code-apply']();
-  process.env.PATH = savedPath;
-  delete process.env.CLAUDE_CONFIG_DIR;
+  const savedClaudeConfig = process.env.CLAUDE_CONFIG_DIR;
+  let applied;
+  try {
+    process.env.CLAUDE_CONFIG_DIR = path.join(tmp, 'claude-config');
+    fs.mkdirSync(process.env.CLAUDE_CONFIG_DIR);
+    fs.writeFileSync(path.join(process.env.CLAUDE_CONFIG_DIR, '.claude.json'), JSON.stringify({ mcpServers: { 'aki-mcp': { type: 'http', url: 'http://127.0.0.1:9999/mcp' } }, projects: { [project]: { mcpServers: { 'aki-mcp': { type: 'http', url: 'http://127.0.0.1:9999/mcp' } } }, [path.join(tmp, 'gone')]: { mcpServers: { 'aki-mcp': {} } }, [tmp]: { mcpServers: { other: {}, akimcp: {} } } } }));
+    process.env.PATH = `${binDir}${path.delimiter}${savedPath}`;
+    applied = await ROUTES['POST /api/claude-code-apply']();
+  } finally {
+    process.env.PATH = savedPath;
+    if (savedClaudeConfig === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = savedClaudeConfig;
+  }
   assert.equal(applied.ok, true);
   const log = fs.readFileSync(argsLog, 'utf8');
   assert.match(log, /mcp remove akimcp -s user/, 'removes the current key first');
@@ -127,21 +137,20 @@ async function runTests() {
   assert.match(applied.message, /1 project/, 'the message says a project-only entry was removed');
 
   // Claude Code with no `claude` on PATH: a usable two-line fallback, never a bare error.
-  process.env.PATH = path.join(tmp, 'empty');
   fs.mkdirSync(path.join(tmp, 'empty'));
-  const noBin = await ROUTES['POST /api/claude-code-apply']();
-  process.env.PATH = savedPath;
+  let noBin;
+  try {
+    process.env.PATH = path.join(tmp, 'empty');
+    noBin = await ROUTES['POST /api/claude-code-apply']();
+  } finally {
+    process.env.PATH = savedPath;
+  }
   assert.equal(noBin.ok, false);
   assert.match(noBin.message, /claude is not on PATH/);
   assert.match(noBin.message, /claude mcp remove akimcp -s user/);
   assert.match(noBin.message, /claude mcp add --transport http -s user akimcp/);
   assert.doesNotMatch(noBin.message, /aki-mcp/, 'a pasted snippet never carries the legacy removal');
-
-  fs.rmSync(tmp, { recursive: true, force: true });
-  console.log('connector-apply.test.js: ok');
-}
-
-await runTests();
+});
 
 const ROUTE_OF = { claude: 'POST /api/claude-code-apply', codex: 'POST /api/codex-apply', cursor: 'POST /api/cursor-apply', agy: 'POST /api/agy-apply-mcp' };
 const CLIENT_NAME = { claude: 'Claude Code', codex: 'Codex', cursor: 'Cursor', agy: 'AGY' };

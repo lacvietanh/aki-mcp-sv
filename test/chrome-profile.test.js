@@ -156,6 +156,7 @@ async function runTests(t) {
 
   // Owner alive and endpoint answers: attach, open url as a tab, session not owned.
   const cdp = await fakeCdp();
+  try {
   fs.writeFileSync(path.join(dir, 'DevToolsActivePort'), `${cdp.port}\n/devtools/browser/live\n`);
   const attached = await launchChrome('chrome-profile-14', { url: 'https://example.com/a' });
   assert.equal(attached.status, 'attached');
@@ -180,7 +181,10 @@ async function runTests(t) {
   assert.equal(exists(sessionFile), false);
   await assert.rejects(resolvePort(), (e) => e.message === NO_CDP_PORT_MESSAGE);
   assert.equal(await resolvePort(1234), 1234);
-  cdp.server.close();
+  } finally {
+    cdp.server.closeAllConnections();
+    cdp.server.close();
+  }
 
   // Dead owner: stale lock files are cleared, a new owned process launches with the real profile folder.
   const gone = spawnSync(process.execPath, ['-e', 'process.pid'], { encoding: 'utf8' }).pid;

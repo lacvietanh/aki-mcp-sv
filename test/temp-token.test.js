@@ -150,7 +150,7 @@ try {
   assert.doesNotMatch(guideText, /cannot revoke the token itself/i, 'v1.md must not claim POST-only clients cannot revoke on 4.3.0+');
   assert.doesNotMatch(guideText, /AIObox|chủ|lead/i, 'public v1.md keeps neutral owner terminology');
 
-  // M3: Name normalization, NFC, control-char stripping, length caps, case-insensitive uniqueness, selector conflicts, 7-day extend cap, and 64-live cap.
+  // Name normalization, NFC, control-char stripping, length caps, case-insensitive uniqueness, selector conflicts, 7-day extend cap, and 64-live cap.
   assert.equal(normalizeTempTokenName(undefined), null);
   assert.equal(normalizeTempTokenName('   \n\t  '), null);
   assert.equal(normalizeTempTokenName('  aistudio-p60\n\tworker\x07  '), 'aistudio-p60 worker');
@@ -210,7 +210,7 @@ try {
   revokeTempTokenTarget({ all: true });
   assert.equal(listTempTokens().length, 0);
 
-  // B1 & M4: MCP tool aki__temp_token over HTTP /mcp enforces caller principal isolation (access vs temp) and fail-closed requireCaller.
+  // MCP tool aki__temp_token over HTTP /mcp enforces caller principal isolation (access vs temp) and fail-closed requireCaller.
   setBridgeOrigin(() => 'https://akimcp.example');
   const activeShared = getOrIssueAccessToken();
   const mcpPost = async (token, body, sid) => {
@@ -254,11 +254,11 @@ try {
   // Owner (shared access token) mints two named temp tokens via aki__temp_token.
   const mint1Res = await callTempTool(activeShared, { op: 'mint', name: 'agent-alpha' });
   assert.ok(!mint1Res.isError, mint1Res.content[0].text);
-  assert.ok(!mint1Res.content[0].text.includes('\n'), 'M4: 1-line compact JSON');
+  assert.ok(!mint1Res.content[0].text.includes('\n'), '1-line compact JSON');
   const mint1 = JSON.parse(mint1Res.content[0].text);
-  assert.equal(mint1.id.length, 12, 'M4: 12-char short id');
+  assert.equal(mint1.id.length, 12, '12-char short id');
   assert.equal(mint1.name, 'agent-alpha');
-  assert.equal(mint1.ok, undefined, 'M4: redundant ok field omitted');
+  assert.equal(mint1.ok, undefined, 'redundant ok field omitted');
   const alphaToken = mint1.kickoff.match(/^TOKEN: ([0-9a-f]{64})$/m)[1];
 
   const mint2Res = await callTempTool(activeShared, { op: 'mint', name: 'agent-beta' });
@@ -302,7 +302,7 @@ try {
   assert.equal(betaRev.name, 'agent-beta');
   assert.equal(listTempTokens().length, 0);
 
-  // B1 fail-closed check: calling handleStreamableMcp without a principal fails closed on aki__temp_token.
+  // Fail-closed check: calling handleStreamableMcp without a principal fails closed on aki__temp_token.
   const bareServer = http.createServer((req, res) => { handleStreamableMcp(req, res); });
   await new Promise((resolve) => bareServer.listen(0, '127.0.0.1', resolve));
   try {
@@ -324,7 +324,7 @@ try {
     bareServer.close();
   }
 
-  // N1 & M1: CLI akimcp temp-token subcommand (including --dev temp-token --help and live loopback panel proxy).
+  // CLI akimcp temp-token subcommand (including --dev temp-token --help and live loopback panel proxy).
   const binPath = fileURLToPath(new URL('../bin/akimcp.js', import.meta.url));
   const runCli = (...args) => new Promise((resolve) => {
     execFile(process.execPath, [binPath, ...args], { timeout: 10_000, env: { ...process.env, AKI_MCP_DATA_DIR: dir } }, (err, stdout, stderr) => {
@@ -392,7 +392,7 @@ try {
     assert.equal(cliRev.status, 0, cliRev.stderr);
     assert.equal(JSON.parse(cliRev.stdout.trim()).revoked, 1);
 
-    // A-N3: --token-only is strictly rejected on list, extend and revoke.
+    // --token-only is strictly rejected on list, extend and revoke.
     for (const badArgs of [['list', '--token-only'], ['extend', 'cli-runner', '--token-only'], ['revoke', 'cli-runner', '--token-only'], ['revoke', '--all', '--token-only']]) {
       const badRun = await cli(...badArgs);
       assert.notEqual(badRun.status, 0, `expected --token-only to fail for ${badArgs.join(' ')}`);
@@ -459,7 +459,7 @@ try {
     legacyPanel.close();
   }
 
-  console.log('PASS: temp tokens — named tokens, M3 caps/uniqueness, B1 caller principal isolation, CLI proxy, legacy 4.2.0 proxy, panel mint and revoke, guide MIME');
+  console.log('PASS: temp tokens — named tokens, caps/uniqueness, caller principal isolation, CLI proxy, legacy 4.2.0 proxy, panel mint and revoke, guide MIME');
 } finally {
   Date.now = realNow;
   server.closeAllConnections();

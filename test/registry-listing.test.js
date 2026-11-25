@@ -4,6 +4,7 @@ import './setup.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const pkg = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 const server = JSON.parse(fs.readFileSync(new URL('../server.json', import.meta.url), 'utf8'));
@@ -20,7 +21,7 @@ assert.deepEqual(entry.packageArguments.map((a) => a.value), ['--stdio']);
 assert.ok(pkg.files.includes('bin') && pkg.files.includes('scripts'), 'the stdio entry ships in the tarball');
 
 // `akimcp --stdio` answers initialize on stdout (no gateway, no tunnel), as a registry client would spawn it.
-const child = spawn(process.execPath, [new URL('../bin/akimcp.js', import.meta.url).pathname, '--stdio'], { stdio: ['pipe', 'pipe', 'pipe'] });
+const child = spawn(process.execPath, [fileURLToPath(new URL('../bin/akimcp.js', import.meta.url)), '--stdio'], { stdio: ['pipe', 'pipe', 'pipe'] });
 let out = '';
 const reply = new Promise((resolve, reject) => {
   const timer = setTimeout(() => reject(new Error(`no initialize reply in 15s; stdout: ${out.slice(0, 300)}`)), 15_000);

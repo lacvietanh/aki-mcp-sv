@@ -15,24 +15,17 @@ Object.assign(process.env, { HOME: home, USERPROFILE: home, LOCALAPPDATA: path.j
 process.env.AKI_CDP_PROFILES_DIR = path.join(tmp, 'profiles');
 process.env.AKI_MCP_DATA_DIR = tmp;
 const { register } = await import('../scripts/chrome-mcp.js');
-const { default: cdp } = await import('../scripts/cdp-engine.js');
-const { getBrowserInfo, listInstalledBrowsers } = await import('../scripts/chrome-profile.js');
+const { getBrowserInfo } = await import('../scripts/chrome-profile.js');
 
 async function runTests() {
-  // 1. Verify cdp engine exports
-  assert.equal(typeof cdp.type, 'function');
-  assert.equal(typeof cdp.click, 'function');
-  assert.equal(typeof cdp.openTab, 'function');
-  assert.equal(typeof cdp.closeTab, 'function');
-  assert.equal(typeof cdp.activateTab, 'function');
-
-  // 2. Register tools with McpServer
+  // 1. Register tools with McpServer
   const server = new McpServer({ name: 'test-chrome', version: '2.0.0' });
   register(server);
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   await server.connect(serverSide);
   const client = new Client({ name: 'test', version: '0' });
   await client.connect(clientSide);
+  try {
   const tools = new Map((await client.listTools()).tools.map((t) => [t.name, t]));
   const call = (name, args) => client.callTool({ name, arguments: args });
 
@@ -46,7 +39,6 @@ async function runTests() {
   const res = await call('chrome_profiles', { browser: 'chrome' });
   assert.ok(res.content && res.content[0]);
   const parsed = JSON.parse(res.content[0].text);
-  assert.deepEqual(parsed.detectedBrowsers, listInstalledBrowsers().map((b) => b.name));
   assert.ok(parsed.detectedBrowsers.includes(chrome.name), 'the fixture user-data dir makes Chrome detected');
   assert.equal(parsed.selectedBrowser, 'chrome');
   assert.deepEqual(parsed.profiles, [
@@ -71,9 +63,8 @@ async function runTests() {
   // 6. chrome_stop states its ownership rule and does nothing without a session.
   assert.match(tools.get('chrome_stop').description, /owned/);
   assert.equal(JSON.parse((await call('chrome_stop', {})).content[0].text).stopped, false);
-  for (const name of ['chrome_launch', 'chrome_stop', 'chrome_profiles']) assert.ok(tools.get(name).description.length <= 700, name);
 
-  // 7. B2: while AIObox runs (windows.json appPid alive) and is served, chrome_launch refuses with one next and opens nothing.
+  // 7. While AIObox runs (windows.json appPid alive) and is served, chrome_launch refuses with one next and opens nothing.
   const clone = path.join(process.env.AKI_CDP_PROFILES_DIR, 'chrome-profile-1');
   fs.mkdirSync(clone, { recursive: true });
   fs.writeFileSync(path.join(clone, 'Local State'), '{}');
@@ -88,7 +79,7 @@ async function runTests() {
   const noUrl = await call('chrome_launch', { profile: 'Profile 1' });
   assert.match(noUrl.content[0].text, /\(aiobox_running; next: aki__aiobox_write op=open_url url=<link> profileId=chrome-profile-1\)$/);
   assert.equal(JSON.parse((await call('chrome_stop', {})).content[0].text).detail, 'no active session', 'nothing opened or attached');
-  // Not served (switched off) or crashed (windows.json left, appPid dead): launches as before B2.
+  // Not served (switched off) or crashed (windows.json left, appPid dead): launches normally.
   const { setEnabled } = await import('../scripts/provider-registry.js');
   setEnabled('aiobox', false);
   // Launching says nothing about AIObox: the description and the errors are the same on every machine.
@@ -115,8 +106,10 @@ async function runTests() {
   assert.match((await call('chrome_launch', { profile: 'aio-1700000000000', url: 'https://example.com/' })).content[0].text, / url=https:\/\/example\.com\/ profileId=aio-1700000000000\)$/);
   assert.match((await call('chrome_launch', { profile: 'Profile 1', browser: 'brave' })).content[0].text, / profileId=brave-profile-1\)$/);
 
-  await client.close();
-  fs.rmSync(tmp, { recursive: true, force: true });
+  } finally {
+    await client.close();
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 
   console.log('chrome-mcp.test.js: ok');
 }

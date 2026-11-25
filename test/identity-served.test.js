@@ -10,6 +10,7 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const PKG_VERSION = JSON.parse(fs.readFileSync(path.join(repo, 'package.json'), 'utf8')).version;
 const fixture = (name) => JSON.parse(fs.readFileSync(path.join(repo, 'test', 'fixtures', name), 'utf8'));
 const scriptUrl = (name) => JSON.stringify(pathToFileURL(path.join(repo, 'scripts', name)).href);
 
@@ -26,11 +27,11 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { createToolsServer } from ${scriptUrl('tools-server.js')};
 import { listProviders } from ${scriptUrl('provider-registry.js')};
 import { IDENTITY_PROBLEM } from ${scriptUrl('mcp-name.js')};
-import { setAssembler, recordIssued } from ${scriptUrl('rule-gate.js')};
+import { createRuleGate } from ${scriptUrl('rule-gate.js')};
 const fakeRules = async ({ extraFiles = [] }) => ({ receipt: 'sha256:' + createHash('sha256').update(JSON.stringify(extraFiles)).digest('hex'), sources: extraFiles.map((path) => ({ path })) });
-setAssembler(fakeRules);
-recordIssued((await fakeRules({})).receipt, {});
-const server = createToolsServer();
+const ruleGate = createRuleGate({ assemble: fakeRules });
+ruleGate.recordIssued((await fakeRules({})).receipt, {});
+const server = createToolsServer({ ruleGate });
 const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
 await server.connect(serverSide);
 const client = new Client({ name: 'probe', version: '1' });
@@ -174,7 +175,7 @@ test('at the default identity every served tool equals its recording and initial
   const recorded = fixture('surface-default-aiobox.json');
   const { version, ...info } = serverInfo;
   assert.deepEqual({ serverInfo: info, capabilities, instructions }, { serverInfo: { name: recorded.initialize.serverInfo.name, title: recorded.initialize.serverInfo.title }, capabilities: recorded.initialize.capabilities, instructions: recorded.initialize.instructions });
-  assert.ok(version);
+  assert.equal(version, PKG_VERSION);
   for (const { id, available, enabled, tools: own } of providers.filter((p) => p.available && p.enabled)) {
     assert.ok(recorded.providers[id], `provider ${id} is detected here but has no recording`);
     for (const name of own) assert.deepEqual(tools.find((t) => t.name === name), recorded.providers[id].find((t) => t.name === name), `${name} differs from its recording`);

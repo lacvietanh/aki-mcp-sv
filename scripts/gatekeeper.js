@@ -21,7 +21,7 @@ function refuse(res, retryAfterSeconds) {
 }
 
 // origin: the public https origin, or null on loopback only. onFatal: a listen-socket error tears the whole stack down, so no orphaned hub is left.
-export function startGatekeeper(origin = null, onFatal) {
+export function startGatekeeper(origin = null, onFatal, { registrationsLimiter = registrations } = {}) {
   const port = gatePort();
   setBridgeOrigin(() => origin);
   loadOrCreatePassphrase();
@@ -75,9 +75,9 @@ export function startGatekeeper(origin = null, onFatal) {
     }
     if (path === '/register' && req.method === 'POST') {
       if (!origin) { res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('Remote ingress not configured — local MCP is active at /mcp'); }
-      const wait = registrations.retryAfterSeconds(key);
+      const wait = registrationsLimiter.retryAfterSeconds(key);
       if (wait) return refuse(res, wait);
-      registrations.record(key);
+      registrationsLimiter.record(key);
       return handleRegister(req, res);
     }
     if (path === '/authorize' && (req.method === 'GET' || req.method === 'POST')) {

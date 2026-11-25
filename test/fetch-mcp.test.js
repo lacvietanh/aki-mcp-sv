@@ -107,7 +107,7 @@ async function runTests() {
     await assert.rejects(() => executeFetch({ url: `http://127.0.0.1:${port}/to-metadata` }), /Access to link-local\/cloud-metadata host/i, 'a redirect to a blocked host is refused');
     await assert.rejects(() => executeFetch({ url: `http://127.0.0.1:${port}/to-panel` }), /control panel port \(9998\) is blocked/i, 'a 3xx redirect to the panel port is refused');
 
-    // B2: Control panel port loopback + DNS + x-panel-token header blocks
+    // Control panel port loopback + DNS + x-panel-token header blocks
     for (const blockedUrl of [
       'http://127.0.0.1:9998/api/temp-tokens',
       'http://127.0.0.2:9998/api/temp-tokens',

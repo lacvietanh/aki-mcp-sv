@@ -24,6 +24,8 @@ async function testCdpExtensions() {
   await server.connect(serverSide);
   const client = new Client({ name: 'test', version: '0' });
   await client.connect(clientSide);
+  let frozenHttp, frozen, silent;
+  try {
   const tools = new Map((await client.listTools()).tools.map((t) => [t.name, t]));
 
   // The attach-to-existing-window path must be spelled out in the error and in every devtools_* description.
@@ -34,8 +36,8 @@ async function testCdpExtensions() {
   }
 
   // A page that never answers (frozen tab): evaluate gives up at its own bound with a message naming the cause, instead of hanging until the bridge timeout.
-  const frozenHttp = http.createServer((req, res) => res.end(protocol));
-  const frozen = new WebSocketServer({ server: frozenHttp });
+  frozenHttp = http.createServer((req, res) => res.end(protocol));
+  frozen = new WebSocketServer({ server: frozenHttp });
   const pageWasAsked = new Promise((resolve) => frozen.on('connection', (socket) => socket.once('message', resolve)));
   await new Promise((resolve) => frozenHttp.listen(0, '127.0.0.1', resolve));
   const { port } = frozenHttp.address();
@@ -61,7 +63,7 @@ async function testCdpExtensions() {
   assert.ok(Date.now() - shotAt < 3000, 'a frozen screenshot ends at its bound');
 
   // An endpoint that never answers /json/list: finding the target counts against the same bound.
-  const silent = http.createServer(() => {});
+  silent = http.createServer(() => {});
   await new Promise((resolve) => silent.listen(0, '127.0.0.1', resolve));
   const silentPort = silent.address().port;
   const listAt = Date.now();
@@ -72,13 +74,12 @@ async function testCdpExtensions() {
   });
   await assert.rejects(cdp.listTargets({ port: silentPort, timeoutMs: 50 }), /the CDP endpoint 127\.0\.0\.1:\d+ did not answer within 0\.05s; code timeout; next: check the app is running with aki__port_status/);
   assert.ok(Date.now() - listAt < 3000, 'a silent endpoint ends at the bound');
-  silent.closeAllConnections();
-  await new Promise((resolve) => silent.close(resolve));
-  for (const socket of frozen.clients) socket.terminate();
-  frozenHttp.closeAllConnections();
-  await new Promise((resolve) => frozenHttp.close(resolve));
-
-  await client.close();
+  } finally {
+    if (silent) { silent.closeAllConnections(); await new Promise((resolve) => silent.close(resolve)); }
+    if (frozen) for (const socket of frozen.clients) socket.terminate();
+    if (frozenHttp) { frozenHttp.closeAllConnections(); await new Promise((resolve) => frozenHttp.close(resolve)); }
+    await client.close();
+  }
   console.log('cdp-extensions.test.js: ok');
 }
 
@@ -113,8 +114,10 @@ async function testCallsLeaveOtherClientsOnTheTab() {
   const { port } = pageHttp.address();
   const target = { id: 'T-SHARED', url: 'https://claude.ai/chat/x', title: 'shared', webSocketDebuggerUrl: `ws://127.0.0.1:${port}/devtools/page/T-SHARED` };
 
+  let watcher;
+  try {
   const WebSocket = requireFromCri('ws');
-  const watcher = new WebSocket(target.webSocketDebuggerUrl);
+  watcher = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((resolve, reject) => { watcher.once('open', resolve); watcher.once('error', reject); });
   const ask = (id, method) => new Promise((resolve) => {
     watcher.once('message', (raw) => resolve(JSON.parse(raw)));
@@ -138,10 +141,12 @@ async function testCallsLeaveOtherClientsOnTheTab() {
   assert.deepEqual(await typed('#name', { text: 'xy', clear: true }), [true, 'INPUT', 2], 'clear replaces what was there');
   await assert.rejects(typed('#go', { text: 'hi' }), /Element <button> is not a text field: typing needs an input or textarea/);
 
-  watcher.terminate();
-  for (const socket of page.clients) socket.terminate();
-  pageHttp.closeAllConnections();
-  await new Promise((resolve) => pageHttp.close(resolve));
+  } finally {
+    if (watcher) watcher.terminate();
+    for (const socket of page.clients) socket.terminate();
+    pageHttp.closeAllConnections();
+    await new Promise((resolve) => pageHttp.close(resolve));
+  }
   console.log('cdp-extensions.test.js: shared tab ok');
 }
 

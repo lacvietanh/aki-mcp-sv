@@ -55,7 +55,7 @@ async function run() {
     'resolveRealWritableDir must reject a path that escapes every root',
   );
 
-  // M2: refuseCredentialArgs blocks instance.json directly, through a symlink, and inside --flag=path, while resolveRealUnderRoot leaves instance.json open for redacted reads.
+  // refuseCredentialArgs blocks instance.json directly, through a symlink, and inside --flag=path, while resolveRealUnderRoot leaves instance.json open for redacted reads.
   fs.mkdirSync(USER_DIR, { recursive: true });
   const lockFile = path.join(USER_DIR, 'instance.json');
   fs.writeFileSync(lockFile, JSON.stringify({ pid: process.pid, panelPort: 9998, token: '0123456789abcdef0123456789abcdef' }));

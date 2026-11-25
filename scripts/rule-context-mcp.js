@@ -42,6 +42,7 @@ export const provider = { id: 'rule', title: 'Rule context', required: true, reg
 
 export function register(server, options = {}) {
   const assemble = options.assemble || assembleRuleContext;
+  const record = options.ruleGate?.recordIssued || recordIssued;
   const installed = options.aioboxInstalled || aioboxInstalled;
   const aioboxOn = options.aioboxServed || aioboxServed;
   server.registerTool(RULE_CONTEXT_TOOL, {
@@ -60,7 +61,7 @@ export function register(server, options = {}) {
       // The ss stays outside the rule input, so minting or keeping it never changes a receipt (D5, F9).
       const { ss, label, ...ruleInput } = input;
       const result = await assemble(ruleInput);
-      recordIssued(result.receipt, ruleInput);
+      record(result.receipt, ruleInput);
       const session = sessionFor({ ss, label, workingPath: ruleInput.workingPath, workingRoot: result.workingRoot });
       const aioboxLine = !installed() ? AIOBOX_PITCH : (await aioboxOn()) ? AIOBOX_STEP : '';
       // The receipt line is labelled context, not [RULES], so it cannot be mistaken for the reply's own [RULES] line.

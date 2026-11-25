@@ -110,22 +110,23 @@ register({ registerTool(n, d, h) { name = n; definition = d; handler = h; } }, {
   aioboxServed: async () => false,
 });
 assert.equal(name, 'akidevrule_context');
-assert.equal(definition.title, RULE_CONTEXT_TITLE);
-assert.equal(definition.description, RULE_CONTEXT_DESCRIPTION);
+assert.equal(definition.title, 'Load Effective Aki/Claude Context');
+assert.match(definition.description, /a \[RULES\] line without \(router\)[^.]*is a violation/);
 assert.deepEqual(Object.keys(definition.inputSchema), ['workingPath', 'mode', 'knownReceipt', 'ss', 'label']);
 const output = await handler({ workingPath: '/tmp/project', label: 'P1·W2' });
 assert.equal(output.structuredContent.status, 'ok');
 const minted = output.structuredContent.ss;
 assert.equal(minted.state, 'new');
 assert.match(minted.path, /[\\/]ss[\\/]-?[A-Za-z0-9._-]*tmp-project[\\/]\d{4}\.\d{2}\.\d{2}-\d{4}-p1w2\.md$/, 'no git folder: the working folder is the project, the label in the name');
-assert.ok(output.content[0].text.startsWith(`NO YAPPING AT ALL\n${MANDATORY_BLOCK}\n\ncontext loaded: practical-effective · sha256:`), 'the mandatory block comes first, then the receipt');
-assert.ok(output.content[0].text.endsWith(` · 1 sources\nEvery tool that acts needs receipt=sha256:${'a'.repeat(64)}\nss: ${minted.path} · new · folder missing\n\n${SHARED_WORK}\n\nrules`), 'the receipt to pass on every acting tool, the minted ss, then the shared-work convention, then the corpus');
+const outText = output.content[0].text;
+assert.match(outText, /^NO YAPPING AT ALL\nBLOCKING — no rule Read, no action:[\s\S]+\n\ncontext loaded: practical-effective · sha256:/, 'the mandatory block comes first, then the receipt');
+assert.match(outText, new RegExp(` · 1 sources\\nEvery tool that acts needs receipt=sha256:${'a'.repeat(64)}\\nss: ${minted.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · new · folder missing\\n\\nWorking beside other sessions \\(AkiMCP convention\\):[\\s\\S]+\\n\\nrules$`), 'the receipt to pass on every acting tool, the minted ss, then the shared-work convention, then the corpus');
 const again = await handler({ workingPath: '/tmp/project', ss: minted.path });
 assert.deepEqual(again.structuredContent.ss, { path: minted.path, state: 'kept' }, 'a re-call with ss keeps it instead of minting a second file');
 assert.match(again.content[0].text, new RegExp(`\\nss: ${minted.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} · kept · not created yet\\n`));
 assert.equal(again.structuredContent.receipt, output.structuredContent.receipt);
 assert.deepEqual(assembled, [{ workingPath: '/tmp/project' }, { workingPath: '/tmp/project' }], 'ss and label never reach the rule input, so they cannot change a receipt');
-// G2–G4 of aiobox audit-content-context (owner 2026-10-04): the AIObox guide drops them, so they must ship here.
+// Shared-work, session-file, and handoff rules must ship here.
 for (const must of ['git status', 'someone else', 'ss=<path>', '`ss: <absolute path> · <what changed>`', 'one private workspace file (e.g. `akimcp.md`, never committed or exported, scrubbed on revoke)', 'fall back to `/tmp/akimcp.json` (mode `0600`)', '-- <your paths>', 'git add -A', 'Create no worktree, build folder, clone or `node_modules`', 'ask the coordinator first', 'removes what was created in that same turn', '~/.aki/handoff/', 'https://github.com/lacvietanh/aki-mcp-sv/blob/main/docs/feat/session-file.md', '`status`/`repo`/`chat`/`started`/`parent`/`successor`/`room`/`plan`/`transcript` frontmatter', '`## Now`/`## Asked`/`## Next`/`## Decisions`/`## Open`/`## Files`/`## Log`', 'a handoff successor mints its OWN ss with `parent: <old ss>`', '`status: handed-off` and `successor: <new ss>`, or, if it cannot, the successor sets just those two keys once', 'In a council session, the seat file the opener names (`<room>/<seat>.md`) is this chat\'s ss']) assert.ok(SHARED_WORK.includes(must), must);
 assert.equal(SHARED_WORK.split('`parent: <old ss>`').length - 1, 1, 'the handoff rule is stated once, in SS_STEP');
 assert.equal(SHARED_WORK.includes('git worktree add'), false, 'no instruction to create a worktree');

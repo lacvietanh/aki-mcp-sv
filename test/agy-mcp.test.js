@@ -55,9 +55,12 @@ process.env.FAKE_AGY_LAST_ARGS = lastArgsFile;
 
 const { createToolsServer } = await import('../scripts/tools-server.js');
 const { setEnabled } = await import('../scripts/provider-registry.js');
-const { resetCache, resetUsageCache } = await import('../scripts/agy-capabilities.js');
+const { createCapabilitiesStore } = await import('../scripts/agy-capabilities.js');
 
-const server = createToolsServer();
+const store = createCapabilitiesStore();
+const clearStore = () => { store.accountCaches.clear(); store.usageCache = null; store.lastAccountKey = null; };
+const expireUsage = () => { store.usageCache = null; };
+const server = createToolsServer({ capabilitiesStore: store });
 const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
 await server.connect(serverSide);
 const client = new Client({ name: 'agy-mcp-test', version: '1' });
@@ -82,8 +85,8 @@ async function waitExited(taskId, maxMs = 4000) {
 
 const activeTaskIds = [];
 try {
-  // 1. B5a: list="capabilities" returns account, planTier, quota, Flash high default, and probes models ONCE (no double-spawn).
-  resetCache();
+  // 1. list="capabilities" returns account, planTier, quota, Flash high default, and probes models ONCE (no double-spawn).
+  clearStore();
   resetCounts();
   writeState({ account: 'pro@example.com', mode: 'sync' });
   const listRes = await callAgy({ list: 'capabilities' });
@@ -94,10 +97,10 @@ try {
   assert.equal(caps.resolvedDefaultModel, 'gemini-3.8-flash-high');
   assert.equal(caps.quota.source, 'live');
   assert.equal(caps.quota.groups[0].buckets[0].remainingFraction, 0.9);
-  assert.equal(readCounts().models, 1, 'list must probe models exactly once (B5a)');
+  assert.equal(readCounts().models, 1, 'list must probe models exactly once');
 
   // 2. Plan-mismatch check on Starter account blocks before spawning agy prompt.
-  resetCache();
+  clearStore();
   resetCounts();
   writeState({ account: 'starter@example.com', mode: 'sync' });
   const mismatch = await callAgy({ prompt: 'review arch', model: 'gemini-4-neon-high' });
@@ -107,23 +110,23 @@ try {
   assert.match(textOf(mismatch), /Google AI Pro/);
   assert.equal(readCounts().runs, 0, 'plan mismatch must reject before spawning prompt');
 
-  // 3. B2: Switching Pro -> Starter inside 1h cache window (without clearing account cache) blocks background=true before spawn.
-  resetCache();
+  // 3. Switching Pro -> Starter inside 1h cache window (without clearing account cache) blocks background=true before spawn.
+  clearStore();
   resetCounts();
   writeState({ account: 'pro@example.com', mode: 'bg_json' });
   const warmPro = await callAgy({ list: 'models' });
   assert.ok(!warmPro.isError, textOf(warmPro));
   // Switch live account to Starter and expire only the 30s /usage micro-TTL (Pro's 1h account cache remains warm).
   writeState({ account: 'starter@example.com', mode: 'bg_json' });
-  resetUsageCache();
+  expireUsage();
   const bgMismatch = await callAgy({ prompt: 'long research', model: 'gemini-4-neon-high', background: true });
   assert.equal(bgMismatch.isError, true);
   assert.match(textOf(bgMismatch), /Antigravity Starter Quota/);
-  assert.equal(readCounts().runs, 0, 'background=true must catch Pro->Starter switch and block before spawn (B2)');
+  assert.equal(readCounts().runs, 0, 'background=true must catch Pro->Starter switch and block before spawn');
 
-  // 4. Q1: Refuses background=true when task provider is disabled, naming panel section 4 and sync timeoutSec.
+  // 4. Refuses background=true when task provider is disabled, naming panel section 4 and sync timeoutSec.
   writeState({ account: 'pro@example.com', mode: 'bg_json' });
-  resetUsageCache();
+  expireUsage();
   setEnabled('task', false);
   const noTask = await callAgy({ prompt: 'long research', background: true });
   assert.equal(noTask.isError, true);
@@ -138,8 +141,8 @@ try {
   assert.match(textOf(tooLong), /600s/);
   assert.match(textOf(tooLong), /background=true/);
 
-  // 6. background=true happy path: separate stdout/stderr, --print-timeout 1800, -p last, N2 no prompt in tasks.json, B4a lazy summary after list(), B4c redacted errTail, delete cleans both logs.
-  resetCache();
+  // 6. background=true happy path: separate stdout/stderr, --print-timeout 1800, -p last, no prompt in tasks.json, lazy summary after list(), redacted errTail, delete cleans both logs.
+  clearStore();
   resetCounts();
   writeState({ account: 'pro@example.com', mode: 'bg_json' });
   const secretPrompt = 'SENSITIVE_LONG_PROMPT_MARKER_DO_NOT_STORE_IN_TASKS_JSON';
@@ -151,12 +154,12 @@ try {
   assert.equal(started.printTimeoutSec, 1800);
   assert.ok(started.errLogFile);
 
-  // N2: prompt text must NOT appear in tasks.json.
+  // Prompt text must NOT appear in tasks.json.
   const tasksJsonRaw = fs.readFileSync(path.join(dataDir, 'tasks.json'), 'utf8');
-  assert.ok(!tasksJsonRaw.includes(secretPrompt), 'tasks.json must not store raw prompt text (N2)');
+  assert.ok(!tasksJsonRaw.includes(secretPrompt), 'tasks.json must not store raw prompt text');
   assert.match(tasksJsonRaw, /prompt: 55 chars/);
 
-  // Wait via action="list" first (simulates B4a: list flips status to exited before status is called!).
+  // Wait via action="list" first (list flips status to exited before status is called).
   await waitExited(started.taskId);
 
   // Verify fake agy got --print-timeout 1800 and -p <prompt> last.
@@ -166,7 +169,7 @@ try {
   assert.equal(passedArgs[passedArgs.length - 2], '-p');
   assert.equal(passedArgs[passedArgs.length - 1], secretPrompt);
 
-  // Simulate post-restart lazy extract after list() already flipped status to exited (B4a).
+  // Simulate post-restart lazy extract after list() already flipped status to exited.
   const tasksOnDisk = JSON.parse(fs.readFileSync(path.join(dataDir, 'tasks.json'), 'utf8'));
   delete tasksOnDisk[started.taskId].agySummaryExtracted;
   delete tasksOnDisk[started.taskId].agySummary;
@@ -176,7 +179,7 @@ try {
   const statusRes = await callManage({ action: 'status', taskId: started.taskId });
   assert.ok(!statusRes.isError, textOf(statusRes));
   const status = JSON.parse(textOf(statusRes));
-  assert.equal(status.agySummaryExtracted, true, 'lazy extract ran even when status was already exited (B4a)');
+  assert.equal(status.agySummaryExtracted, true, 'lazy extract ran even when status was already exited');
   assert.equal(status.agySummary.status, 'SUCCESS');
   assert.equal(status.agySummary.durationSeconds, 12);
   assert.equal(status.agySummary.numTurns, 3);
@@ -208,7 +211,7 @@ try {
   assert.match(emptyStatus.emptyOutputHint, /silently denied/i);
   await callManage({ action: 'delete', taskId: emptyStart.taskId });
 
-  // 8. B4b: Concurrency cap of 4 active background agy tasks; 5th refused; stop cleans all 4.
+  // 8. Concurrency cap of 4 active background agy tasks; 5th refused; stop cleans all 4.
   writeState({ account: 'pro@example.com', mode: 'sleep', sleepMs: 20000 });
   const bgIds = [];
   for (let i = 0; i < 4; i++) {
@@ -219,7 +222,7 @@ try {
     activeTaskIds.push(parsed.taskId);
   }
   const fifth = await callAgy({ prompt: 'sleep 5', background: true });
-  assert.equal(fifth.isError, true, '5th concurrent agy background task must be refused (B4b)');
+  assert.equal(fifth.isError, true, '5th concurrent agy background task must be refused');
   assert.match(textOf(fifth), /concurrency limit/i);
 
   for (let i = 0; i < bgIds.length; i++) {

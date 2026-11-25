@@ -64,8 +64,9 @@ useIngress('public-origin');
 
 const printed = [];
 const consoleLog = console.log;
-console.log = (...a) => { printed.push(a.join(' ')); consoleLog(...a); };
 const server = startGatekeeper(null);
+try {
+console.log = (...a) => { printed.push(a.join(' ')); consoleLog(...a); };
 await new Promise((resolve) => server.once('listening', resolve));
 const call = (pathname, headers) => new Promise((resolve, reject) => {
   http.get({ host: '127.0.0.1', port: server.address().port, path: pathname, headers }, (res) => {
@@ -113,19 +114,28 @@ assert.equal((await call('/mcp', { ...stale, authorization: 'Bearer ' + rolled }
 const fromBeforeRestart = { 'x-forwarded-for': '198.51.100.10', authorization: 'Bearer ' + persistedRetiredToken };
 for (let i = 0; i < 10; i++) assert.equal((await call('/mcp', fromBeforeRestart)).status, 401, 'a token retired before the last start is never counted either');
 assert.equal(printed.filter((l) => l.includes('old token from 198.51.100.10')).length, 1, 'and is logged once as an old token');
-console.log = consoleLog;
+} finally {
+  console.log = consoleLog;
+  server.closeAllConnections();
+  server.close();
+}
 
-server.close();
-
-const withIngress = startGatekeeper('https://example.ts.net');
-await new Promise((resolve) => withIngress.once('listening', resolve));
-const register = (forwardedFor) => fetch(`http://127.0.0.1:${withIngress.address().port}/register`, {
-  method: 'POST',
-  headers: { 'content-type': 'application/json', 'x-forwarded-for': forwardedFor },
-  body: JSON.stringify({ redirect_uris: ['https://claude.ai/api/mcp/auth_callback'], token_endpoint_auth_method: 'none' }),
-}).then((res) => res.status);
-for (let i = 0; i < 100; i++) assert.equal(await register('198.51.100.4'), 201, 'many connects in a few minutes are allowed');
-assert.equal(await register('198.51.100.4'), 429, 'a caller registering in bulk is refused');
-assert.equal(await register('198.51.100.5'), 201, 'another caller can still register');
-withIngress.close();
+const registerLimit = 5;
+const withIngress = startGatekeeper('https://example.ts.net', undefined, {
+  registrationsLimiter: createLimiter({ settings: () => ({ enabled: true, max: registerLimit, windowMs: 600_000, blockMs: 600_000 }) }),
+});
+try {
+  await new Promise((resolve) => withIngress.once('listening', resolve));
+  const register = (forwardedFor) => fetch(`http://127.0.0.1:${withIngress.address().port}/register`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-forwarded-for': forwardedFor },
+    body: JSON.stringify({ redirect_uris: ['https://claude.ai/api/mcp/auth_callback'], token_endpoint_auth_method: 'none' }),
+  }).then((res) => res.status);
+  for (let i = 0; i < registerLimit; i++) assert.equal(await register('198.51.100.4'), 201, 'many connects in a few minutes are allowed');
+  assert.equal(await register('198.51.100.4'), 429, 'a caller registering in bulk is refused');
+  assert.equal(await register('198.51.100.5'), 201, 'another caller can still register');
+} finally {
+  withIngress.closeAllConnections();
+  withIngress.close();
+}
 console.log('rate-limit.test.js: ok');
