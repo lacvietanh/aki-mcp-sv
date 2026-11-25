@@ -7,7 +7,7 @@ import { ok, fail } from './mcp-tool.js';
 import { runTempTokenOp } from './temp-token-proxy.js';
 
 const compactTempTokenRow = (t) => ({
-  id: t.id.slice(0, 12),
+  ...(typeof t.id === 'string' && t.id ? { id: t.id.slice(0, 12) } : {}),
   ...(t.name ? { name: t.name } : {}),
   created: t.created,
   expires: t.expires,
@@ -245,7 +245,7 @@ export function register(server, options = {}) {
         if (op === 'mint') {
           const res = await runTempTokenOp({ op: 'mint', name, mode, getOrigin });
           return ok(JSON.stringify({
-            id: res.id.slice(0, 12),
+            ...(typeof res.id === 'string' && res.id ? { id: res.id.slice(0, 12) } : {}),
             ...(res.name ? { name: res.name } : {}),
             expires: res.expires,
             kickoff: res.kickoff,
@@ -254,7 +254,7 @@ export function register(server, options = {}) {
         if (op === 'extend') {
           const res = await runTempTokenOp({ op: 'extend', id, name, mode, getOrigin, by: 'via MCP tool' });
           return ok(JSON.stringify({
-            id: res.id.slice(0, 12),
+            ...(typeof res.id === 'string' && res.id ? { id: res.id.slice(0, 12) } : {}),
             ...(res.name ? { name: res.name } : {}),
             expires: res.expires,
           }));

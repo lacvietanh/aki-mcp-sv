@@ -112,4 +112,4 @@ No tool: `aki__search_content` with query `^status: (active|waiting)` and path `
 
 ## Limits
 
-On a web chat the model is the only writer: AkiMCP cannot tell chats apart (`CLAUDE.md` § Runtime, OAuth & session lifecycle) and never sets `status` itself. A chat whose host compacts away both the rule and the path starts a new ss on its next context call.
+On a web chat the model is the only writer: AkiMCP cannot tell chats apart (`CLAUDE.md` § Runtime, OAuth & session lifecycle) and never sets `status` itself. A chat whose host compacts away both the rule and the path starts a new ss on its next context call; HTTP chat agents following `public/guide/mcp-http/v1.md` avoid losing `ss` across compaction by storing it alongside session state in one private persistent workspace file (`akimcp.md`, never committed or exported, scrubbed on revoke) or falling back to `/tmp/akimcp.json` (`0600`) in an isolated subshell.

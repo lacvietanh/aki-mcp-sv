@@ -125,12 +125,14 @@ try {
   assert.equal(bearerStatus(bearer(labels.TOKEN)), 'retired');
   assert.deepEqual((await ROUTES['GET /api/temp-tokens']()).tokens, []);
 
-  // The guide is served as markdown, not a binary download, and specifies atomic 0600 /tmp/akimcp.json, User-Agent, 403/fail-closed rules, and DELETE cleanup.
+  // The guide is served as markdown, not a binary download, and specifies persistent workspace akimcp.md, atomic 0600 /tmp/akimcp.json fallback, User-Agent, 403/fail-closed rules, DELETE cleanup, and POST revoke_self.
   const guide = await fetch(`${origin}/guide/mcp-http/v1.md`);
   assert.equal(guide.status, 200);
   assert.equal(guide.headers.get('content-type'), 'text/markdown; charset=utf-8');
   const guideText = await guide.text();
   for (const snippet of [
+    '`akimcp.md`',
+    'Hard security lock:',
     '`/tmp/akimcp.json`',
     'NamedTemporaryFile("w", dir="/tmp", delete=False',
     'os.chmod(tmp, 0o600)',
@@ -141,9 +143,11 @@ try {
     'fail closed at once: ask the owner for a new kickoff block; never scan other `/tmp/*` files',
     '&& rm -f /tmp/akimcp.json',
     'plus optional `ss` and `handle`',
+    '"op":"revoke_self"',
   ]) {
     assert.ok(guideText.includes(snippet), `guide v1.md missing: ${snippet}`);
   }
+  assert.doesNotMatch(guideText, /cannot revoke the token itself/i, 'v1.md must not claim POST-only clients cannot revoke on 4.3.0+');
   assert.doesNotMatch(guideText, /AIObox|chủ|lead/i, 'public v1.md keeps neutral owner terminology');
 
   // M3: Name normalization, NFC, control-char stripping, length caps, case-insensitive uniqueness, selector conflicts, 7-day extend cap, and 64-live cap.
@@ -400,7 +404,62 @@ try {
     stubPanel.close();
   }
 
-  console.log('PASS: temp tokens — named tokens, M3 caps/uniqueness, B1 caller principal isolation, CLI proxy, panel mint and revoke, guide MIME');
+  // Cross-version regression: 4.3.x stdio/MCP proxy calling an older 4.2.0 daemon whose panel API omits `id` must not throw on `.slice`.
+  const { register: registerSystemTools } = await import('../scripts/system-mcp.js');
+  const legacyToken = 'legacy-panel-token-for-420-test';
+  const legacyPanel = http.createServer((req, res) => {
+    if (req.headers['x-panel-token'] !== legacyToken) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'wrong panel token' }));
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    if (req.method === 'POST' && req.url === '/api/temp-token') {
+      return res.end(JSON.stringify({ ok: true, token: 'a'.repeat(64), expires: '2026-11-25T12:00:00.000Z', kickoff: 'GUIDE: ...' }));
+    }
+    if (req.method === 'POST' && req.url === '/api/temp-token/extend') {
+      return res.end(JSON.stringify({ ok: true, expires: '2026-11-25T12:30:00.000Z' }));
+    }
+    if (req.method === 'GET' && req.url === '/api/temp-tokens') {
+      return res.end(JSON.stringify({ tokens: [{ created: '2026-11-25T08:00:00.000Z', expires: '2026-11-25T12:00:00.000Z' }], extendMinutes: 30 }));
+    }
+    res.end(JSON.stringify({ ok: true }));
+  });
+  await new Promise((resolve) => legacyPanel.listen(0, '127.0.0.1', resolve));
+  try {
+    writeLock({ pid: process.pid, port: 0, panelPort: legacyPanel.address().port, token: legacyToken, mode: 'prod' });
+    let tempToolHandler;
+    const mockServer = {
+      registerTool(name, _meta, handler) {
+        if (name === 'temp_token') tempToolHandler = handler;
+      },
+    };
+    registerSystemTools(mockServer, { tempTokenMode: 'proxy' });
+    assert.ok(tempToolHandler, 'temp_token handler registered');
+
+    const legacyMint = await tempToolHandler({ op: 'mint' });
+    assert.equal(legacyMint.isError, undefined, legacyMint.content[0].text);
+    const legacyMintData = JSON.parse(legacyMint.content[0].text);
+    assert.equal('id' in legacyMintData, false);
+    assert.equal(legacyMintData.expires, '2026-11-25T12:00:00.000Z');
+
+    const legacyExt = await tempToolHandler({ op: 'extend' });
+    assert.equal(legacyExt.isError, undefined, legacyExt.content[0].text);
+    const legacyExtData = JSON.parse(legacyExt.content[0].text);
+    assert.equal('id' in legacyExtData, false);
+    assert.equal(legacyExtData.expires, '2026-11-25T12:30:00.000Z');
+
+    const legacyList = await tempToolHandler({ op: 'list' });
+    assert.equal(legacyList.isError, undefined, legacyList.content[0].text);
+    const legacyListData = JSON.parse(legacyList.content[0].text);
+    assert.equal(legacyListData.tokens.length, 1);
+    assert.equal('id' in legacyListData.tokens[0], false);
+  } finally {
+    clearLock();
+    legacyPanel.closeAllConnections();
+    legacyPanel.close();
+  }
+
+  console.log('PASS: temp tokens — named tokens, M3 caps/uniqueness, B1 caller principal isolation, CLI proxy, legacy 4.2.0 proxy, panel mint and revoke, guide MIME');
 } finally {
   Date.now = realNow;
   server.closeAllConnections();

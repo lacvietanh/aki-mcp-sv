@@ -22,7 +22,7 @@ export const SHARED_WORK = [
   'Working beside other sessions (AkiMCP convention):',
   "- Every session edits the same checkout. Before editing: `git status`. A file already dirty that you did not change is someone else's: do not edit, stash, check out or commit it; ask the coordinator whose it is.",
   `- ${SS_STEP}`,
-  '- In an isolated VM subshell where shell variables do not persist across tool calls, store the minted `ss` path in `/tmp/akimcp.json` (mode `0600`) alongside the HTTP session state (`url`, `token`, `sid`, `receipt`) so it survives context compaction.',
+  '- In a chat VM with a persistent workspace, store the minted `ss` path alongside the HTTP session state (`url`, `token`, `sid`, `receipt`) in one private workspace file (e.g. `akimcp.md`, never committed or exported, scrubbed on revoke); fall back to `/tmp/akimcp.json` (mode `0600`) only in an isolated VM subshell without a persistent workspace, so it survives context compaction.',
   '- Files everyone touches (`CHANGELOG.md`, an ss another session also writes): edit only your own lines, right before committing. Commit with `git commit -m "…" -- <your paths>`, never `git add -A` or `.`.',
   '- Work in the shared checkout in turns, committing `-- <your paths>`. Create no worktree, build folder, clone or `node_modules` unless the work cannot be done without it (ask the coordinator first); whoever merges removes what was created in that same turn.',
   "- Handing work over: a letter in `~/.aki/handoff/` is optional and only points at the new ss; the successor reads the old ss and chat, takes over its Files list and tells the related sessions.",

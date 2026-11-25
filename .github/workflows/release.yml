@@ -114,4 +114,20 @@ jobs:
               echo "**Full Changelog**: https://github.com/${GITHUB_REPOSITORY}/commits/${TAG}"
             fi
           } > /tmp/release-notes.md
-          gh release create "$TAG" --title "$TAG" --notes-file /tmp/release-notes.md
+          HEADLINE=$(awk '
+            /^- \*\*[^*]+\*\*/ {
+              line = $0
+              sub(/^- \*\*/, "", line)
+              sub(/\*\*.*$/, "", line)
+              gsub(/`/, "", line)
+              if (length(line) > 72) line = substr(line, 1, 69) "..."
+              print line
+              exit
+            }
+          ' /tmp/changelog-section.md)
+          if [ -n "$HEADLINE" ]; then
+            TITLE="v${TAG}: ${HEADLINE}"
+          else
+            TITLE="v${TAG}: AkiMCP ${TAG} release"
+          fi
+          gh release create "$TAG" --title "$TITLE" --notes-file /tmp/release-notes.md
